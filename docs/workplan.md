@@ -125,7 +125,8 @@ Planned by **effort hours, not calendar weeks** (total ≈ **460 h** to v1, ±50
 ### Phase 0 — Decisions (~10 h)
 * [x] ADRs D1–D17 (`docs/decisions/0001…0017`), `CLAUDE.md`, manifesto (README), `dragdoll-core` skeleton.
 * [ ] `dragdoll-sa` skeleton (deferred to the Phase 1 SA spike).
-* [ ] Git identity + first signed-off commit; GitHub repo (name/visibility: user's call).
+* [x] Git identity (repo-local, GitHub noreply) + first signed-off commit.
+* [ ] GitHub repo or organization (name/visibility: user's call).
 * [x] `docs/devlog.md`, `docs/ideas.md`, `docs/progress/` (§4.0).
 
 ### Phase 1 — Core Foundation + SA Spike (~60 h)

@@ -10,7 +10,7 @@ Newest entry at the bottom. Every session ends with **Changed / Next / Open ques
 * Wrote ADR-0001 … 0017, `CLAUDE.md`, README with manifesto. Moved the workplan into `docs/`.
 
 **Next**
-* Phase 0 leftovers: git identity + first signed-off commit; create the GitHub repo (user's call: name, visibility).
+* Phase 0 leftover: create the GitHub repo, possibly under a project organization (user's call: name, visibility). Identity + first commit done.
 * Then Phase 1, task 1: CMake skeleton + FetchContent Jolt (pinned) + `dragdoll_jolt_config` + x86/x64 presets.
 
 **Open questions**
