@@ -141,10 +141,11 @@ Planned by **effort hours, not calendar weeks** (total ≈ **460 h** to v1, ±50
 ### Phase 1 — Core Foundation + SA Spike (~60 h)
 **Goal:** deterministic 16-body ragdoll through `dragdoll.h`; prove a 32-bit Jolt DLL runs inside San Andreas.
 * [x] CMake + FetchContent (Jolt), `dragdoll_jolt_config`, presets, clang-format, `.gitignore`, `LICENSE` (task 1).
-* [~] CI (x86 + x64) workflow written (task 2) — awaiting first green run on GitHub. doctest + Tracy join when first needed.
-* [ ] C API skeleton: `DdWorld`, `DdCharacter`, `DdPoseBuffer`; create/destroy/step; proxy colliders (bulk add/remove); impulses; state readback; up-axis setting.
-* [ ] Fixed-step accumulator + interpolated output (D6).
-* [ ] **[SA]** Host-rate test: stepping with 1/25–1/30 s plus random jitter gives identical physics to a steady 120 Hz feed.
+* [x] CI (x86 + x64) green on GitHub (task 2; ~70–85 s per preset, cold cache). doctest + Tracy join when first needed.
+* [x] C API: `DdWorld` create/destroy/step/step_fixed, interpolation alpha, state hash; proxy colliders (sphere/box/capsule/mesh; static/kinematic/dynamic; bulk add/remove; kinematic targets); up-axis setting (task 3).
+* [ ] C API: `DdCharacter`, `DdPoseBuffer`, impulses, character state readback.
+* [x] Fixed-step accumulator + interpolated output (D6) (task 3).
+* [x] **[SA]** Host-rate test: stepping with 1/25–1/30 s plus random jitter gives identical physics to a steady 120 Hz feed (task 3).
 * [ ] **[SA]** Jolt allocator hooks → per-world memory accounting; host-configurable worker thread count.
 * [ ] Rig JSON, `RagdollSettings` (`Stabilize`, `DisableParentChildCollisions`), anatomical joint limits, de Leva masses, CCD on limbs (D16).
 * [ ] **SA spike (`dragdoll-sa` prototype):** minimal ASI (plugin-sdk) that loads the 32-bit DragDoll DLL, logs ped positions and RpHAnim bone matrices, and drops one passive ragdoll on a key press. Retires the biggest technical risk early.

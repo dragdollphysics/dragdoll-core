@@ -49,7 +49,7 @@ Toolchain: Visual Studio Build Tools 2026 (MSVC 14.51) with bundled CMake + Ninj
 ```
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dd.ps1 <preset> [-Step configure|build|test]
 ```
-Presets: `x64-debug`, `x64-release`, `x86-debug`, `x86-release`, `x86-ship` (SA plugin: no dev tools), or `all` (the four dev presets). Output: `build/<preset>/bin/` (`dragdoll.dll`, `dragdoll_smoke.exe`).
+Presets: `x64-debug`, `x64-release`, `x86-debug`, `x86-release`, `x86-ship` (SA plugin: no dev tools), or `all` (the four dev presets). Output: `build/<preset>/bin/` (`dragdoll.dll`, `dragdoll_smoke.exe`, `dragdoll_tests.exe` — doctest; run it directly for details, e.g. `-tc="determinism*"`).
 * Jolt is pinned in `cmake/DragDollJolt.cmake` (`DRAGDOLL_JOLT_TAG`); all Jolt options live only there (ADR-0012).
 * x86 presets set `DRAGDOLL_PORTABLE_CPU=ON` (SSE4.2, no AVX/FMA) for players' older machines; x64 uses AVX2+FMA.
 

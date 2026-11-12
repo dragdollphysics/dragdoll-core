@@ -67,11 +67,27 @@ Newest entry at the bottom. Every session ends with **Changed / Next / Open ques
 **Changed** (local, not committed)
 * `.github/workflows/ci.yml`: matrix `x64-debug`, `x64-release`, `x86-debug`, `x86-release` on `windows-latest`; MSVC env via `ilammy/msvc-dev-cmd`; Jolt `_deps` cached per preset (key = hash of `cmake/DragDollJolt.cmake` + `CMakePresets.json`); concurrency cancel; read-only token. Actions pinned to major versions (checkout v7, cache v6, msvc-dev-cmd v1).
 * README CI badge.
-* YAML parses locally; **not yet run on GitHub** (needs a push).
+* First run on GitHub: all 4 presets green, 68–85 s each (cold cache). Pushed as `4da6283`.
 
 **Next**
-* Push `main` (2 commits ahead) and watch the first CI run; fix anything the runner image does differently (e.g. Ninja/CMake availability, VS version).
 * Then Phase 1, task 3 (~4 h, **Opus** — design-heavy): fixed-step accumulator + `DdWorld` in the C API with proxy colliders and the up-axis setting.
 
 **Open questions**
 * If the Jolt cache proves flaky (stale `_deps`), switch to ccache.
+
+---
+
+## 2026-11-12 — Phase 1, task 3: world, fixed-step clock, proxy colliders
+**Changed** (local, not committed)
+* `dragdoll.h`: `DdVec3/DdQuat/DdTransform`; `DdWorldDesc` (`struct_size`, up axis, gravity, step_hz, max_steps_per_call, worker_threads, max_bodies); world create/destroy/step/step_fixed/alpha/step count/state hash; proxy colliders (`DdColliderDesc`: sphere/box/capsule/mesh × static/kinematic/dynamic; bulk add/remove; kinematic targets; interpolated transform query).
+* `core/src/world.{hpp,cpp}`: Jolt PhysicsSystem per world (2 object layers), single-threaded or thread-pool job system, 16 MB temp allocator; double accumulator with spiral-of-death guard; kinematic targets spread evenly over the batch of fixed steps (smooth velocities), velocity zeroed when the host sends none; capsule axis follows the world up; LinearCast CCD on non-static bodies (ADR-0016); all-or-nothing batch add; FNV-1a state hash in collider-id order.
+* `core/src/capi_guard.hpp` + `capi_world.cpp`: shared error/guard helpers; exceptions → `DdResult`.
+* Tests: doctest v2.5.3; 12 cases / 2,793 assertions — validation, accumulator, up axis (±Y, Z, X), capsule axis, **host-rate jitter determinism (Z-up, 25–30 fps)**, **thread-count determinism (0/1/4/8)**, bulk streaming (1,000 boxes), all-or-nothing batch, triangle mesh floor, kinematic targets, **car at 120 km/h vs a 5 cm "shin" pole (no tunnelling)**, interpolation.
+* All 5 presets build and pass.
+
+**Next**
+* Phase 1, task 4 (~4 h, **Opus**): rig JSON + 16-body ragdoll (`RagdollSettings`, joint limits, de Leva masses, CCD), `DdCharacter` in the C API, `drop_from_1m` scenario.
+
+**Open questions**
+* Kinematic targets are reached at the end of the next batch of fixed steps; a host running faster than 120 Hz may call step with 0 steps, so the target waits for the next batch. Fine for SA (~30 fps); revisit for high-rate hosts (the founder's 144 Hz monitor can serve as a real test case for the workbench later).
+* Memory accounting (Jolt allocator hooks, 64 MB budget) still open in Phase 1.

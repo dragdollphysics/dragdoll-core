@@ -1,7 +1,11 @@
 # Layer 0 — DragDoll core, built as dragdoll.dll with Jolt linked statically (ADR-0013, ADR-0015).
 
 add_library(dragdoll SHARED
+    src/capi_guard.hpp
     src/capi_library.cpp
+    src/capi_world.cpp
+    src/world.hpp
+    src/world.cpp
 )
 add_library(DragDoll::dragdoll ALIAS dragdoll)
 
