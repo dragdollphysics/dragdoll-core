@@ -1,0 +1,38 @@
+# Build output
+/build/
+/out/
+/install/
+CMakeUserPresets.json
+compile_commands.json
+
+# IDEs
+.vs/
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.user
+*.suo
+
+# Binaries & debug artifacts
+*.exe
+*.dll
+*.asi
+*.lib
+*.pdb
+*.ilk
+*.obj
+*.exp
+
+# Recordings, lab output, captures (large / local)
+*.ddrec
+/lab/runs/
+*.tracy
+*.rdc
+
+# Private reference data — never commit (ADR-0014)
+/private/
+*.private.*
+
+# OS
+Thumbs.db
+.DS_Store
