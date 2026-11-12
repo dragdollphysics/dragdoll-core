@@ -60,3 +60,18 @@ Newest entry at the bottom. Every session ends with **Changed / Next / Open ques
 
 **Open questions**
 * Install Ninja-independent ccache later? (not installed; optional speed-up.)
+
+---
+
+## 2026-11-12 — Phase 1, task 2: CI
+**Changed** (local, not committed)
+* `.github/workflows/ci.yml`: matrix `x64-debug`, `x64-release`, `x86-debug`, `x86-release` on `windows-latest`; MSVC env via `ilammy/msvc-dev-cmd`; Jolt `_deps` cached per preset (key = hash of `cmake/DragDollJolt.cmake` + `CMakePresets.json`); concurrency cancel; read-only token. Actions pinned to major versions (checkout v7, cache v6, msvc-dev-cmd v1).
+* README CI badge.
+* YAML parses locally; **not yet run on GitHub** (needs a push).
+
+**Next**
+* Push `main` (2 commits ahead) and watch the first CI run; fix anything the runner image does differently (e.g. Ninja/CMake availability, VS version).
+* Then Phase 1, task 3 (~4 h, **Opus** — design-heavy): fixed-step accumulator + `DdWorld` in the C API with proxy colliders and the up-axis setting.
+
+**Open questions**
+* If the Jolt cache proves flaky (stale `_deps`), switch to ccache.

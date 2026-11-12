@@ -140,7 +140,8 @@ Planned by **effort hours, not calendar weeks** (total ≈ **460 h** to v1, ±50
 
 ### Phase 1 — Core Foundation + SA Spike (~60 h)
 **Goal:** deterministic 16-body ragdoll through `dragdoll.h`; prove a 32-bit Jolt DLL runs inside San Andreas.
-* [ ] CMake + FetchContent (Jolt, doctest, Tracy), `dragdoll_jolt_config`, CI (x86 + x64), clang-format, `.gitignore`, `LICENSE`.
+* [x] CMake + FetchContent (Jolt), `dragdoll_jolt_config`, presets, clang-format, `.gitignore`, `LICENSE` (task 1).
+* [~] CI (x86 + x64) workflow written (task 2) — awaiting first green run on GitHub. doctest + Tracy join when first needed.
 * [ ] C API skeleton: `DdWorld`, `DdCharacter`, `DdPoseBuffer`; create/destroy/step; proxy colliders (bulk add/remove); impulses; state readback; up-axis setting.
 * [ ] Fixed-step accumulator + interpolated output (D6).
 * [ ] **[SA]** Host-rate test: stepping with 1/25–1/30 s plus random jitter gives identical physics to a steady 120 Hz feed.

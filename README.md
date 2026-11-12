@@ -1,5 +1,7 @@
 # DragDoll
 
+[![CI](https://github.com/dragdollphysics/dragdoll-core/actions/workflows/ci.yml/badge.svg)](https://github.com/dragdollphysics/dragdoll-core/actions/workflows/ci.yml)
+
 **rag*doll*** + **drag** (ballroom & vogue: poses, dips, death drops) + **drag** (the physics force).
 
 An open-source, real-time **active ragdoll** library in C++20, built on [Jolt Physics](https://github.com/jrouwe/JoltPhysics).

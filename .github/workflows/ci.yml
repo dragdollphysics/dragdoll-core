@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same branch/PR cancels the older run.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: ${{ matrix.preset }}
+    runs-on: windows-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { preset: x64-debug,   arch: x64 }
+          - { preset: x64-release, arch: x64 }
+          - { preset: x86-debug,   arch: x86 }
+          - { preset: x86-release, arch: x86 }
+    steps:
+      - uses: actions/checkout@v7
+
+      # Cache Jolt (fetched sources + compiled objects). The key includes the file that pins
+      # Jolt's version and options, so changing either rebuilds from scratch.
+      - name: Cache Jolt build
+        uses: actions/cache@v6
+        with:
+          path: build/${{ matrix.preset }}/_deps
+          key: jolt-${{ matrix.preset }}-${{ hashFiles('cmake/DragDollJolt.cmake', 'CMakePresets.json') }}
+
+      - name: Set up MSVC (${{ matrix.arch }})
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.arch }}
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }}
+
+      - name: Show build info
+        run: build/${{ matrix.preset }}/bin/dragdoll_smoke.exe
