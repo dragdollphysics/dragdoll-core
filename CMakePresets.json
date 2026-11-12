@@ -1,0 +1,77 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "cl",
+        "CMAKE_CXX_COMPILER": "cl"
+      },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    },
+    {
+      "name": "x64-base",
+      "hidden": true,
+      "inherits": "base",
+      "architecture": { "value": "x64", "strategy": "external" }
+    },
+    {
+      "name": "x86-base",
+      "hidden": true,
+      "inherits": "base",
+      "architecture": { "value": "x86", "strategy": "external" },
+      "cacheVariables": { "DRAGDOLL_PORTABLE_CPU": "ON" }
+    },
+    {
+      "name": "x64-debug",
+      "displayName": "x64 Debug (dev)",
+      "inherits": "x64-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "x64-release",
+      "displayName": "x64 Release (dev)",
+      "inherits": "x64-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "x86-debug",
+      "displayName": "x86 Debug (dev, SA)",
+      "inherits": "x86-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "x86-release",
+      "displayName": "x86 Release (dev, SA)",
+      "inherits": "x86-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "x86-ship",
+      "displayName": "x86 Ship (SA plugin, no dev tools)",
+      "inherits": "x86-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "DRAGDOLL_DEV_TOOLS": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "x64-debug",   "configurePreset": "x64-debug" },
+    { "name": "x64-release", "configurePreset": "x64-release" },
+    { "name": "x86-debug",   "configurePreset": "x86-debug" },
+    { "name": "x86-release", "configurePreset": "x86-release" },
+    { "name": "x86-ship",    "configurePreset": "x86-ship" }
+  ],
+  "testPresets": [
+    { "name": "x64-debug",   "configurePreset": "x64-debug",   "output": { "outputOnFailure": true } },
+    { "name": "x64-release", "configurePreset": "x64-release", "output": { "outputOnFailure": true } },
+    { "name": "x86-debug",   "configurePreset": "x86-debug",   "output": { "outputOnFailure": true } },
+    { "name": "x86-release", "configurePreset": "x86-release", "output": { "outputOnFailure": true } },
+    { "name": "x86-ship",    "configurePreset": "x86-ship",    "output": { "outputOnFailure": true } }
+  ]
+}
