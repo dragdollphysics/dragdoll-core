@@ -131,7 +131,7 @@ Planned by **effort hours, not calendar weeks** (total ≈ **460 h** to v1, ±50
 * [ ] `dragdoll-sa` skeleton (deferred to the Phase 1 SA spike).
 * [x] Git identity (repo-local, GitHub noreply) + first signed-off commit.
 * [x] GitHub organization `dragdollphysics` (ADR-0019).
-* [ ] `dragdollphysics/dragdoll-core` repo + first push (visibility: user's call).
+* [x] `dragdollphysics/dragdoll-core` repo + first push (SSH).
 * [x] `docs/devlog.md`, `docs/ideas.md`, `docs/progress/` (§4.0).
 
 ### Phase 1 — Core Foundation + SA Spike (~60 h)
