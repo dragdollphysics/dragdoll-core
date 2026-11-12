@@ -89,5 +89,65 @@ Newest entry at the bottom. Every session ends with **Changed / Next / Open ques
 * Phase 1, task 4 (~4 h, **Opus**): rig JSON + 16-body ragdoll (`RagdollSettings`, joint limits, de Leva masses, CCD), `DdCharacter` in the C API, `drop_from_1m` scenario.
 
 **Open questions**
-* Kinematic targets are reached at the end of the next batch of fixed steps; a host running faster than 120 Hz may call step with 0 steps, so the target waits for the next batch. Fine for SA (~30 fps); revisit for high-rate hosts (the founder's 144 Hz monitor can serve as a real test case for the workbench later).
+* ~~Kinematic targets wait a batch at > 120 Hz~~ → solved in task 3b.
 * Memory accounting (Jolt allocator hooks, 64 MB budget) still open in Phase 1.
+
+---
+
+## 2026-11-12 — Phase 1, task 3b: frame-rate independent vehicles
+**Why:** 60 fps mods are common in the SA community. With "reach the target at the end of this frame's batch", vehicle speed per fixed step varied with the number of steps a frame got: ±25 % at 30 fps (3–5 steps), up to ±50 % at 60 fps (1–3 steps), worse at 144 fps (0–1 steps). Impact impulses would have been noise.
+
+**Changed** (local, not committed)
+* Kinematic targets are now **time-stamped** with host time (defined as simulated time + accumulator, so hitches drop time from both clocks). Each collider keeps a short trajectory (≤ 16 samples); every fixed step samples it at its exact end time (lerp/slerp), and `MoveKinematic` derives the velocity. ≤ 1 fixed step (8.3 ms) latency. No new targets = holds last pose.
+* `dragdoll.h` documents the semantics, including "teleport = remove + re-add".
+* Tests: host-rate determinism now covers SA vanilla 25–30, 60 fps (55–65), 144 Hz (138–150) and unlocked 30–200 fps; new test: vehicle at 50 km/h has the same speed (±1 %) on every fixed step for 30 / 60 / 144 / unlocked hosts; hold-last-pose test. 14 cases / 13,035 assertions, all 5 presets green.
+* Workplan Phase 6: feed the game's real frame time; test vanilla / SilentPatch 60 fps / unlocked.
+
+**Next**
+* Phase 1, task 4 (~4 h, **Opus**): rig JSON + 16-body ragdoll, `DdCharacter`, `drop_from_1m`.
+
+**Open questions**
+* Teleport API (explicit `dragdoll_world_teleport_colliders`) if remove + re-add proves awkward for the SA plugin.
+
+---
+
+## 2026-11-12 — Phase 1, task 3c: live viewer + shared scenarios
+**Why:** the user wants to watch scenarios live and act as the human-eye validation layer.
+
+**Changed** (local, not committed)
+* C API: `dragdoll_world_debug_draw` (line/triangle callbacks over Jolt's DebugRenderer; dev builds only, ship builds return `DD_ERROR_UNSUPPORTED`); new `DD_ERROR_UNSUPPORTED`.
+* `scenarios/` library (C API only): `pile_zup`, `ball_drop_yup/zup`, `car_vs_pole_50kmh/120kmh`, `car_speed_50kmh`; `Scenario` interface (configure/build/hostFrame/hud/rateIndependent) + `Instance` helper.
+* `workbench/` → `dragdoll_view` (raylib 6.2, x64 dev builds): orbit camera with arbitrary up axis, flat-shaded debug geometry, grid, HUD (step, sim time, host frame dt, fixed steps taken, alpha, state hash, **steady-120 Hz reference-run match** for rate-independent scenarios, scenario readouts). Keys: Space pause, N step, Up/Down time scale, **F cycle host rate (real / 30 / 60 / 144 / random 30-200)**, R restart, Tab next scenario, H help.
+* `scripts/watch.ps1`; CI configures with `-DDRAGDOLL_BUILD_VIEWER=OFF`.
+* Tests: `test_scenarios.cpp` — every scenario runs; rate-independent scenarios identical at SA/60/144/unlocked hosts; ball rest height (Y/Z up); car-vs-pole outcome (hit, not tunnelled, same at 30/60/144 fps within 0.75 m); debug-draw. 19 cases / 22.8k assertions, all presets green.
+* Scenario fix found by tests: the original car had 5 cm ground clearance and pinched the pole; now 20 cm, pole is 1 m tall.
+
+**Known limits**
+* Debug draw shows the latest simulated state (no interpolation yet): at 144 Hz vs 120 Hz physics expect a little judder — expected, to be fixed by interpolating drawn bodies.
+
+**Next**
+* Human review of the viewer by the founder (verdicts feed the next fixes).
+* Then Phase 1, task 4 (~4 h, **Opus**): rig JSON + 16-body ragdoll, `DdCharacter`, `drop_from_1m`.
+
+---
+
+## 2026-11-12 — Phase 1, task 4: the 16-body ragdoll
+**Changed** (local, not committed — tasks 3b, 3c and 4 are all still uncommitted)
+* `packs/rigs/humanoid16.json`: 1.75 m / 75 kg adult; de Leva (1996) segment mass fractions; rig space +Y up, +Z forward, +X = character's left, origin between the feet. Boxes for pelvis/spine/hands/feet, capsules for head and limbs. Swing-twist joints (spine, neck, shoulders, wrists, hips, ankles) with asymmetric ranges via a tilted cone axis (shoulder 41 deg forward/out, hip 40 deg forward); hinges for elbows (-3..145) and knees (-3..150).
+* Core: `rig.{hpp,cpp}` (nlohmann/json v3.12.0, strict validation with precise messages), `character.{hpp,cpp}` (Jolt RagdollSettings: bone-aligned capsule frames, world-space constraints, DisableParentChildCollisions with rest-pose matrices, Stabilize, LinearCast, 16 velocity / 8 position solver iterations), built-in rig generated from the JSON by CMake.
+* World: characters (id-ordered), capture for interpolation, included in the state hash, removed before the physics system on teardown.
+* C API: `dragdoll_get_builtin_rig`, `DdCharacterDesc`, character create/destroy/body count/name/find/mass/transforms/apply_impulse; `DdDebugDrawCallbacks.flags` (`DD_DRAW_SHAPES / CONSTRAINTS / CONSTRAINT_LIMITS`).
+* Scenarios: `drop_from_1m`, `fall_forward`, `shove_mid_fall` (Z-up), HUD shows mass, pelvis height, knee/elbow flex. `metrics::hingeBendDegrees` shared by tests and HUD. Viewer: **L** toggles the joint-limit overlay.
+* Tests (24 cases / ~41.6k assertions, all 5 presets): rig loads (16 bodies, 75 kg, rest pose sane, left = +X), invalid rigs rejected with precise messages, the three scenarios never NaN / explode / sink, knees and elbows never bend the wrong way by more than ~1.4 deg past the -3 deg limit (measured worst: -4.4 deg), bodies come to rest, 0 vs 4 threads identical (two ragdolls piling up), impulses, destroy mid-simulation. Rate-independence test now also covers the ragdoll drops.
+* Found & fixed while testing: wrong-way elbow bend reached -8.2 deg on x86-debug with 12/4 solver iterations; 16/8 brings all platforms to about -4.4 deg.
+
+**Next**
+* Founder's visual review of `drop_from_1m`, `fall_forward`, `shove_mid_fall` (and the L overlay).
+* Then Phase 1, task 5: memory accounting (Jolt allocator hooks, 64 MB budget) + perf baseline; or the SA spike.
+
+**Human review (founder):** proportions, falls and joint directions look right. Defect found: in `shove_mid_fall` the character lands on its arm and the upper arm sinks into the chest box.
+
+**Fixes after review**
+* Rig option `"collide_with_parent": true` (upper arms vs chest); chest box narrowed to 0.30 m so the hanging arm has 17 mm clearance at rest. Measured deepest arm-in-chest: 1.8 mm (was visibly deep). New test asserts < 2 cm.
+* While testing it, a hand reached 2 cm below the floor: Jolt's default penetration slop (2 cm) is larger than a hand's half thickness. World now uses 5 mm. Lowest hand centre 19.2 mm (half thickness 20 mm); feet sink at most ~8 mm for one frame on landing.
+* L overlay: limit gizmos 12 cm (were 1 m), drawn 50 % transparent in a separate pass. Ground slab hidden when the camera is below the floor (grid stays).

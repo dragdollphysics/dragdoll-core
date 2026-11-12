@@ -26,8 +26,10 @@ FetchContent_MakeAvailable(doctest)
 add_executable(dragdoll_tests
     unit/main.cpp
     unit/test_world.cpp
+    unit/test_scenarios.cpp
+    unit/test_character.cpp
 )
-target_link_libraries(dragdoll_tests PRIVATE DragDoll::dragdoll doctest::doctest)
+target_link_libraries(dragdoll_tests PRIVATE DragDoll::dragdoll dragdoll_scenarios doctest::doctest)
 dragdoll_set_compile_options(dragdoll_tests)
 
 add_test(NAME unit COMMAND dragdoll_tests)

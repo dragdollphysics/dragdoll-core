@@ -19,6 +19,8 @@
 #include <string>
 #include <vector>
 
+struct DdCharacter; // character.hpp
+
 namespace dragdoll
 {
 
@@ -94,7 +96,22 @@ public:
     void setKinematicTargets(const DdColliderId* ids, const DdTransform* targets, uint32_t count);
     bool colliderTransform(DdColliderId id, bool interpolated, DdTransform& out) const;
 
+    // Characters (ragdolls from rigs)
+    DdCharacter* createCharacter(const DdCharacterDesc& desc);
+    void destroyCharacter(DdCharacter* character);
+    bool characterTransforms(const DdCharacter& character, bool interpolated, DdTransform* out, uint32_t capacity) const;
+    void applyImpulse(DdCharacter& character, uint32_t body, const DdVec3& impulse, const DdVec3* point);
+
+    JPH::PhysicsSystem& physics() { return *mPhysics; }
+
 private:
+    struct KinematicSample
+    {
+        double time = 0.0;
+        JPH::RVec3 position;
+        JPH::Quat rotation = JPH::Quat::sIdentity();
+    };
+
     struct Collider
     {
         JPH::BodyID body;
@@ -102,18 +119,20 @@ private:
         uint64_t userData = 0;
         JPH::RVec3 prevPosition, currPosition;
         JPH::Quat prevRotation = JPH::Quat::sIdentity(), currRotation = JPH::Quat::sIdentity();
-        // Pending kinematic target: reached at the end of the next simulated batch of steps.
-        bool hasTarget = false;
-        JPH::RVec3 targetPosition;
-        JPH::Quat targetRotation = JPH::Quat::sIdentity();
-        JPH::RVec3 batchStartPosition;
-        JPH::Quat batchStartRotation = JPH::Quat::sIdentity();
+        // Kinematic trajectory: host targets stamped with host time. Every fixed step samples
+        // this trajectory at its exact end time, so velocities don't depend on how many fixed
+        // steps a host frame happens to get (30 / 60 / 144 fps / unlocked).
+        std::vector<KinematicSample> samples;
+        bool hasPending = false;
+        KinematicSample pending; // Set by the host; stamped with time in the next step call.
     };
 
     JPH::Ref<JPH::Shape> createShape(const DdColliderDesc& desc) const;
+    void stampPendingTargets(double hostTime);
     void simulate(uint32_t steps);
-    void driveKinematics(uint32_t stepIndex, uint32_t stepsInBatch);
+    void driveKinematics(double stepEndTime);
     void captureTransforms();
+    double simTime() const { return static_cast<double>(mStepCount) * mFixedDt; }
 
     // Settings
     JPH::Vec3 mUp;
@@ -137,6 +156,10 @@ private:
     std::map<DdColliderId, Collider> mColliders;
     DdColliderId mNextColliderId = 1;
     std::vector<JPH::BodyID> mScratchBodies;
+
+    // Characters, ordered by id (deterministic iteration).
+    std::map<uint32_t, std::unique_ptr<DdCharacter>> mCharacters;
+    uint32_t mNextCharacterId = 1;
 };
 
 } // namespace dragdoll

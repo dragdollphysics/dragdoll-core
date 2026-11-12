@@ -215,7 +215,7 @@ TEST_CASE("capsule axis follows the world up axis")
     }
 }
 
-TEST_CASE("determinism: host frame rate with jitter gives identical physics (SA: 25-30 fps)")
+TEST_CASE("determinism: any host frame rate gives identical physics (SA vanilla, 60 fps mods, 144 Hz, unlocked)")
 {
     Library lib;
     const DdVec3 up{0, 0, 1}; // SA is Z-up
@@ -237,25 +237,39 @@ TEST_CASE("determinism: host frame rate with jitter gives identical physics (SA:
     }
     CHECK(reference[0] != reference[kSteps]); // Things actually moved.
 
-    // Host-driven: dt between 1/30 and 1/25 s with random jitter.
-    DdWorldDesc desc = defaultDesc();
-    desc.up = up;
-    World world(desc);
-    buildPile(world, up);
-    std::mt19937 rng(1234);
-    std::uniform_real_distribution<float> dtDist(1.0f / 30.0f, 1.0f / 25.0f);
-    uint32_t compared = 0;
-    while (dragdoll_world_get_step_count(world) < kSteps)
+    struct RateProfile
     {
-        REQUIRE(dragdoll_world_step(world, dtDist(rng), nullptr) == DD_OK);
-        const uint64_t step = dragdoll_world_get_step_count(world);
-        if (step <= kSteps)
+        const char* name;
+        float minFps, maxFps;
+    };
+    const RateProfile profiles[] = {
+        {"SA vanilla 25-30 fps", 25.0f, 30.0f},
+        {"60 fps mod (55-65)", 55.0f, 65.0f},
+        {"144 Hz monitor (138-150)", 138.0f, 150.0f},
+        {"unlocked 30-200 fps", 30.0f, 200.0f},
+    };
+    for (const RateProfile& profile : profiles)
+    {
+        CAPTURE(profile.name);
+        DdWorldDesc desc = defaultDesc();
+        desc.up = up;
+        World world(desc);
+        buildPile(world, up);
+        std::mt19937 rng(1234);
+        std::uniform_real_distribution<float> dtDist(1.0f / profile.maxFps, 1.0f / profile.minFps);
+        uint32_t compared = 0;
+        while (dragdoll_world_get_step_count(world) < kSteps)
         {
-            REQUIRE(hashOf(world) == reference[static_cast<size_t>(step)]);
-            ++compared;
+            REQUIRE(dragdoll_world_step(world, dtDist(rng), nullptr) == DD_OK);
+            const uint64_t step = dragdoll_world_get_step_count(world);
+            if (step <= kSteps)
+            {
+                REQUIRE(hashOf(world) == reference[static_cast<size_t>(step)]);
+                ++compared;
+            }
         }
+        CHECK(compared > 100);
     }
-    CHECK(compared > 100);
 }
 
 TEST_CASE("determinism: identical results for 0, 1, 4 and 8 worker threads")
@@ -468,4 +482,92 @@ TEST_CASE("interpolation: rendering transform lies between the last two steps")
     REQUIRE(dragdoll_world_get_collider_transform(world, id, 1, &rendered) == DD_OK);
     CHECK(dragdoll_world_get_interpolation_alpha(world) == doctest::Approx(0.5).epsilon(0.01));
     CHECK(rendered.position.y > latest.position.y); // Still falling: the blend lags behind the latest step.
+}
+
+TEST_CASE("kinematic: vehicle speed is identical on every fixed step at any host frame rate")
+{
+    // The car-hit mod depends on this: impact impulses must not depend on how many fixed steps a
+    // host frame happens to get (1, 2 or 3 at 60 fps; 0 or 1 at 144 fps).
+    Library lib;
+    constexpr float kSpeed = 50.0f / 3.6f; // 50 km/h
+    constexpr double kFixedDt = 1.0 / 120.0;
+
+    struct RateProfile
+    {
+        const char* name;
+        float minFps, maxFps;
+    };
+    const RateProfile profiles[] = {
+        {"30 fps steady", 30.0f, 30.0f},
+        {"60 fps jittery", 55.0f, 65.0f},
+        {"144 fps", 138.0f, 150.0f},
+        {"unlocked 30-200 fps", 30.0f, 200.0f},
+    };
+    for (const RateProfile& profile : profiles)
+    {
+        CAPTURE(profile.name);
+        World world(defaultDesc());
+        DdColliderDesc car;
+        dragdoll_collider_desc_default(&car);
+        car.shape = DD_SHAPE_BOX;
+        car.motion = DD_MOTION_KINEMATIC;
+        car.half_extents = DdVec3{2.0f, 0.7f, 0.9f};
+        car.transform.position = DdVec3{0, 0.7f, 0};
+        const DdColliderId id = addOne(world, car);
+
+        std::mt19937 rng(42);
+        std::uniform_real_distribution<float> dtDist(1.0f / profile.maxFps, 1.0f / profile.minFps);
+        double hostTime = 0.0;
+        float lastX = 0.0f;
+        uint64_t lastStep = 0;
+        int measured = 0;
+        for (int frame = 0; frame < 400; ++frame)
+        {
+            const float dt = dtDist(rng);
+            hostTime += dt;
+            // The host moves the car along its own (exact) trajectory and reports this frame's pose.
+            const DdTransform target{{static_cast<float>(kSpeed * hostTime), 0.7f, 0.0f}, {0, 0, 0, 1}};
+            REQUIRE(dragdoll_world_set_kinematic_targets(world, &id, &target, 1) == DD_OK);
+            uint32_t steps = 0;
+            REQUIRE(dragdoll_world_step(world, dt, &steps) == DD_OK);
+
+            DdTransform t{};
+            REQUIRE(dragdoll_world_get_collider_transform(world, id, 0, &t) == DD_OK);
+            const uint64_t step = dragdoll_world_get_step_count(world);
+            if (steps == 0)
+            {
+                CHECK(t.position.x == lastX); // No simulated time, no movement.
+            }
+            else if (frame > 10) // skip the first frames (trajectory start-up)
+            {
+                const double speed = (t.position.x - lastX) / (static_cast<double>(step - lastStep) * kFixedDt);
+                CHECK(speed == doctest::Approx(kSpeed).epsilon(0.01));
+                ++measured;
+            }
+            lastX = t.position.x;
+            lastStep = step;
+        }
+        CHECK(measured > 50);
+    }
+}
+
+TEST_CASE("kinematic: without new targets the vehicle holds its last pose")
+{
+    Library lib;
+    World world(defaultDesc());
+    DdColliderDesc car;
+    dragdoll_collider_desc_default(&car);
+    car.shape = DD_SHAPE_BOX;
+    car.motion = DD_MOTION_KINEMATIC;
+    car.half_extents = DdVec3{2.0f, 0.7f, 0.9f};
+    const DdColliderId id = addOne(world, car);
+    const DdTransform target{{3.0f, 0.0f, 0.0f}, {0, 0, 0, 1}};
+    REQUIRE(dragdoll_world_set_kinematic_targets(world, &id, &target, 1) == DD_OK);
+    for (int i = 0; i < 30; ++i)
+    {
+        REQUIRE(dragdoll_world_step(world, 1.0f / 60.0f, nullptr) == DD_OK);
+    }
+    DdTransform t{};
+    REQUIRE(dragdoll_world_get_collider_transform(world, id, 0, &t) == DD_OK);
+    CHECK(t.position.x == doctest::Approx(3.0f).epsilon(0.001));
 }

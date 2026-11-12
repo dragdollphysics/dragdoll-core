@@ -2,15 +2,9 @@
 // C ABI: world and proxy colliders (dragdoll.h).
 
 #include "capi_guard.hpp"
-#include "world.hpp"
+#include "capi_world_handle.hpp"
 
 #include <stdexcept>
-
-struct DdWorld
-{
-    explicit DdWorld(const DdWorldDesc& desc) : world(desc) {}
-    dragdoll::World world;
-};
 
 using namespace dragdoll::detail;
 

@@ -53,6 +53,7 @@ typedef enum DdResult
     DD_ERROR_ALREADY_INITIALIZED = 3,
     DD_ERROR_OUT_OF_MEMORY = 4,
     DD_ERROR_VERSION_MISMATCH = 5,
+    DD_ERROR_UNSUPPORTED = 6, /* e.g. debug drawing in a shipping build */
     DD_ERROR_INTERNAL = 100,
     DD_RESULT_FORCE_32BIT = 0x7FFFFFFF
 } DdResult;
@@ -193,8 +194,13 @@ DD_API DdResult DD_CALL dragdoll_world_add_colliders(DdWorld* world, const DdCol
 /* Remove `count` colliders in one batch. Unknown ids are ignored. */
 DD_API DdResult DD_CALL dragdoll_world_remove_colliders(DdWorld* world, const DdColliderId* ids, uint32_t count);
 
-/* Kinematic colliders: set where each one must be at the end of the next fixed step.
- * DragDoll derives the velocities, so contacts get the right impulses (e.g. a car hit). */
+/* Kinematic colliders (vehicles): set where each one is at the END of the host time covered by
+ * the next dragdoll_world_step call (i.e. this frame's pose). DragDoll time-stamps the targets
+ * and samples the host's trajectory at the exact time of every fixed step, so velocities - and
+ * therefore impact impulses - are correct at any host frame rate (30 / 60 / 144 fps, unlocked),
+ * with at most one fixed step of latency. Without new targets a collider holds its last pose.
+ * Note: a large jump between targets (a teleport) produces a large velocity; remove and re-add
+ * the collider to teleport it. */
 DD_API DdResult DD_CALL dragdoll_world_set_kinematic_targets(DdWorld* world, const DdColliderId* ids,
                                                              const DdTransform* targets, uint32_t count);
 
@@ -202,6 +208,75 @@ DD_API DdResult DD_CALL dragdoll_world_set_kinematic_targets(DdWorld* world, con
  * the interpolation alpha (for rendering); 0 returns the latest simulated state. */
 DD_API DdResult DD_CALL dragdoll_world_get_collider_transform(const DdWorld* world, DdColliderId id,
                                                               int interpolated, DdTransform* out_transform);
+
+/* ---- Characters (ragdolls built from rigs, ADR-0010) ----------------------------------- */
+/* A character is owned by its world: destroying the world destroys its characters. */
+typedef struct DdCharacter DdCharacter;
+
+/* Rig JSON compiled into the library (e.g. "humanoid16"), or NULL if unknown. Owned by DragDoll. */
+DD_API const char* DD_CALL dragdoll_get_builtin_rig(const char* name);
+
+typedef struct DdCharacterDesc
+{
+    uint32_t struct_size;  /* = sizeof(DdCharacterDesc) */
+    const char* rig_json;  /* NUL-terminated rig JSON (see packs/rigs/), e.g. dragdoll_get_builtin_rig("humanoid16") */
+    DdTransform transform; /* Where the rig origin (ground point between the feet) goes. The rig's +Y is first aligned
+                              with the world up axis, then `rotation` is applied (e.g. a heading about up). */
+    float mass_scale;      /* Multiplies the rig mass. <= 0 means 1. */
+    uint64_t user_data;    /* Opaque host value. */
+} DdCharacterDesc;
+
+/* Defaults: no rig, identity transform, mass_scale 1. */
+DD_API void DD_CALL dragdoll_character_desc_default(DdCharacterDesc* desc);
+
+/* Builds the ragdoll and adds it to the world, limp (no muscles yet). Rig errors are reported in detail by
+ * dragdoll_last_error_message(). */
+DD_API DdResult DD_CALL dragdoll_character_create(DdWorld* world, const DdCharacterDesc* desc, DdCharacter** out_character);
+
+/* Removes the character from its world. Safe with NULL. */
+DD_API void DD_CALL dragdoll_character_destroy(DdCharacter* character);
+
+/* Number of bodies (16 for humanoid16); body indices follow the rig's order. */
+DD_API uint32_t DD_CALL dragdoll_character_get_body_count(const DdCharacter* character);
+
+/* Name of a body ("pelvis", "shin_l", ...), or NULL if the index is out of range. Owned by DragDoll. */
+DD_API const char* DD_CALL dragdoll_character_get_body_name(const DdCharacter* character, uint32_t body);
+
+/* Index of the body with this name, or -1. */
+DD_API int32_t DD_CALL dragdoll_character_find_body(const DdCharacter* character, const char* name);
+
+/* Total mass in kg actually simulated. */
+DD_API float DD_CALL dragdoll_character_get_mass(const DdCharacter* character);
+
+/* World transforms of all bodies (out must hold body_count entries). interpolated != 0 blends the last two fixed steps
+ * for rendering. Capsule bodies: local +Y runs along the bone (towards the child), local +X is the character's left. */
+DD_API DdResult DD_CALL dragdoll_character_get_body_transforms(const DdCharacter* character, int interpolated,
+                                                               DdTransform* out, uint32_t capacity);
+
+/* Instant impulse (N*s) on one body, at world_point (NULL = centre of mass). */
+DD_API DdResult DD_CALL dragdoll_character_apply_impulse(DdCharacter* character, uint32_t body, DdVec3 impulse,
+                                                         const DdVec3* world_point);
+
+/* ---- Debug drawing (development builds only) ------------------------------------------ */
+/* Visualise every body of a world as lines and triangles in world space: for the workbench,
+ * the live viewer and in-game overlays. Colours are 0xAABBGGRR (little-endian RGBA bytes).
+ * Shipping builds (DRAGDOLL_DEV_TOOLS=OFF) return DD_ERROR_UNSUPPORTED. Callbacks run on the
+ * calling thread, inside dragdoll_world_debug_draw. */
+#define DD_DRAW_SHAPES 0x1u            /* Body shapes (solid). */
+#define DD_DRAW_CONSTRAINTS 0x2u       /* Joint frames. */
+#define DD_DRAW_CONSTRAINT_LIMITS 0x4u /* Joint limits: where each joint may bend. */
+
+typedef struct DdDebugDrawCallbacks
+{
+    uint32_t struct_size; /* = sizeof(DdDebugDrawCallbacks) */
+    void* user;           /* Passed back to every callback. */
+    void(DD_CALL* line)(void* user, DdVec3 from, DdVec3 to, uint32_t color);
+    void(DD_CALL* triangle)(void* user, DdVec3 a, DdVec3 b, DdVec3 c, uint32_t color);
+    uint32_t flags;       /* DD_DRAW_* bits; 0 = DD_DRAW_SHAPES */
+} DdDebugDrawCallbacks;
+
+/* Either callback may be NULL to skip that primitive type. */
+DD_API DdResult DD_CALL dragdoll_world_debug_draw(DdWorld* world, const DdDebugDrawCallbacks* callbacks);
 
 #ifdef __cplusplus
 } /* extern "C" */

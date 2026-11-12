@@ -145,15 +145,18 @@ Planned by **effort hours, not calendar weeks** (total ≈ **460 h** to v1, ±50
 * [x] C API: `DdWorld` create/destroy/step/step_fixed, interpolation alpha, state hash; proxy colliders (sphere/box/capsule/mesh; static/kinematic/dynamic; bulk add/remove; kinematic targets); up-axis setting (task 3).
 * [ ] C API: `DdCharacter`, `DdPoseBuffer`, impulses, character state readback.
 * [x] Fixed-step accumulator + interpolated output (D6) (task 3).
-* [x] **[SA]** Host-rate test: stepping with 1/25–1/30 s plus random jitter gives identical physics to a steady 120 Hz feed (task 3).
+* [x] **[SA]** Host-rate test: 25–30 fps, 60 fps mods, 144 Hz and unlocked 30–200 fps all give physics identical to a steady 120 Hz feed (tasks 3, 3b).
+* [x] **[SA]** Time-stamped kinematic targets: vehicle speed identical on every fixed step at any host frame rate (task 3b).
 * [ ] **[SA]** Jolt allocator hooks → per-world memory accounting; host-configurable worker thread count.
-* [ ] Rig JSON, `RagdollSettings` (`Stabilize`, `DisableParentChildCollisions`), anatomical joint limits, de Leva masses, CCD on limbs (D16).
+* [x] Rig JSON (`packs/rigs/humanoid16.json`, compiled in as a built-in rig), `RagdollSettings` (`Stabilize`, `DisableParentChildCollisions`), anatomical joint limits, de Leva masses, CCD on limbs (D16) (task 4).
+* [x] C API: `DdCharacter` (create/destroy, body names/transforms/mass, impulses), debug-draw flags incl. joint limits (task 4).
 * [ ] **SA spike (`dragdoll-sa` prototype):** minimal ASI (plugin-sdk) that loads the 32-bit DragDoll DLL, logs ped positions and RpHAnim bone matrices, and drops one passive ragdoll on a key press. Retires the biggest technical risk early.
-* **Acceptance:** `drop_from_1m` stable (no NaN/explosion, limits respected) on x86 and x64; golden hashes stable across thread counts 1/4/8; host-rate jitter test green; memory per world < 64 MB; SA spike runs 10 min without crash (version confirmed by plugin-sdk).
+* **Acceptance:** `drop_from_1m` (task 4: green on all presets, plus `fall_forward`, `shove_mid_fall`; awaiting human review) stable (no NaN/explosion, limits respected) on x86 and x64; golden hashes stable across thread counts 1/4/8; host-rate jitter test green; memory per world < 64 MB; SA spike runs 10 min without crash (version confirmed by plugin-sdk).
 
 ### Phase 2 — Workbench & Tooling (~80 h, can interleave with Phase 1)
 **Goal:** the development cockpit.
-* [ ] WebGPU (Dawn) + ImGui window; Jolt `DebugRenderer` implementation; time scale, click-impulse, body inspector.
+* [x] Live scenario viewer `dragdoll_view` (raylib; windowed, real time, pause/step/slow-mo, host-rate simulation, hash match HUD) + C-API debug-draw callback (Phase 1, task 3c) — the human-validation loop. Seed of the workbench.
+* [ ] WebGPU (Dawn) + ImGui window (or keep raylib if sufficient); click-impulse, body inspector.
 * [ ] Hot-reload DLL host + replay restore.
 * [ ] `.ddrec` recording, F9/F10 annotations, `dragdoll-inspect`.
 * [ ] Tracy integration; MCP bridge.
@@ -193,6 +196,7 @@ Planned by **effort hours, not calendar weeks** (total ≈ **460 h** to v1, ±50
 * [ ] **Root sync:** ped position follows DragDoll root; game physics for that ped suspended while active.
 * [ ] **Handback:** choose game get-up/death animation by face-up/down + heading; blend out.
 * [ ] **Compatibility:** exclusions (missions, cutscenes, player opt-in), SA-MP auto-disable, Hoodlum/Compact exes, `dragdoll-sa.ini` with keys familiar to existing-mod users.
+* [ ] **Frame rates:** feed DragDoll the game's real frame time (never assume 30 fps); test vanilla 25/30 fps limiter, SilentPatch 60 fps, and unlocked.
 * [ ] **[SA] Dev mode:** reload `dragdoll.dll` on a key press inside the running game; capture in-game sessions as `.ddrec` for workbench replay.
 * [ ] **[SA] Fallback:** on `failed`, hand the ped back to the game's own animation.
 * [ ] Packaging: single static-CRT ASI + ini + data. Never touches `main.scm`, `ped.ifp`, or game scripts.

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #include "world.hpp"
 
+#include "character.hpp"
+
 #include <Jolt/Core/JobSystemSingleThreaded.h>
 #include <Jolt/Core/JobSystemThreadPool.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
@@ -136,6 +138,12 @@ World::World(const DdWorldDesc& desc)
     mPhysics->Init(desc.max_bodies, 0, desc.max_bodies, desc.max_bodies, mBroadPhaseLayers, mObjectVsBroadPhase,
                    mObjectPairs);
     mPhysics->SetGravity(-mUp * desc.gravity);
+
+    // Jolt tolerates 2 cm of penetration by default; hands and feet are only 4-7 cm thick, so that much sinking into
+    // the floor is visible. 5 mm keeps contacts stable (8 position iterations on ragdolls) and invisible.
+    JPH::PhysicsSettings physicsSettings = mPhysics->GetPhysicsSettings();
+    physicsSettings.mPenetrationSlop = 0.005f;
+    mPhysics->SetPhysicsSettings(physicsSettings);
 }
 
 World::~World()
@@ -144,6 +152,12 @@ World::~World()
     {
         return;
     }
+    for (auto& [id, character] : mCharacters)
+    {
+        character->ragdoll->RemoveFromPhysicsSystem();
+    }
+    mCharacters.clear(); // Releases the ragdolls (and their bodies) while the physics system still exists.
+
     JPH::BodyInterface& bodies = mPhysics->GetBodyInterface();
     mScratchBodies.clear();
     for (const auto& [id, collider] : mColliders)
@@ -182,12 +196,18 @@ uint32_t World::step(double dt)
     {
         mAccumulator = 0.0; // Guard against rounding just below zero.
     }
+    // Host time is defined as simulated time + accumulated remainder, so dropped time (hitches)
+    // vanishes from both clocks and the two can never drift apart.
+    const double hostTimeAfter = static_cast<double>(mStepCount + steps) * mFixedDt + mAccumulator;
+    stampPendingTargets(hostTimeAfter);
     simulate(steps);
     return steps;
 }
 
 void World::stepFixed(uint32_t steps)
 {
+    // No host clock: the host advances by exactly the simulated time.
+    stampPendingTargets(static_cast<double>(mStepCount + steps) * mFixedDt + mAccumulator);
     simulate(steps);
 }
 
@@ -196,12 +216,37 @@ float World::interpolationAlpha() const
     return static_cast<float>(std::clamp(mAccumulator / mFixedDt, 0.0, 0.999999));
 }
 
+void World::stampPendingTargets(double hostTime)
+{
+    constexpr size_t kMaxSamples = 16;
+    for (auto& [id, collider] : mColliders)
+    {
+        if (!collider.hasPending)
+        {
+            continue;
+        }
+        collider.hasPending = false;
+        KinematicSample sample = collider.pending;
+        sample.time = hostTime;
+        // A newer target for the same instant replaces the older one.
+        while (!collider.samples.empty() && collider.samples.back().time >= hostTime)
+        {
+            collider.samples.pop_back();
+        }
+        collider.samples.push_back(sample);
+        if (collider.samples.size() > kMaxSamples)
+        {
+            collider.samples.erase(collider.samples.begin());
+        }
+    }
+}
+
 void World::simulate(uint32_t steps)
 {
     const float fixedDt = static_cast<float>(mFixedDt);
     for (uint32_t i = 0; i < steps; ++i)
     {
-        driveKinematics(i, steps);
+        driveKinematics(static_cast<double>(mStepCount + 1) * mFixedDt);
         const JPH::EPhysicsUpdateError error = mPhysics->Update(fixedDt, 1, mTempAllocator.get(), mJobSystem.get());
         if (error != JPH::EPhysicsUpdateError::None)
         {
@@ -210,17 +255,9 @@ void World::simulate(uint32_t steps)
         ++mStepCount;
         captureTransforms();
     }
-    // Targets are consumed by the batch that reaches them.
-    if (steps > 0)
-    {
-        for (auto& [id, collider] : mColliders)
-        {
-            collider.hasTarget = false;
-        }
-    }
 }
 
-void World::driveKinematics(uint32_t stepIndex, uint32_t stepsInBatch)
+void World::driveKinematics(double stepEndTime)
 {
     JPH::BodyInterface& bodies = mPhysics->GetBodyInterfaceNoLock();
     const float fixedDt = static_cast<float>(mFixedDt);
@@ -230,25 +267,27 @@ void World::driveKinematics(uint32_t stepIndex, uint32_t stepsInBatch)
         {
             continue;
         }
-        if (collider.hasTarget)
+        std::vector<KinematicSample>& samples = collider.samples;
+        // Drop samples that lie entirely in the past (keep one before stepEndTime as the bracket start).
+        while (samples.size() >= 2 && samples[1].time <= stepEndTime)
         {
-            if (stepIndex == 0)
-            {
-                collider.batchStartPosition = collider.currPosition;
-                collider.batchStartRotation = collider.currRotation;
-            }
-            // Spread the move evenly over the batch so velocities stay smooth.
-            const float t = static_cast<float>(stepIndex + 1) / static_cast<float>(stepsInBatch);
-            const JPH::RVec3 position =
-                collider.batchStartPosition + (collider.targetPosition - collider.batchStartPosition) * t;
-            const JPH::Quat rotation = collider.batchStartRotation.SLERP(collider.targetRotation, t).Normalized();
-            bodies.MoveKinematic(collider.body, position, rotation, fixedDt);
+            samples.erase(samples.begin());
         }
-        else
+
+        // Sample the host trajectory at exactly stepEndTime (clamped to the known range).
+        JPH::RVec3 position = samples.front().position;
+        JPH::Quat rotation = samples.front().rotation;
+        if (samples.size() >= 2 && stepEndTime > samples[0].time)
         {
-            // No new target from the host: the object stands still.
-            bodies.SetLinearAndAngularVelocity(collider.body, JPH::Vec3::sZero(), JPH::Vec3::sZero());
+            const KinematicSample& a = samples[0];
+            const KinematicSample& b = samples[1];
+            const double span = b.time - a.time;
+            const float t = span > 0.0 ? static_cast<float>(std::clamp((stepEndTime - a.time) / span, 0.0, 1.0)) : 1.0f;
+            position = a.position + (b.position - a.position) * t;
+            rotation = a.rotation.SLERP(b.rotation, t).Normalized();
         }
+        // MoveKinematic derives the velocity from the displacement; no displacement = standing still.
+        bodies.MoveKinematic(collider.body, position, rotation, fixedDt);
     }
 }
 
@@ -264,6 +303,16 @@ void World::captureTransforms()
         collider.prevPosition = collider.currPosition;
         collider.prevRotation = collider.currRotation;
         bodies.GetPositionAndRotation(collider.body, collider.currPosition, collider.currRotation);
+    }
+    for (auto& [id, character] : mCharacters)
+    {
+        DdCharacter& c = *character;
+        c.prevPosition = c.currPosition;
+        c.prevRotation = c.currRotation;
+        for (size_t i = 0; i < c.currPosition.size(); ++i)
+        {
+            bodies.GetPositionAndRotation(c.ragdoll->GetBodyID(static_cast<int>(i)), c.currPosition[i], c.currRotation[i]);
+        }
     }
 }
 
@@ -285,6 +334,24 @@ uint64_t World::stateHash() const
         hash.addFloat(rotation.GetW());
         hash.addVec3(bodies.GetLinearVelocity(collider.body));
         hash.addVec3(bodies.GetAngularVelocity(collider.body));
+    }
+    for (const auto& [id, character] : mCharacters)
+    {
+        hash.add(&id, sizeof(id));
+        for (size_t i = 0; i < character->ragdoll->GetBodyCount(); ++i)
+        {
+            const JPH::BodyID body = character->ragdoll->GetBodyID(static_cast<int>(i));
+            JPH::RVec3 position;
+            JPH::Quat rotation;
+            bodies.GetPositionAndRotation(body, position, rotation);
+            hash.addVec3(JPH::Vec3(position));
+            hash.addFloat(rotation.GetX());
+            hash.addFloat(rotation.GetY());
+            hash.addFloat(rotation.GetZ());
+            hash.addFloat(rotation.GetW());
+            hash.addVec3(bodies.GetLinearVelocity(body));
+            hash.addVec3(bodies.GetAngularVelocity(body));
+        }
     }
     return hash.value;
 }
@@ -484,7 +551,12 @@ void World::addColliders(const DdColliderDesc* descs, uint32_t count, DdCollider
         bodies.GetPositionAndRotation(collider.body, collider.currPosition, collider.currRotation);
         collider.prevPosition = collider.currPosition;
         collider.prevRotation = collider.currRotation;
-        mColliders.emplace(id, collider);
+        if (collider.motion == DD_MOTION_KINEMATIC)
+        {
+            // The trajectory starts where the collider was created, at the current host time.
+            collider.samples.push_back(KinematicSample{simTime() + mAccumulator, collider.currPosition, collider.currRotation});
+        }
+        mColliders.emplace(id, std::move(collider));
         outIds[i] = id;
     }
 }
@@ -533,9 +605,9 @@ void World::setKinematicTargets(const DdColliderId* ids, const DdTransform* targ
     for (uint32_t i = 0; i < count; ++i)
     {
         Collider& collider = mColliders.find(ids[i])->second;
-        collider.hasTarget = true;
-        collider.targetPosition = JPH::RVec3(toJolt(targets[i].position));
-        collider.targetRotation = normalizedRotation(targets[i].rotation);
+        collider.hasPending = true;
+        collider.pending.position = JPH::RVec3(toJolt(targets[i].position));
+        collider.pending.rotation = normalizedRotation(targets[i].rotation);
     }
 }
 
@@ -561,6 +633,117 @@ bool World::colliderTransform(DdColliderId id, bool interpolated, DdTransform& o
         out.rotation = toDd(collider.currRotation);
     }
     return true;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Characters
+// ---------------------------------------------------------------------------------------------
+
+DdCharacter* World::createCharacter(const DdCharacterDesc& desc)
+{
+    if (desc.struct_size != sizeof(DdCharacterDesc))
+    {
+        throw std::invalid_argument("DdCharacterDesc.struct_size mismatch (header/binary version skew?)");
+    }
+    if (desc.rig_json == nullptr)
+    {
+        throw std::invalid_argument("rig_json is required (e.g. dragdoll_get_builtin_rig(\"humanoid16\"))");
+    }
+    if (!isFinite(desc.transform.position))
+    {
+        throw std::invalid_argument("character position is not finite");
+    }
+    const float massScale = desc.mass_scale > 0.0f && std::isfinite(desc.mass_scale) ? desc.mass_scale : 1.0f;
+    const Rig rig = Rig::parse(desc.rig_json);
+
+    // Rig space (+Y up) is first aligned with the world up axis, then turned by the host's rotation.
+    const JPH::Quat rotation = normalizedRotation(desc.transform.rotation) * mYToUp;
+    const JPH::Mat44 worldFromRig = JPH::Mat44::sRotationTranslation(rotation, toJolt(desc.transform.position));
+
+    auto character = std::make_unique<DdCharacter>();
+    character->world = this;
+    character->id = mNextCharacterId;
+    character->userData = desc.user_data;
+    character->settings = buildRagdollSettings(rig, worldFromRig, massScale, character->id, character->totalMass);
+    character->ragdoll = character->settings->CreateRagdoll(character->id, desc.user_data, mPhysics.get());
+    if (character->ragdoll == nullptr)
+    {
+        throw std::runtime_error("out of bodies (raise DdWorldDesc.max_bodies)");
+    }
+    character->ragdoll->AddToPhysicsSystem(JPH::EActivation::Activate);
+
+    const size_t count = rig.bodies.size();
+    for (const RigBody& body : rig.bodies)
+    {
+        character->names.push_back(body.name);
+    }
+    character->currPosition.resize(count);
+    character->currRotation.resize(count);
+    const JPH::BodyInterface& bodies = mPhysics->GetBodyInterfaceNoLock();
+    for (size_t i = 0; i < count; ++i)
+    {
+        bodies.GetPositionAndRotation(character->ragdoll->GetBodyID(static_cast<int>(i)), character->currPosition[i],
+                                      character->currRotation[i]);
+    }
+    character->prevPosition = character->currPosition;
+    character->prevRotation = character->currRotation;
+
+    ++mNextCharacterId;
+    DdCharacter* raw = character.get();
+    mCharacters.emplace(raw->id, std::move(character));
+    return raw;
+}
+
+void World::destroyCharacter(DdCharacter* character)
+{
+    auto it = mCharacters.find(character->id);
+    if (it == mCharacters.end() || it->second.get() != character)
+    {
+        return;
+    }
+    character->ragdoll->RemoveFromPhysicsSystem();
+    mCharacters.erase(it);
+}
+
+bool World::characterTransforms(const DdCharacter& c, bool interpolated, DdTransform* out, uint32_t capacity) const
+{
+    if (capacity < c.currPosition.size())
+    {
+        return false;
+    }
+    const float alpha = interpolated ? interpolationAlpha() : 1.0f;
+    for (size_t i = 0; i < c.currPosition.size(); ++i)
+    {
+        const JPH::RVec3 position = c.prevPosition[i] + (c.currPosition[i] - c.prevPosition[i]) * alpha;
+        const JPH::Quat rotation = interpolated ? c.prevRotation[i].SLERP(c.currRotation[i], alpha).Normalized()
+                                                : c.currRotation[i];
+        out[i].position = toDd(position);
+        out[i].rotation = toDd(rotation);
+    }
+    return true;
+}
+
+void World::applyImpulse(DdCharacter& c, uint32_t body, const DdVec3& impulse, const DdVec3* point)
+{
+    if (body >= c.currPosition.size())
+    {
+        throw std::invalid_argument("apply_impulse: body index out of range");
+    }
+    if (!isFinite(impulse) || (point != nullptr && !isFinite(*point)))
+    {
+        throw std::invalid_argument("apply_impulse: impulse/point must be finite");
+    }
+    JPH::BodyInterface& bodies = mPhysics->GetBodyInterface();
+    const JPH::BodyID id = c.ragdoll->GetBodyID(static_cast<int>(body));
+    if (point != nullptr)
+    {
+        bodies.AddImpulse(id, toJolt(impulse), JPH::RVec3(toJolt(*point)));
+    }
+    else
+    {
+        bodies.AddImpulse(id, toJolt(impulse));
+    }
+    bodies.ActivateBody(id);
 }
 
 } // namespace dragdoll
