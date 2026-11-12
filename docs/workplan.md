@@ -5,6 +5,7 @@
 
 ## Manifesto (README draft)
 Games still play the same canned "fall down" clip whether you're hit by a scooter or a bus. DragDoll gives characters a body that *reacts*: it braces, wraps, tumbles, lands and gets back up — driven by physics and behaviours, not keyframes. Free, open, engine-agnostic, built from published research, and made for modders first.
+**Mission (ADR-0018):** a repeatable **workflow to replace canned reaction animations in any game** with DragDoll's active ragdoll. **Governance (ADR-0019):** community-owned from day one; the founder kickstarts, the community carries it.
 **DragDoll will never:** ship proprietary code or data, require a specific engine, or hide its cheats (any non-physical assist is explicit and off by default).
 
 ---
@@ -21,13 +22,14 @@ Games still play the same canned "fall down" clip whether you're hit by a scoote
 * ≤ 8 simultaneous ragdolls, **< 1 ms added CPU per frame** (Ryzen 9 3900X).
 * Correct exclusions: missions, cutscenes, player (opt-in), SA-MP (auto-disabled). Works on Hoodlum and Compact 1.0 US exes.
 
-Everything below serves this goal first. SA is the **first host**, not the architecture: the core stays engine-agnostic.
+Everything below serves this goal first. SA is the **first reference integration of the workflow** (ADR-0018), not the architecture: the core stays engine-agnostic, and everything learned in SA is written down as the game-agnostic Integration Workflow.
 
 Prior art: workspace file `../research/sa-ragdoll-mods.md`, kept outside the repo (teardown of 4 existing mods — none do active control).
 
 ---
 
 ## 1. Workspace & Repositories
+* All repos live under the GitHub organization **[dragdollphysics](https://github.com/dragdollphysics)** (ADR-0019).
 * `open-euphoria/` — local, **non-git** workspace (internal joke, never published). Holds research, archives, and the repos below.
 * `dragdoll-core/` — library, C API, behaviours, workbench, lab, tools, tests, scenarios, docs. Monorepo until v1.
 * `dragdoll-sa/` — San Andreas ASI plugin (separate repo; consumes the C API; created in Phase 6, spike in Phase 1).
@@ -70,6 +72,8 @@ One page each in `docs/decisions/`. Changed only by a new ADR. **Planning rule:*
 | D15 | Platforms | **Win32 x86 is first-class from day 1** (SA is 32-bit): CI builds and tests x86 and x64. Static CRT (`/MT`) for the SA DLL, no external runtime deps. WASM deferred to post-v1. |
 | D16 | Fast impacts | Jolt continuous collision (`EMotionQuality::LinearCast`) on limbs and vehicle proxies from day one (120 km/h ≈ 28 cm per 120 Hz step > shin thickness). |
 | D17 | Host output contract | Every host receives: **local-space bone rotations**, a separate **character root transform**, **per-bone blend weights**, and a **state** (`active`, `recovering`, `settled`, `dead`) plus recovery hints (face up/down, heading). Hosts supply target poses; animation playback is the host's job. |
+| D18 | Mission | A game-agnostic **Integration Workflow** (`docs/integration/`) is a first-class deliverable; SA is its first reference integration. |
+| D19 | Governance | Org-owned, copyright "The DragDoll contributors", DCO, founder as initial steward, ≥ 2 org owners after v1, `GOVERNANCE.md` at launch. |
 
 ---
 
@@ -126,7 +130,8 @@ Planned by **effort hours, not calendar weeks** (total ≈ **460 h** to v1, ±50
 * [x] ADRs D1–D17 (`docs/decisions/0001…0017`), `CLAUDE.md`, manifesto (README), `dragdoll-core` skeleton.
 * [ ] `dragdoll-sa` skeleton (deferred to the Phase 1 SA spike).
 * [x] Git identity (repo-local, GitHub noreply) + first signed-off commit.
-* [ ] GitHub repo or organization (name/visibility: user's call).
+* [x] GitHub organization `dragdollphysics` (ADR-0019).
+* [ ] `dragdollphysics/dragdoll-core` repo + first push (visibility: user's call).
 * [x] `docs/devlog.md`, `docs/ideas.md`, `docs/progress/` (§4.0).
 
 ### Phase 1 — Core Foundation + SA Spike (~60 h)
@@ -177,17 +182,19 @@ Planned by **effort hours, not calendar weeks** (total ≈ **460 h** to v1, ±50
 * [ ] **Handback:** choose game get-up/death animation by face-up/down + heading; blend out.
 * [ ] **Compatibility:** exclusions (missions, cutscenes, player opt-in), SA-MP auto-disable, Hoodlum/Compact exes, `dragdoll-sa.ini` with keys familiar to existing-mod users.
 * [ ] Packaging: single static-CRT ASI + ini + data. Never touches `main.scm`, `ped.ifp`, or game scripts.
+* [ ] **Integration Workflow v1** (`docs/integration/`, ADR-0018): the 8 steps (trigger → skeleton → world → pose → root → handback → compatibility → verify), each with the SA implementation as worked example, plus templates (trigger table, rig mapping JSON, ini skeleton, verification checklist).
 * **Acceptance:** all ship criteria in §0.
 
 ### Phase 7 — v1 Release & Launch (~30 h)
 * [ ] Side-by-side video vs existing mods; hero GIF; README with manifesto.
-* [ ] CONTRIBUTING, Contributor Covenant, DCO, issue/PR templates, `good first issue` labels, public roadmap + ADRs, GitHub Discussions.
+* [ ] `GOVERNANCE.md` (ADR-0019), CONTRIBUTING, Contributor Covenant, DCO, issue/PR templates, `good first issue` labels, public roadmap + ADRs, GitHub Discussions.
 * [ ] Optional build-in-public from Phase 4 on: short clips from `docs/progress/` posted so an audience exists on launch day.
 * [ ] Releases on GitHub + SA mod sites; devlog post. Legal note: unofficial mod, no game assets or code included.
 
 ---
 
 ## 5. After v1 (Roadmap, not commitments)
+**Community ports via the Integration Workflow** (other games through their mod loaders; engines like Godot/Unity/Unreal) — the main growth path.
 Curriculum order (frequency × visibility): **v2 shots** (`KO_shot_*`) → **v3 falls** (`FALL_*`, `FLOOR_hit*`, high falls) → **ejected from vehicles** (`CAR_fallout_*`, `BIKE_fall_off`) → **explosions** → **melee**. Then:
 * Stepping recovery (Capture-Point stepping, two-bone IK, SIMBICON-style feedback).
 * GTA III / Vice City ports (same plugin, different addresses/rig maps).

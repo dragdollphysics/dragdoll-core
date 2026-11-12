@@ -1,11 +1,11 @@
 # DragDoll — Instructions for Claude
 
-Open-source (MIT) active-ragdoll library in C++20 on Jolt Physics. **First goal: a GTA San Andreas mod where DragDoll handles pedestrians hit by vehicles** (see `docs/workplan.md` §0).
+Open-source (MIT), community-owned (ADR-0019) active-ragdoll library in C++20 on Jolt Physics, plus a **workflow to replace canned reaction animations in any game** (ADR-0018). **First goal: a GTA San Andreas mod where DragDoll handles pedestrians hit by vehicles** (see `docs/workplan.md` §0).
 
 ## Start of every session
 1. Read the last entry of `docs/devlog.md` — it says what's next.
 2. Check `docs/workplan.md` for the current phase and its checklist.
-3. Decisions live in `docs/decisions/` (ADR-0001 … 0017). Don't re-litigate them; propose a new ADR instead.
+3. Decisions live in `docs/decisions/` (ADR-0001 … 0019). Don't re-litigate them; propose a new ADR instead.
 
 ## End of every session
 Append to `docs/devlog.md`: **Changed**, **Next** (one concrete task), **Open questions**.

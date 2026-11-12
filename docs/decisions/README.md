@@ -21,6 +21,8 @@ Each ADR is one page. Change a decision only by adding a new ADR that supersedes
 | [0015](0015-platforms.md) | Win32 x86 is first-class | Accepted |
 | [0016](0016-fast-impacts.md) | Continuous collision for fast impacts | Accepted |
 | [0017](0017-host-output-contract.md) | Host input/output contract | Accepted |
+| [0018](0018-mission-any-game-workflow.md) | Mission — a workflow to replace animations in any game | Accepted |
+| [0019](0019-governance.md) | Governance — community-owned from day one | Accepted |
 
 ## Template
 ```
