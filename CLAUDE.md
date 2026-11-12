@@ -5,7 +5,7 @@ Open-source (MIT), community-owned (ADR-0019) active-ragdoll library in C++20 on
 ## Start of every session
 1. Read the last entry of `docs/devlog.md` — it says what's next.
 2. Check `docs/workplan.md` for the current phase and its checklist.
-3. Decisions live in `docs/decisions/` (ADR-0001 … 0019). Don't re-litigate them; propose a new ADR instead.
+3. Decisions live in `docs/decisions/` (ADR-0001 … 0020). Don't re-litigate them; propose a new ADR instead.
 
 ## End of every session
 Append to `docs/devlog.md`: **Changed**, **Next** (one concrete task), **Open questions**.
@@ -36,7 +36,7 @@ tests/ scenarios/ docs/
 * Jolt defines only in the `dragdoll_jolt_config` CMake target (ADR-0012).
 * Must build and pass tests on **Win32 x86 and x64** (ADR-0015). CCD on limbs and vehicles (ADR-0016).
 * C ABI naming: functions `dragdoll_*`, types `Dd*`, macros `DD_*`. C++ namespace `dragdoll::`.
-* Format with `.clang-format` (Allman, 4 spaces, 120 columns).
+* Format with `.clang-format` (Allman, 4 spaces, 120 columns). Code rules (errors, exceptions, memory, threads, naming): ADR-0020.
 
 ## Clean-room rules (ADR-0014) — non-negotiable
 * Nothing derived from Euphoria, endorphin, RAGE, or any proprietary engine or mod: no code, data, parameters, recordings, leaked material. No decompiling.

@@ -18,7 +18,7 @@ Games still play the same canned "fall down" clip whether you're hit by a scoote
 **Ship criteria**
 * Preferred over existing SA ragdoll mods in side-by-side comparison videos.
 * Throw distance vs impact speed within published reference corridors; correct impact pattern per vehicle class.
-* 0 crashes in a 4-hour play session.
+* 0 crashes in a 4-hour play session; any DragDoll failure (`failed` state) falls back to the game's own animation instead of crashing.
 * ≤ 8 simultaneous ragdolls, **< 1 ms added CPU per frame** (Ryzen 9 3900X).
 * Correct exclusions: missions, cutscenes, player (opt-in), SA-MP (auto-disabled). Works on Hoodlum and Compact 1.0 US exes.
 
@@ -69,11 +69,12 @@ One page each in `docs/decisions/`. Changed only by a new ADR. **Planning rule:*
 | D12 | Jolt build flags | Set once in `dragdoll_jolt_config` interface target, propagated everywhere. Debug renderer only in workbench; FP exceptions in Debug; no double precision. |
 | D13 | Layered architecture | TeX/LaTeX model: Layer 0 core (slow, semver) → Layer 1 behaviours built **only** on `behaviour_sdk.h` → Layer 2 data packs. Behaviour SDK becomes a C ABI only after it stabilises (≥ v0.2). |
 | D14 | Clean-room provenance | No code, data, parameters, recordings or leaked material derived from Euphoria, endorphin, RAGE, or any proprietary engine/mod in any repo. No decompiling them. Contributors exposed to leaked RAGE/Euphoria code stay out of core. Behaviours use **DragDoll's own vocabulary**. Every technique cites its published source in an ADR. Datasets carry provenance tags (`public` / `research-nc` / `private-reference`); CI + pre-commit reject `private-reference` data and anything derived from it. |
-| D15 | Platforms | **Win32 x86 is first-class from day 1** (SA is 32-bit): CI builds and tests x86 and x64. Static CRT (`/MT`) for the SA DLL, no external runtime deps. WASM deferred to post-v1. |
+| D15 | Platforms | **Win32 x86 is first-class from day 1** (SA is 32-bit): CI builds and tests x86 and x64. Static CRT (`/MT`) for the SA DLL, no external runtime deps. **Guest-process budgets:** < 64 MB memory per world (tracked via Jolt allocator hooks), worker threads configurable by the host (SA default 2–4), DragDoll never calls host code from its own threads, perf tracked on **x86 as well as x64**. WASM deferred to post-v1. |
 | D16 | Fast impacts | Jolt continuous collision (`EMotionQuality::LinearCast`) on limbs and vehicle proxies from day one (120 km/h ≈ 28 cm per 120 Hz step > shin thickness). |
-| D17 | Host output contract | Every host receives: **local-space bone rotations**, a separate **character root transform**, **per-bone blend weights**, and a **state** (`active`, `recovering`, `settled`, `dead`) plus recovery hints (face up/down, heading). Hosts supply target poses; animation playback is the host's job. |
+| D17 | Host output contract | Every host receives: **local-space bone rotations**, a separate **character root transform**, **per-bone blend weights**, and a **state** (`active`, `recovering`, `settled`, `dead`) plus recovery hints (face up/down, heading). A **`failed`** state (NaN / instability detected → character deactivated, host falls back to its own animation). **Activation from motion:** hosts hand over two consecutive poses so bodies start with the animated velocities. Hosts supply target poses; animation playback is the host's job. |
 | D18 | Mission | A game-agnostic **Integration Workflow** (`docs/integration/`) is a first-class deliverable; SA is its first reference integration. |
 | D19 | Governance | Org-owned, copyright "The DragDoll contributors", DCO, founder as initial steward, ≥ 2 org owners after v1, `GOVERNANCE.md` at launch. |
+| D20 | C++ conventions | Never throw across the ABI (noexcept + catch-all → `DdResult`), `/fp:precise`, RAII, caller-owned output buffers, no global ctors, no host callbacks from worker threads, Jolt-style naming. |
 
 ---
 
@@ -83,7 +84,7 @@ One page each in `docs/decisions/`. Changed only by a new ADR. **Planning rule:*
 * Unit tests: quaternion shortest-arc/double-cover, swing-twist decomposition, rig loading, gain conversions, up-axis handling.
 * Determinism: golden state hash per scenario per platform.
 * Headless scenario suite with numeric pass criteria; randomized seeds for success rates.
-* Perf budget tracked in CI (µs/character/step); > 10 % regression fails. Target **≤ 0.1 ms/character/step** native x64.
+* Perf budget tracked in CI (µs/character/step); > 10 % regression fails. Target **≤ 0.1 ms/character/step** native x64; x86 tracked separately. Memory per world tracked against the 64 MB guest budget (D15).
 * **Reference machine:** AMD Ryzen 9 3900X (12C/24T, AVX2, no AVX-512) + NVIDIA RTX 3080, Windows 11. All perf numbers in this plan refer to it.
 
 ### 3.2 Native Workbench (the source of everything else)
@@ -94,6 +95,7 @@ One page each in `docs/decisions/`. Changed only by a new ADR. **Planning rule:*
 
 ### 3.3 Recordings, Notes & Queries
 * `.ddrec` = input log (exact replay) + periodic snapshots (~1/s) + event stream (behaviour switches, CP outside support, contacts, joint/torque limits hit, NaN guards) + per-frame metrics.
+* **[SA] Recorded at the C API boundary:** every call a host makes (proxy colliders, kinematic paths, target poses, activations, step dt) is logged, so **any host session — e.g. a San Andreas play session — replays bit-identically in the workbench**, with breakpoints and hot reload, without the game running.
 * **Annotations:** `F9` marks a moment, `F9…F10` a range; text note + auto screenshot + camera + current params.
 * **`dragdoll-inspect`** CLI answers precise queries instead of dumping data (`--notes`, `--at T --window W --fields …`, `--render A:B --sheet` contact sheets). Token-efficient input for AI-assisted iteration.
 * Every annotated issue can become a regression scenario with a metric and threshold.
@@ -128,6 +130,8 @@ Planned by **effort hours, not calendar weeks** (total ≈ **460 h** to v1, ±50
 
 ### Phase 0 — Decisions (~10 h)
 * [x] ADRs D1–D17 (`docs/decisions/0001…0017`), `CLAUDE.md`, manifesto (README), `dragdoll-core` skeleton.
+* [x] ADR-0018 (mission), ADR-0019 (governance), ADR-0020 (C++ conventions).
+* [x] Pre-Phase-1 retrospective: six SA-readiness refinements folded into Phases 1–6 (marked **[SA]**).
 * [ ] `dragdoll-sa` skeleton (deferred to the Phase 1 SA spike).
 * [x] Git identity (repo-local, GitHub noreply) + first signed-off commit.
 * [x] GitHub organization `dragdollphysics` (ADR-0019).
@@ -139,9 +143,11 @@ Planned by **effort hours, not calendar weeks** (total ≈ **460 h** to v1, ±50
 * [ ] CMake + FetchContent (Jolt, doctest, Tracy), `dragdoll_jolt_config`, CI (x86 + x64), clang-format, `.gitignore`, `LICENSE`.
 * [ ] C API skeleton: `DdWorld`, `DdCharacter`, `DdPoseBuffer`; create/destroy/step; proxy colliders (bulk add/remove); impulses; state readback; up-axis setting.
 * [ ] Fixed-step accumulator + interpolated output (D6).
+* [ ] **[SA]** Host-rate test: stepping with 1/25–1/30 s plus random jitter gives identical physics to a steady 120 Hz feed.
+* [ ] **[SA]** Jolt allocator hooks → per-world memory accounting; host-configurable worker thread count.
 * [ ] Rig JSON, `RagdollSettings` (`Stabilize`, `DisableParentChildCollisions`), anatomical joint limits, de Leva masses, CCD on limbs (D16).
 * [ ] **SA spike (`dragdoll-sa` prototype):** minimal ASI (plugin-sdk) that loads the 32-bit DragDoll DLL, logs ped positions and RpHAnim bone matrices, and drops one passive ragdoll on a key press. Retires the biggest technical risk early.
-* **Acceptance:** `drop_from_1m` stable (no NaN/explosion, limits respected) on x86 and x64; golden hashes stable across thread counts 1/4/8; SA spike runs 10 min without crash.
+* **Acceptance:** `drop_from_1m` stable (no NaN/explosion, limits respected) on x86 and x64; golden hashes stable across thread counts 1/4/8; host-rate jitter test green; memory per world < 64 MB; SA spike runs 10 min without crash (version confirmed by plugin-sdk).
 
 ### Phase 2 — Workbench & Tooling (~80 h, can interleave with Phase 1)
 **Goal:** the development cockpit.
@@ -149,6 +155,7 @@ Planned by **effort hours, not calendar weeks** (total ≈ **460 h** to v1, ±50
 * [ ] Hot-reload DLL host + replay restore.
 * [ ] `.ddrec` recording, F9/F10 annotations, `dragdoll-inspect`.
 * [ ] Tracy integration; MCP bridge.
+* [ ] **[SA]** C-API-boundary recording + host-session replay in the workbench (a recorded host session reproduces bit-identically).
 * [ ] **Vehicle shape pack** (own geometry): sedan, sports car, SUV, van, bus, motorbike — parameterized bumper height, hood angle, windshield angle; kinematic driving at set speed/heading/braking.
 * **Acceptance:** edit → rebuild → see change without closing the window in < 15 s; a recorded session replays bit-identically; Claude can run a scenario and read a note via MCP/inspect.
 
@@ -156,8 +163,11 @@ Planned by **effort hours, not calendar weeks** (total ≈ **460 h** to v1, ±50
 **Goal:** a standing character that holds poses and stays upright under small disturbances.
 * [ ] Pose drive via motors (D8/D9); tension profiles (`tense`, `relaxed`, `limp`, `stunned`) with smooth blending.
 * [ ] Host pose input + full output contract (D17).
+* [ ] **[SA]** Activation from motion: initialise bodies from two consecutive host poses (positions + velocities); test `walk_then_activate` shows no velocity pop.
+* [ ] **[SA]** Mock 32-bone host skeleton (SA bone IDs/hierarchy as facts, own proportions) → rig mapping round-trip test.
+* [ ] **[SA]** `failed` state: NaN/energy-explosion guards deactivate the character and report it; host fallback test.
 * [ ] **Standing balance:** CoM, support polygon, Capture Point `xCP = x + v/ω`, ankle strategy, hip strategy (internal torques via stance hip). No stepping.
-* **Acceptance:** `hold_stance` — upright 60 s under 5 N·s random pokes; joint tracking error < 5° RMS; low-speed `bump_5kmh` absorbed without falling.
+* **Acceptance:** `hold_stance` — upright 60 s under 5 N·s random pokes; joint tracking error < 5° RMS; low-speed `bump_5kmh` absorbed without falling; `walk_then_activate` momentum preserved within 5 %; mock-skeleton mapping round-trip error < 0.5°; forced-NaN test ends in `failed`, never a crash.
 
 ### Phase 4 — Car-Hit Vertical Slice (~70 h)
 **Goal:** the core experience, end to end, in the workbench.
@@ -181,6 +191,8 @@ Planned by **effort hours, not calendar weeks** (total ≈ **460 h** to v1, ±50
 * [ ] **Root sync:** ped position follows DragDoll root; game physics for that ped suspended while active.
 * [ ] **Handback:** choose game get-up/death animation by face-up/down + heading; blend out.
 * [ ] **Compatibility:** exclusions (missions, cutscenes, player opt-in), SA-MP auto-disable, Hoodlum/Compact exes, `dragdoll-sa.ini` with keys familiar to existing-mod users.
+* [ ] **[SA] Dev mode:** reload `dragdoll.dll` on a key press inside the running game; capture in-game sessions as `.ddrec` for workbench replay.
+* [ ] **[SA] Fallback:** on `failed`, hand the ped back to the game's own animation.
 * [ ] Packaging: single static-CRT ASI + ini + data. Never touches `main.scm`, `ped.ifp`, or game scripts.
 * [ ] **Integration Workflow v1** (`docs/integration/`, ADR-0018): the 8 steps (trigger → skeleton → world → pose → root → handback → compatibility → verify), each with the SA implementation as worked example, plus templates (trigger table, rig mapping JSON, ini skeleton, verification checklist).
 * **Acceptance:** all ship criteria in §0.
