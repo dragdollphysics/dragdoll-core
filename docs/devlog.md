@@ -151,3 +151,39 @@ Newest entry at the bottom. Every session ends with **Changed / Next / Open ques
 * Rig option `"collide_with_parent": true` (upper arms vs chest); chest box narrowed to 0.30 m so the hanging arm has 17 mm clearance at rest. Measured deepest arm-in-chest: 1.8 mm (was visibly deep). New test asserts < 2 cm.
 * While testing it, a hand reached 2 cm below the floor: Jolt's default penetration slop (2 cm) is larger than a hand's half thickness. World now uses 5 mm. Lowest hand centre 19.2 mm (half thickness 20 mm); feet sink at most ~8 mm for one frame on landing.
 * L overlay: limit gizmos 12 cm (were 1 m), drawn 50 % transparent in a separate pass. Ground slab hidden when the camera is below the floor (grid stays).
+
+---
+
+## 2026-11-12 — Pause: SA test environment ready (usage limit)
+**Changed**
+* Founder's SA install prepared (details in Claude memory "sa-test-environment"): HOODLUM 1.0 US exe, Ultimate ASI Loader as `dinput8.dll`, dxwrapper windowed mode (`EnableD3d9Wrapper=1` was the key), intros renamed to `.bak`.
+* Founder said **"go"** for the SA test: OK to write `dragdoll_sa.asi`, the x86 `dragdoll.dll` and a log into `C:\Games\GTA San Andreas`, and to create `dragdoll-sa/` locally (next to `dragdoll-core`).
+
+**Next (resume here, Opus)** — Phase 1 SA spike, in order:
+1. Check plugin-sdk (DK22Pac): license vs MIT, how to build it for Win32 with our CMake, HOODLUM 1.0 US support. If unsuitable, report before choosing another route.
+2. `dragdoll-sa/`: git init, CMake (Win32 only, static CRT), links the x86 `dragdoll.dll` from `dragdoll-core` (x86-release or x86-ship preset).
+3. Load test: on load write `dragdoll_sa.log` (build info, detected game version), init/shutdown DragDoll.
+4. Read test: every second log player position + RpHAnim bone matrices.
+5. Drop test: key press spawns a limp humanoid16 at the player, flat ground proxy at the feet, drawn in-game via debug draw.
+6. 10-minute stability run by the founder.
+
+**Open questions**
+* Does SA keep running when the window loses focus (dxwrapper `HideWindowFocusChanges=1`)? If not, add a keep-running fix to `dragdoll_sa.asi`.
+
+---
+
+## 2026-11-12 — Phase 1 SA spike: DragDoll runs inside GTA San Andreas
+**Changed** (local, not committed)
+* New repo `dragdoll-sa/` (sibling of dragdoll-core): Win32-only CMake, plugin-sdk (zlib) pinned at `15f15b6` and built from its sources (mirrors its premake settings), dragdoll-core added as a subdirectory (portable CPU, dev tools on), `dragdoll_sa.asi` delay-loads `dragdoll.dll` from its own folder (`scripts\`, nothing in the game root). `scripts/build.ps1`, `scripts/deploy.ps1` (game folder from `-GameDir` / `DRAGDOLL_SA_GAME_DIR`).
+* dragdoll-core: `DD_DRAW_SKIP_STATIC` debug-draw flag.
+* Results on the founder's HOODLUM 1.0 US install (3 sessions, ~4, ~7 and ~4 min, 19 drops, all clean shutdowns): load test OK (game version detected), read test OK (32-bone RpHAnim skeleton, world-space bone matrices, head 0.58 m above pelvis), drop test OK (F7 limp ragdoll on a flat floor proxy at the found ground height, drawn with RwIm3D), F8 shove OK.
+* Fixed during the spike: render states leaked (now saved/restored); the floor proxy was drawn over the game's ground (now skipped); the game recentred/confined the mouse while in the background (IAT hooks on the game's `SetCursorPos`/`ClipCursor`, active only while a game window is in the foreground); the log now appends across runs.
+
+**Known issues**
+* Mouse look doesn't work in the windowed setup (menu cursor does). Independent of `HideWindowFocusChanges` (tested 0 and 1; restored to 1 so the game keeps running in the background). Likely the windowed setup vs the game's DirectInput mouse. Not needed for the spike; investigate before Phase 6.
+* One hang on the very first launch (log of that run lost); not reproduced since. Suspect a first-time antivirus scan of the new DLLs.
+* Debug colours look pale/over-bright in game (unlit vertex colours); cosmetic.
+
+**Next**
+* Commit dragdoll-sa + core change; push dragdoll-core; create `dragdollphysics/dragdoll-sa` on GitHub when the founder wants.
+* Remaining Phase 1: memory accounting (64 MB budget) + perf baseline (x86/x64).

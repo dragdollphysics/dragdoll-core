@@ -265,6 +265,7 @@ DD_API DdResult DD_CALL dragdoll_character_apply_impulse(DdCharacter* character,
 #define DD_DRAW_SHAPES 0x1u            /* Body shapes (solid). */
 #define DD_DRAW_CONSTRAINTS 0x2u       /* Joint frames. */
 #define DD_DRAW_CONSTRAINT_LIMITS 0x4u /* Joint limits: where each joint may bend. */
+#define DD_DRAW_SKIP_STATIC 0x8u       /* Leave out static bodies (proxy level geometry the host already renders). */
 
 typedef struct DdDebugDrawCallbacks
 {

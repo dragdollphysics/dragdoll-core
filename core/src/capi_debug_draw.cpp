@@ -5,6 +5,8 @@
 #include "capi_world_handle.hpp"
 
 #ifdef JPH_DEBUG_RENDERER
+    #include <Jolt/Physics/Body/Body.h>
+    #include <Jolt/Physics/Body/BodyFilter.h>
     #include <Jolt/Physics/Body/BodyManager.h>
     #include <Jolt/Renderer/DebugRendererSimple.h>
 #endif
@@ -45,6 +47,12 @@ public:
 private:
     const DdDebugDrawCallbacks& mCallbacks;
 };
+
+class SkipStaticFilter final : public JPH::BodyDrawFilter
+{
+public:
+    bool ShouldDraw(const JPH::Body& body) const override { return !body.IsStatic(); }
+};
 } // namespace
 #endif
 
@@ -66,7 +74,8 @@ DD_API DdResult DD_CALL dragdoll_world_debug_draw(DdWorld* world, const DdDebugD
         JPH::BodyManager::DrawSettings settings;
         settings.mDrawShape = true;
         settings.mDrawShapeWireframe = false;
-        world->world.physics().DrawBodies(settings, &renderer);
+        SkipStaticFilter skipStatic;
+        world->world.physics().DrawBodies(settings, &renderer, (flags & DD_DRAW_SKIP_STATIC) != 0 ? &skipStatic : nullptr);
     }
     if ((flags & DD_DRAW_CONSTRAINTS) != 0)
     {
