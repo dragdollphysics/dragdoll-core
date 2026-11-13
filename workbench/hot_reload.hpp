@@ -13,8 +13,10 @@
 
 namespace hot
 {
-// Call before the first dragdoll_* call. false = hot reload unavailable (the library still loads normally).
-bool start(std::string& error);
+// Call before the first dragdoll_* call. `dll`: the library to load and watch (empty = dragdoll.dll next to the exe;
+// e.g. the exact DLL a game used, to replay its recording bit-identically). false = hot reload unavailable (the
+// library next to the exe still loads normally).
+bool start(const std::string& dll, std::string& error);
 
 // Polled about twice a second: true once bin/dragdoll.dll has changed and stayed unchanged for one poll
 // (the linker has finished writing it).

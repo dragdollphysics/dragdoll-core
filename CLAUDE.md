@@ -5,7 +5,7 @@ Open-source (MIT), community-owned (ADR-0019) active-ragdoll library in C++20 on
 ## Start of every session
 1. Read the last entry of `docs/devlog.md` — it says what's next.
 2. Check `docs/workplan.md` for the current phase and its checklist.
-3. Decisions live in `docs/decisions/` (ADR-0001 … 0021). Don't re-litigate them; propose a new ADR instead.
+3. Decisions live in `docs/decisions/` (ADR-0001 … 0022). Don't re-litigate them; propose a new ADR instead.
 
 ## End of every session
 Append to `docs/devlog.md`: **Changed**, **Next** (one concrete task), **Open questions**.

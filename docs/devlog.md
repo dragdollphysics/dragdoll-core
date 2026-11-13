@@ -323,3 +323,22 @@ Crowd question (car through the pier) → cost is linear in awake ragdolls (~70 
 
 **Open questions**
 * None new.
+
+---
+
+## 2026-11-13 — Phase 2, task 2.5: SA session capture + bit-identical replay (ADR-0022)
+**Changed** (local, not committed; dragdoll-core + dragdoll-sa)
+* Decision ADR-0022 (option A): recordings replay through the build that made them. Viewer now built on x86 dev presets too (`DRAGDOLL_BUILD_VIEWER` default = dev tools on); `--dll <path>` loads/hot-reloads a given `dragdoll.dll`; `watch.ps1 -Replay` reads the header, picks the x86 viewer for x86 recordings and the game's `scripts\dragdoll.dll` (via `DRAGDOLL_SA_GAME_DIR` or `-Dll`).
+* dragdoll-sa: every F7 drop creates a fresh world recording to `scripts\dragdoll_recordings\sa_YYYYMMDD_HHMMSS.ddrec` (previous world destroyed = recording closed); F9 adds a flushed "F9 mark in game at step N" note. F8 now pushes away from CJ (CJ -> chest line) instead of along his facing (founder: the ragdoll went where CJ looked).
+* Viewer replays: camera jumps to the first character once it exists, F re-centres; the grid follows the camera target (SA sits ~2.5 km from the origin — founder saw "nothing on the grid").
+* **Verified:** founder SA session (958 frames, 35.7 s, many F8 shoves, F9 at step 3682): x86 inspect + game DLL "identical to the original at every frame"; x64 "DIVERGED". Founder: replay "matches" the game. 4 dev presets green.
+
+**Known limits**
+* A recording is tied to its DLL; rebuilding the game DLL makes older recordings "another build".
+* A killed game leaves a truncated last record, and replay rejects truncated files: consider replaying up to the last complete frame (idea).
+
+**Next**
+* Task 2.6 (Sonnet): vehicle shape pack (SA vehicle proxies as JSON).
+
+**Open questions**
+* F8 direction change not yet tried in game.

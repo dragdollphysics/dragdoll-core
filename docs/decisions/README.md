@@ -25,6 +25,7 @@ Each ADR is one page. Change a decision only by adding a new ADR that supersedes
 | [0019](0019-governance.md) | Governance — community-owned from day one | Accepted |
 | [0020](0020-cpp-conventions.md) | C++ conventions | Accepted |
 | [0021](0021-workbench-raylib.md) | The workbench starts on raylib | Accepted |
+| [0022](0022-replay-with-the-recording-build.md) | Recordings replay through the build that made them | Accepted |
 
 ## Template
 ```

@@ -73,9 +73,9 @@ extern "C" const PfnDliHook __pfnDliNotifyHook2 = delayLoadHook;
 
 namespace hot
 {
-bool start(std::string& error)
+bool start(const std::string& dll, std::string& error)
 {
-    g_source = exeDirectory() / kDllName;
+    g_source = dll.empty() ? exeDirectory() / kDllName : fs::absolute(fs::path(dll));
     // Leftover copies from earlier runs (ones still loaded by another viewer just fail to delete).
     std::error_code ec;
     for (const fs::directory_entry& entry : fs::directory_iterator(exeDirectory() / "hot", ec))

@@ -166,7 +166,7 @@ Planned by **effort hours, not calendar weeks** (total ≈ **460 h** to v1, ±50
 * [x] `.ddrec` recording at the C API boundary + replay (`dragdoll_replay_*`), notes (`dragdoll_world_record_note`), viewer `--record` / `--replay` + F9 marks (task 2.1).
 * [x] F9 annotations with typed text + screenshot (`<recording>_step<N>.png`), `dragdoll_inspect` (summary, notes with screenshot paths, `--motion`, `--body`) (tasks 2.1, 2.2). Not yet: `--at/--window/--fields`, `--render` contact sheets (add when a session needs them).
 * [ ] Tracy integration; MCP bridge.
-* [~] **[SA]** C-API-boundary recording + host-session replay in the workbench: core done (task 2.1); SA plugin capture + cross-build (x86 game → x64 viewer) determinism decision in task 2.5.
+* [x] **[SA]** C-API-boundary recording + host-session replay in the workbench (task 2.1); SA plugin records every F7 drop (`scripts\dragdoll_recordings\sa_*.ddrec`, F9 marks) and replays bit-identically in the x86 viewer with the game's DLL (ADR-0022, task 2.5).
 * [ ] **Vehicle shape pack** (own geometry): sedan, sports car, SUV, van, bus, motorbike — parameterized bumper height, hood angle, windshield angle; kinematic driving at set speed/heading/braking.
 * **Acceptance:** edit → rebuild → see change without closing the window in < 15 s; a recorded session replays bit-identically; Claude can run a scenario and read a note via MCP/inspect.
 

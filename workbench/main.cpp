@@ -172,7 +172,10 @@ void drawGrid(const OrbitCamera& cam)
 {
     Vector3 e1, e2;
     horizontalBasis(cam.up, e1, e2);
-    const Vector3 lift = Vector3Scale(cam.up, 0.004f);
+    const float snap = 5.0f;
+    const Vector3 centre = Vector3Add(Vector3Scale(e1, std::round(Vector3DotProduct(cam.target, e1) / snap) * snap),
+                                      Vector3Scale(e2, std::round(Vector3DotProduct(cam.target, e2) / snap) * snap));
+    const Vector3 lift = Vector3Add(centre, Vector3Scale(cam.up, 0.004f));
     rlBegin(RL_LINES);
     for (int i = -30; i <= 30; ++i)
     {
@@ -270,6 +273,7 @@ struct App
     uint64_t replayNoteFrame = 0;
     double replayNoteTimer = 0.0;
     std::string replayBuild;
+    bool replayFocusPending = false; // Centre the camera on the ragdoll once it exists
 
     // F9 annotation (record mode): the sim pauses, the user types a note, Enter saves it plus a screenshot.
     bool noteEditing = false;
@@ -448,7 +452,27 @@ bool openReplay(App& app, bool resetCamera)
         app.camera.up = Vector3Normalize(toRay(app.replayInfo.up));
         app.camera.target = Vector3Scale(app.camera.up, 0.8f);
         app.camera.distance = 8.0f;
+        app.replayFocusPending = true;
     }
+    return true;
+}
+
+// Centres the camera on the first character's root body (e.g. SA recordings sit at map coordinates ~km from 0).
+bool focusCharacter(App& app)
+{
+    DdWorld* world = app.replay != nullptr ? dragdoll_replay_get_world(app.replay) : app.main.world;
+    DdCharacter* c = world != nullptr ? dragdoll_world_get_character(world, 0) : nullptr;
+    if (c == nullptr)
+    {
+        return false;
+    }
+    std::vector<DdTransform> bodies(dragdoll_character_get_body_count(c)); // The call fills all bodies or none
+    if (bodies.empty() || dragdoll_character_get_body_transforms(c, 1, bodies.data(), static_cast<uint32_t>(bodies.size())) != DD_OK)
+    {
+        return false;
+    }
+    app.camera.target = toRay(bodies[0].position);
+    app.camera.distance = 6.0f;
     return true;
 }
 
@@ -541,7 +565,7 @@ void drawReplayHud(App& app)
     }
     if (app.showHelp)
     {
-        DrawText("Space pause | N next frame | Up/Down time scale | R restart | A auto-restart | L joint limits | H hide help | left-drag orbit | middle-drag pan | wheel zoom",
+        DrawText("Space pause | N next frame | Up/Down time scale | R restart | F focus ragdoll | A auto-restart | L joint limits | H hide help | left-drag orbit | middle-drag pan | wheel zoom",
                  x, GetScreenHeight() - 28, 16, Color{170, 175, 185, 255});
     }
     DrawFPS(GetScreenWidth() - 90, 10);
@@ -1157,7 +1181,7 @@ void drawPanels(App& app, BodyMotion& motion)
 int main(int argc, char** argv)
 {
     std::string start = "car_vs_pole_120kmh";
-    std::string recordPath, replayPath, rigPath;
+    std::string recordPath, replayPath, rigPath, dllPath;
     HostMode initialMode = HostMode::Real;
     for (int i = 1; i < argc; ++i)
     {
@@ -1178,6 +1202,10 @@ int main(int argc, char** argv)
         {
             recordPath = argv[++i];
         }
+        else if (std::strcmp(argv[i], "--dll") == 0 && i + 1 < argc)
+        {
+            dllPath = argv[++i];
+        }
         else if (std::strcmp(argv[i], "--rig") == 0 && i + 1 < argc)
         {
             rigPath = argv[++i];
@@ -1193,7 +1221,12 @@ int main(int argc, char** argv)
     }
 
     std::string hotError;
-    const bool hotEnabled = hot::start(hotError); // Must precede the first dragdoll_* call
+    const bool hotEnabled = hot::start(dllPath, hotError); // Must precede the first dragdoll_* call
+    if (!dllPath.empty() && !hotEnabled)
+    {
+        std::fprintf(stderr, "cannot use --dll %s: %s\n", dllPath.c_str(), hotError.c_str());
+        return 1; // Never silently replay with a different library
+    }
     if (dragdoll_init(DD_API_VERSION) != DD_OK)
     {
         std::fprintf(stderr, "dragdoll_init failed: %s\n", dragdoll_last_error_message());
@@ -1255,7 +1288,8 @@ int main(int argc, char** argv)
         if (keyPressed(app, KEY_R) && app.replay != nullptr) openReplay(app, false);
         else if (keyPressed(app, KEY_R)) loadScenario(app, app.scenarioIndex, false); // restart the animation, keep the camera
         if (keyPressed(app, KEY_TAB) && app.replay == nullptr) loadScenario(app, app.scenarioIndex + (IsKeyDown(KEY_LEFT_SHIFT) ? app.names.size() - 1 : 1), false); // keep the camera
-        if (keyPressed(app, KEY_F)) app.hostMode = static_cast<HostMode>((static_cast<int>(app.hostMode) + 1) % static_cast<int>(HostMode::Count));
+        if (keyPressed(app, KEY_F) && app.replay != nullptr) focusCharacter(app);
+        else if (keyPressed(app, KEY_F)) app.hostMode = static_cast<HostMode>((static_cast<int>(app.hostMode) + 1) % static_cast<int>(HostMode::Count));
         if (keyPressed(app, KEY_UP)) app.timeScale = std::min(app.timeScale * 2.0f, 4.0f);
         if (keyPressed(app, KEY_DOWN)) app.timeScale = std::max(app.timeScale * 0.5f, 0.0625f);
         if (keyPressed(app, KEY_N) && app.replay != nullptr)
@@ -1289,6 +1323,10 @@ int main(int argc, char** argv)
         if (app.replay != nullptr)
         {
             updateReplay(app, GetFrameTime());
+            if (app.replayFocusPending && focusCharacter(app))
+            {
+                app.replayFocusPending = false;
+            }
         }
         else if (app.main.world != nullptr)
         {
