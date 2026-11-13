@@ -289,3 +289,19 @@ Crowd question (car through the pier) → cost is linear in awake ragdolls (~70 
 
 **Open questions**
 * DCO sign-off missing on pushed 44fa192.
+
+---
+
+## 2026-11-13 — Phase 2, task 2.4 (first slice): live rig editing
+**Changed** (local, not committed)
+* Scenarios: `setRigOverride(json)` / `rigJson()` — the ragdoll scenarios use the override when set (viewer only; tests always use the built-in rig).
+* Viewer `--rig <file>` (passed by `watch.ps1` = the repo's `packs/rigs/humanoid16.json`): polled every 0.5 s, reloads on save and restarts the scenario (camera kept). Every rig is first built in a scratch world; a broken one is refused with the library's error and the last good rig stays.
+* **Rig (live)** panel: per-joint friction sliders (0-10 N*m, applied on release), Save to file (rewrites only the friction numbers, keeps the hand formatting), Revert. nlohmann/json linked into the viewer.
+* `watch.ps1 -Rig <file>` edits a copy instead of the repo rig. Save verified on a copy: all 15 friction values rewritten, every other byte of the file unchanged, still valid JSON.
+* Founder: "Works well". 4 dev presets green.
+
+**Next**
+* Task 2.4 second slice (Opus): hot-reload DLL host (viewer loads dragdoll.dll through a function table, rebuild -> swap without closing the window) + restore by replaying the running session's recording.
+
+**Open questions**
+* None new.

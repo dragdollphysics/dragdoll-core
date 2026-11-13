@@ -41,7 +41,7 @@ if(MSVC)
 endif()
 
 add_executable(dragdoll_view main.cpp)
-target_link_libraries(dragdoll_view PRIVATE dragdoll_scenarios raylib dragdoll_imgui)
+target_link_libraries(dragdoll_view PRIVATE dragdoll_scenarios raylib dragdoll_imgui nlohmann_json::nlohmann_json)
 if(MSVC)
     # Dev tool: don't let third-party header warnings fail the build.
     target_compile_options(dragdoll_view PRIVATE /W3 /utf-8)

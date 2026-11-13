@@ -315,7 +315,7 @@ public:
         addGround(world, DdVec3{0.0f, 0.0f, 1.0f});
         DdCharacterDesc desc;
         dragdoll_character_desc_default(&desc);
-        desc.rig_json = dragdoll_get_builtin_rig("humanoid16");
+        desc.rig_json = rigJson();
         desc.transform.position = mOrigin;
         desc.transform.rotation = mRotation;
         dragdoll_character_create(world, &desc, &mCharacter);
@@ -538,6 +538,25 @@ uint32_t Instance::hostFrame(float dt)
     uint32_t steps = 0;
     dragdoll_world_step(world, dt, &steps);
     return steps;
+}
+
+namespace
+{
+std::string& rigOverride()
+{
+    static std::string json;
+    return json;
+}
+} // namespace
+
+void setRigOverride(std::string json)
+{
+    rigOverride() = std::move(json);
+}
+
+const char* rigJson()
+{
+    return rigOverride().empty() ? dragdoll_get_builtin_rig("humanoid16") : rigOverride().c_str();
 }
 
 } // namespace dragdoll::scenarios

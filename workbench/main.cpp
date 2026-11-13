@@ -12,12 +12,16 @@
 #include <rlgl.h>
 
 #include <imgui.h>
+#include <nlohmann/json.hpp>
 #include <rlImGui.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <random>
 #include <string>
 #include <vector>
@@ -275,6 +279,14 @@ struct App
     // recorded and replays like any other input.
     float pushStrength = 40.0f; // N*s
     std::string lastPush;
+
+    // Live rig editing (task 2.4): --rig <file> is watched; the Rig panel edits joint friction in memory.
+    std::string rigPath;
+    std::filesystem::file_time_type rigFileTime{};
+    double rigNextCheck = 0.0;
+    nlohmann::json rigDoc; // What the ragdoll currently uses (file + unsaved edits)
+    bool rigEdited = false;
+    std::string rigStatus;
 };
 
 // While a note is being typed, hotkeys are off.
@@ -759,8 +771,188 @@ void pushBodyUnderMouse(App& app)
     app.lastPush = text;
 }
 
+// ------------------------------------------------------------------------------------------------
+// Live rig editing
+// ------------------------------------------------------------------------------------------------
+// Builds a character from `json` in a scratch world: "" if the rig is valid, otherwise the library's error.
+std::string validateRig(const std::string& json)
+{
+    DdWorldDesc desc;
+    dragdoll_world_desc_default(&desc);
+    DdWorld* world = nullptr;
+    if (dragdoll_world_create(&desc, &world) != DD_OK)
+    {
+        return dragdoll_last_error_message();
+    }
+    DdCharacterDesc cd;
+    dragdoll_character_desc_default(&cd);
+    cd.rig_json = json.c_str();
+    DdCharacter* c = nullptr;
+    std::string error;
+    if (dragdoll_character_create(world, &cd, &c) != DD_OK)
+    {
+        error = dragdoll_last_error_message();
+    }
+    dragdoll_world_destroy(world);
+    return error;
+}
+
+// Makes `json` the rig of the ragdoll scenarios and restarts the current one (camera kept). A broken rig is refused
+// and the previous one stays in use.
+bool useRig(App& app, const std::string& json)
+{
+    const std::string error = validateRig(json);
+    if (!error.empty())
+    {
+        app.rigStatus = "NOT applied: " + error;
+        return false;
+    }
+    dragdoll::scenarios::setRigOverride(json);
+    if (app.replay == nullptr)
+    {
+        loadScenario(app, app.scenarioIndex, false);
+    }
+    return true;
+}
+
+void loadRigFile(App& app)
+{
+    std::error_code ec;
+    app.rigFileTime = std::filesystem::last_write_time(app.rigPath, ec);
+    std::ifstream in(std::filesystem::path(app.rigPath), std::ios::binary);
+    std::stringstream text;
+    text << in.rdbuf();
+    if (!in)
+    {
+        app.rigStatus = "cannot read " + app.rigPath;
+        return;
+    }
+    nlohmann::json doc = nlohmann::json::parse(text.str(), nullptr, false);
+    if (doc.is_discarded())
+    {
+        app.rigStatus = "NOT applied: the file is not valid JSON";
+        return;
+    }
+    if (useRig(app, text.str()))
+    {
+        app.rigDoc = std::move(doc);
+        app.rigEdited = false;
+        app.rigStatus = "loaded from file";
+    }
+}
+
+void watchRigFile(App& app)
+{
+    if (app.rigPath.empty() || GetTime() < app.rigNextCheck)
+    {
+        return;
+    }
+    app.rigNextCheck = GetTime() + 0.5;
+    std::error_code ec;
+    const auto time = std::filesystem::last_write_time(app.rigPath, ec);
+    if (!ec && time != app.rigFileTime)
+    {
+        loadRigFile(app); // Saved in an editor: reload (drops unsaved slider edits)
+    }
+}
+
+std::string formatNumber(float v)
+{
+    char buffer[32];
+    std::snprintf(buffer, sizeof(buffer), "%.2f", v);
+    std::string text = buffer;
+    while (text.size() > 3 && text.back() == '0' && text[text.size() - 2] != '.') text.pop_back();
+    return text;
+}
+
+// Writes the edited friction values into the rig file, touching only those numbers (keeps the hand formatting).
+void saveFriction(App& app)
+{
+    std::ifstream in(std::filesystem::path(app.rigPath), std::ios::binary);
+    std::stringstream buffer;
+    buffer << in.rdbuf();
+    std::string text = buffer.str();
+    int written = 0;
+    for (const nlohmann::json& body : app.rigDoc["bodies"])
+    {
+        if (!body.contains("joint") || !body["joint"].contains("friction"))
+        {
+            continue;
+        }
+        const size_t name = text.find("\"name\": \"" + body["name"].get<std::string>() + "\"");
+        const size_t next = name == std::string::npos ? std::string::npos : text.find("\"name\":", name + 8);
+        size_t key = name == std::string::npos ? std::string::npos : text.find("\"friction\":", name);
+        if (key == std::string::npos || (next != std::string::npos && key > next))
+        {
+            continue;
+        }
+        size_t from = key + 11;
+        while (from < text.size() && text[from] == ' ') ++from;
+        size_t to = from;
+        while (to < text.size() && std::strchr("0123456789.-+eE", text[to]) != nullptr) ++to;
+        text.replace(from, to - from, formatNumber(body["joint"]["friction"].get<float>()));
+        ++written;
+    }
+    std::ofstream out(std::filesystem::path(app.rigPath), std::ios::binary | std::ios::trunc);
+    out << text;
+    out.close();
+    if (!out)
+    {
+        app.rigStatus = "could not write " + app.rigPath;
+        return;
+    }
+    std::error_code ec;
+    app.rigFileTime = std::filesystem::last_write_time(app.rigPath, ec); // Already in use: no reload
+    app.rigEdited = false;
+    app.rigStatus = "saved " + std::to_string(written) + " friction values to the file";
+}
+
+void drawRigPanel(App& app)
+{
+    if (app.rigPath.empty() || app.replay != nullptr || !app.rigDoc.contains("bodies"))
+    {
+        return;
+    }
+    ImGui::SetNextWindowPos(ImVec2(10.0f, 260.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(300.0f, 470.0f), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Rig (live)"))
+    {
+        ImGui::TextWrapped("%s%s", fileNameOf(app.rigPath).c_str(), app.rigEdited ? "  (edited, not saved)" : "");
+        ImGui::TextDisabled("Saving the file in an editor reloads it.");
+        if (!app.rigStatus.empty()) ImGui::TextWrapped("%s", app.rigStatus.c_str());
+        ImGui::BeginDisabled(!app.rigEdited);
+        if (ImGui::Button("Save to file")) saveFriction(app);
+        ImGui::SameLine();
+        if (ImGui::Button("Revert")) loadRigFile(app);
+        ImGui::EndDisabled();
+        ImGui::SeparatorText("Joint friction (N*m)");
+        for (nlohmann::json& body : app.rigDoc["bodies"])
+        {
+            if (!body.contains("joint"))
+            {
+                continue;
+            }
+            nlohmann::json& joint = body["joint"];
+            float friction = joint.value("friction", 0.0f);
+            const std::string name = body["name"].get<std::string>();
+            ImGui::SetNextItemWidth(150.0f);
+            if (ImGui::SliderFloat(name.c_str(), &friction, 0.0f, 10.0f, "%.2f"))
+            {
+                joint["friction"] = friction;
+            }
+            if (ImGui::IsItemDeactivatedAfterEdit() && useRig(app, app.rigDoc.dump()))
+            {
+                app.rigEdited = true; // Applied on release: the scenario restarts with the new value
+                app.rigStatus = name + " friction " + formatNumber(friction) + " applied";
+            }
+        }
+    }
+    ImGui::End();
+}
+
 void drawPanels(App& app, BodyMotion& motion)
 {
+    drawRigPanel(app);
     const float w = static_cast<float>(GetScreenWidth());
     const bool replaying = app.replay != nullptr;
 
@@ -862,7 +1054,7 @@ void drawPanels(App& app, BodyMotion& motion)
 int main(int argc, char** argv)
 {
     std::string start = "car_vs_pole_120kmh";
-    std::string recordPath, replayPath;
+    std::string recordPath, replayPath, rigPath;
     HostMode initialMode = HostMode::Real;
     for (int i = 1; i < argc; ++i)
     {
@@ -882,6 +1074,10 @@ int main(int argc, char** argv)
         else if (std::strcmp(argv[i], "--record") == 0 && i + 1 < argc)
         {
             recordPath = argv[++i];
+        }
+        else if (std::strcmp(argv[i], "--rig") == 0 && i + 1 < argc)
+        {
+            rigPath = argv[++i];
         }
         else if (std::strcmp(argv[i], "--replay") == 0 && i + 1 < argc)
         {
@@ -906,6 +1102,7 @@ int main(int argc, char** argv)
     // Recording: a restart would start a new recording. Replay: stop on the last frame so it can be inspected.
     app.autoRestart = recordPath.empty() && replayPath.empty();
     app.replayPath = replayPath;
+    app.rigPath = rigPath;
     size_t index = 0;
     for (size_t i = 0; i < app.names.size(); ++i)
     {
@@ -922,6 +1119,10 @@ int main(int argc, char** argv)
     ImGui::GetIO().IniFilename = nullptr; // No imgui.ini next to the exe
     SetExitKey(KEY_NULL); // Esc quits unless a note is being typed (see the loop condition)
 
+    if (!app.rigPath.empty())
+    {
+        loadRigFile(app); // Installs the file's rig for the scenarios (the scenario is (re)loaded below)
+    }
     if (!app.replayPath.empty())
     {
         openReplay(app, true);
@@ -937,6 +1138,7 @@ int main(int argc, char** argv)
     BodyMotion motion;
     while (!WindowShouldClose() && !(IsKeyPressed(KEY_ESCAPE) && !app.noteEditing))
     {
+        watchRigFile(app);
         // --- input ---
         if (keyPressed(app, KEY_SPACE)) app.paused = !app.paused;
         if (keyPressed(app, KEY_H)) app.showHelp = !app.showHelp;

@@ -65,6 +65,11 @@ float hingeBendDegrees(const DdTransform& parent, const DdTransform& child);
 // Names of all registered scenarios, in a stable order.
 std::vector<std::string> list();
 
+// Rig JSON used by the ragdoll scenarios: the built-in humanoid16 unless overridden (the viewer's live rig editing).
+// Tests never override it. An empty string restores the built-in rig.
+void setRigOverride(std::string json);
+const char* rigJson();
+
 // Creates a scenario by name; nullptr if unknown.
 std::unique_ptr<Scenario> create(const std::string& name);
 

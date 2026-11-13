@@ -17,7 +17,8 @@ param(
     [ValidateSet(0, 30, 60, 144)]
     [int]$Fps = 0,
     [string]$Record,   # record the run to this .ddrec file (F9 adds a note)
-    [string]$Replay    # play this .ddrec file instead of a scenario
+    [string]$Replay,   # play this .ddrec file instead of a scenario
+    [string]$Rig       # rig file to watch and edit live (default: packs/rigs/humanoid16.json)
 )
 
 $ErrorActionPreference = 'Stop'
@@ -39,6 +40,9 @@ if ($List) {
 }
 
 $viewerArgs = @($Scenario)
+# Live rig editing: the viewer watches the repo's rig file and reloads the ragdoll whenever it is saved.
+$rigFile = if ($Rig) { (Resolve-Path -LiteralPath $Rig).Path } else { Join-Path $repoRoot 'packs\rigs\humanoid16.json' }
+$viewerArgs += @('--rig', "`"$rigFile`"")
 if ($Fps -ne 0) { $viewerArgs += @('--fps', $Fps) }
 if ($Record) { $viewerArgs += @('--record', "`"$((Resolve-Path -LiteralPath (Split-Path $Record -Parent)).Path)\$(Split-Path $Record -Leaf)`"") }
 if ($Replay) { $viewerArgs += @('--replay', "`"$((Resolve-Path -LiteralPath $Replay).Path)`"") }
