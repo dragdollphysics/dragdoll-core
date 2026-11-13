@@ -54,7 +54,7 @@ Presets: `x64-debug`, `x64-release`, `x86-debug`, `x86-release`, `x86-ship` (SA 
 * x86 presets set `DRAGDOLL_PORTABLE_CPU=ON` (SSE4.2, no AVX/FMA) for players' older machines; x64 uses AVX2+FMA.
 
 ## Live viewer (human validation loop)
-`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/watch.ps1 <scenario> [-Build] [-Fps 30|60|144]` opens `dragdoll_view` detached (x64-release, no focus steal; closes any previous viewer first). `-List` prints scenario names. Scenarios live in `scenarios/` (C API only) and are shared with the unit tests. After building something visual, launch the relevant scenario and ask the user for a verdict ("looks fine" / "looks odd" = a real defect). Don't take screenshots to judge (costs their usage).
+`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/watch.ps1 <scenario> [-Build] [-Fps 30|60|144]` opens `dragdoll_view` detached (x64-release, no focus steal; closes any previous viewer first). `-List` prints scenario names. Scenarios live in `scenarios/` (C API only) and are shared with the unit tests. After building something visual, launch the relevant scenario and ask the user for a verdict ("looks fine" / "looks odd" = a real defect). Don't take screenshots to judge (costs their usage). To drive a running viewer and read exact numbers: `build/x64-release/bin/dragdoll_ctl.exe <command>` (`help` lists them; `state` = per-body positions/speeds as JSON).
 
 ## Commits
 DCO sign-off on every commit (`git commit -s`). Commit only when the user asks.

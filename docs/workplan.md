@@ -165,7 +165,8 @@ Planned by **effort hours, not calendar weeks** (total ≈ **460 h** to v1, ±50
 * [x] Hot-reload DLL host: viewer delay-loads `dragdoll.dll` from a shadow copy (`bin/hot/`), rebuild -> unload + swap without closing the window, session restored from its inputs (scenario fast-forwarded to the same step with the recorded pushes, or the replay to the same frame) (task 2.4). Joint-limit sliders: add when needed.
 * [x] `.ddrec` recording at the C API boundary + replay (`dragdoll_replay_*`), notes (`dragdoll_world_record_note`), viewer `--record` / `--replay` + F9 marks (task 2.1).
 * [x] F9 annotations with typed text + screenshot (`<recording>_step<N>.png`), `dragdoll_inspect` (summary, notes with screenshot paths, `--motion`, `--body`) (tasks 2.1, 2.2). Not yet: `--at/--window/--fields`, `--render` contact sheets (add when a session needs them).
-* [ ] Tracy integration; MCP bridge.
+* [x] Command channel: viewer listens on 127.0.0.1:47820 (`--port`), `dragdoll_ctl` sends one command and prints a JSON reply: list, load, restart, pause/resume, step N, timescale, autorestart, state (step, hash, HUD lines, per-body position/speed/spin in mm precision), push, note, shot (task 2.7).
+* [~] Tracy moved to Phase 6 (optimisation needs it; `dragdoll_bench` + `bench_budget` already catch regressions). Thin MCP wrapper over the command channel only if `dragdoll_ctl` via the shell proves insufficient.
 * [x] **[SA]** C-API-boundary recording + host-session replay in the workbench (task 2.1); SA plugin records every F7 drop (`scripts\dragdoll_recordings\sa_*.ddrec`, F9 marks) and replays bit-identically in the x86 viewer with the game's DLL (ADR-0022, task 2.5).
 * [x] **Vehicle shape pack** (own geometry): sedan, sports car, SUV, van, bus, motorbike — parameterized bumper height, hood angle, windshield angle; kinematic driving at set speed/heading/braking (`packs/vehicles/*.json`, `scenarios/vehicles.hpp`, `hit_<class>_40kmh`, task 2.6).
 * **Acceptance:** edit → rebuild → see change without closing the window in < 15 s; a recorded session replays bit-identically; Claude can run a scenario and read a note via MCP/inspect.
@@ -201,6 +202,7 @@ Planned by **effort hours, not calendar weeks** (total ≈ **460 h** to v1, ±50
 * [ ] **Pose override:** write local bone rotations into the RpHAnim hierarchy after the game's animation update; per-bone weights.
 * [ ] **Root sync:** ped position follows DragDoll root; game physics for that ped suspended while active.
 * [ ] **Handback:** choose game get-up/death animation by face-up/down + heading; blend out.
+* [ ] **Tracy profiler zones** (moved from Phase 2, task 2.7): step, solver, character update, collider streaming; first tool for the 1 ms / 8-ragdoll target. Founder installs the Tracy viewer app.
 * [ ] **Outcome tiers + ragdoll budget manager** (founder's idea, 2026-11-12): the host tells DragDoll the outcome when it activates a ped (`DD_OUTCOME_KILLED` / `DD_OUTCOME_SURVIVES`; SA knows the ped's health after the hit).
   * **Killed → limp tier (cheapest):** no muscles, no perception/behaviour work, fewer solver iterations, early sleep; once settled the pose is frozen/handed back as a corpse (≈ zero cost afterwards).
   * **Survives → active tier:** full behaviour chain (anticipate, guard, curl, land), then hand back to the game's get-up animation as soon as recovered (short active lifetime).

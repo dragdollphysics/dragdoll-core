@@ -11,6 +11,7 @@
 #include <raymath.h>
 #include <rlgl.h>
 
+#include "command_server.hpp"
 #include "hot_reload.hpp"
 
 #include <imgui.h>
@@ -296,6 +297,7 @@ struct App
 
     // Hot reload of dragdoll.dll (task 2.4)
     bool hotEnabled = false;
+    std::string commandStatus; // Command channel (task 2.7)
     double hotNextCheck = 0.0;
     std::string hotStatus;
 
@@ -1067,6 +1069,151 @@ void watchLibrary(App& app)
     }
 }
 
+// ------------------------------------------------------------------------------------------------
+// Command channel (task 2.7): one text command per line, one JSON reply per command.
+// ------------------------------------------------------------------------------------------------
+std::string handleCommand(App& app, BodyMotion& motion, const std::string& line)
+{
+    using nlohmann::json;
+    std::istringstream in(line);
+    std::string cmd;
+    in >> cmd;
+    auto ok = [](json extra = json::object()) { extra["ok"] = true; return extra.dump(); };
+    auto bad = [](const std::string& why) { return json{{"ok", false}, {"error", why}}.dump(); };
+    const bool replaying = app.replay != nullptr;
+
+    if (cmd == "help" || cmd.empty())
+    {
+        return ok({{"commands", "list | load <scenario> | restart | pause | resume | step [n] | timescale <x> | "
+                                "autorestart on|off | state | push <body> <x> <y> <z> (N*s) | note <text> | shot <file.png>"}});
+    }
+    if (cmd == "list")
+    {
+        return ok({{"scenarios", app.names}});
+    }
+    if (cmd == "load")
+    {
+        std::string name;
+        in >> name;
+        const auto it = std::find(app.names.begin(), app.names.end(), name);
+        if (replaying) return bad("viewer is showing a replay");
+        if (it == app.names.end()) return bad("unknown scenario: " + name);
+        if (!loadScenario(app, static_cast<size_t>(it - app.names.begin()), false)) return bad(app.error);
+        return ok({{"scenario", name}});
+    }
+    if (cmd == "restart")
+    {
+        if (replaying) openReplay(app, false);
+        else loadScenario(app, app.scenarioIndex, false);
+        return ok();
+    }
+    if (cmd == "pause" || cmd == "resume")
+    {
+        app.paused = cmd == "pause";
+        return ok({{"paused", app.paused}});
+    }
+    if (cmd == "step")
+    {
+        int n = 1;
+        in >> n;
+        n = std::clamp(n, 1, 120 * 60);
+        app.paused = true;
+        for (int i = 0; i < n; ++i)
+        {
+            if (replaying) advanceReplay(app);
+            else if (app.main.world != nullptr) advanceHostFrame(app, 1.0f / 120.0f);
+        }
+        measureMotion(activeWorld(app), motion);
+        return ok({{"steps", n}});
+    }
+    if (cmd == "timescale")
+    {
+        float x = 1.0f;
+        in >> x;
+        app.timeScale = std::clamp(x, 0.0625f, 4.0f);
+        return ok({{"timescale", app.timeScale}});
+    }
+    if (cmd == "autorestart")
+    {
+        std::string v;
+        in >> v;
+        app.autoRestart = v == "on";
+        return ok({{"autorestart", app.autoRestart}});
+    }
+    if (cmd == "state")
+    {
+        DdWorld* world = activeWorld(app);
+        if (world == nullptr) return bad("no world");
+        uint64_t hash = 0;
+        dragdoll_world_compute_state_hash(world, &hash);
+        const uint64_t step = dragdoll_world_get_step_count(world);
+        json state = {{"mode", replaying ? "replay" : "scenario"},
+                      {"name", replaying ? app.replayPath : app.names[app.scenarioIndex]},
+                      {"step", step}, {"time", static_cast<double>(step) / 120.0}, {"paused", app.paused},
+                      {"hash", [&] { char b[20]; std::snprintf(b, sizeof(b), "%016llx", static_cast<unsigned long long>(hash)); return std::string(b); }()}};
+        if (DdCharacter* c = dragdoll_world_get_character(world, 0))
+        {
+            std::vector<DdTransform> bodies(dragdoll_character_get_body_count(c));
+            dragdoll_character_get_body_transforms(c, 0, bodies.data(), static_cast<uint32_t>(bodies.size()));
+            json list = json::array();
+            for (uint32_t i = 0; i < bodies.size(); ++i)
+            {
+                auto r = [](float v) { return std::round(static_cast<double>(v) * 1000.0) / 1000.0; }; // mm: compact and enough
+                json b = {{"name", dragdoll_character_get_body_name(c, i)},
+                          {"p", {r(bodies[i].position.x), r(bodies[i].position.y), r(bodies[i].position.z)}}};
+                if (i < motion.speed.size())
+                {
+                    b["v"] = r(motion.speed[i]);
+                    b["w"] = std::round(static_cast<double>(motion.spin[i]) * 10.0) / 10.0;
+                }
+                list.push_back(b);
+            }
+            state["bodies"] = list;
+        }
+        if (!replaying && app.main.scenario != nullptr)
+        {
+            std::vector<std::string> lines;
+            app.main.scenario->hud(world, lines);
+            state["hud"] = lines;
+        }
+        return ok(state);
+    }
+    if (cmd == "push")
+    {
+        std::string body;
+        DdVec3 impulse{};
+        in >> body >> impulse.x >> impulse.y >> impulse.z;
+        DdCharacter* c = app.main.world != nullptr ? dragdoll_world_get_character(app.main.world, 0) : nullptr;
+        if (replaying || c == nullptr) return bad("no live character");
+        const int32_t index = dragdoll_character_find_body(c, body.c_str());
+        if (index < 0 || in.fail()) return bad("usage: push <body> <x> <y> <z>");
+        std::vector<DdTransform> bodies(dragdoll_character_get_body_count(c));
+        dragdoll_character_get_body_transforms(c, 0, bodies.data(), static_cast<uint32_t>(bodies.size()));
+        const DdVec3 point = bodies[static_cast<size_t>(index)].position;
+        dragdoll_character_apply_impulse(c, static_cast<uint32_t>(index), impulse, &point);
+        app.pushes.push_back({dragdoll_world_get_step_count(app.main.world), static_cast<uint32_t>(index), impulse, point});
+        return ok({{"body", body}});
+    }
+    if (cmd == "note")
+    {
+        std::string text;
+        std::getline(in >> std::ws, text);
+        if (app.main.world == nullptr || !dragdoll_world_is_recording(app.main.world)) return bad("not recording (start the viewer with --record)");
+        dragdoll_world_record_note(app.main.world, text.c_str());
+        return ok();
+    }
+    if (cmd == "shot")
+    {
+        std::string path;
+        std::getline(in >> std::ws, path);
+        if (path.empty()) return bad("usage: shot <file.png>");
+        app.notePrevPaused = app.paused; // The screenshot code restores this pause state
+        app.pendingShot = path;
+        return ok({{"shot", path}, {"note", "saved at the end of this frame"}});
+    }
+    return bad("unknown command: " + cmd + " (try help)");
+}
+
 void drawPanels(App& app, BodyMotion& motion)
 {
     drawRigPanel(app);
@@ -1117,6 +1264,7 @@ void drawPanels(App& app, BodyMotion& motion)
         {
             ImGui::TextWrapped("hot reload off: %s", app.hotStatus.c_str());
         }
+        if (!app.commandStatus.empty()) ImGui::TextDisabled("%s", app.commandStatus.c_str());
         if (!replaying)
         {
             ImGui::SeparatorText("Push (right-click a body)");
@@ -1182,6 +1330,7 @@ int main(int argc, char** argv)
 {
     std::string start = "car_vs_pole_120kmh";
     std::string recordPath, replayPath, rigPath, dllPath;
+    int port = commands::kDefaultPort;
     HostMode initialMode = HostMode::Real;
     for (int i = 1; i < argc; ++i)
     {
@@ -1201,6 +1350,10 @@ int main(int argc, char** argv)
         else if (std::strcmp(argv[i], "--record") == 0 && i + 1 < argc)
         {
             recordPath = argv[++i];
+        }
+        else if (std::strcmp(argv[i], "--port") == 0 && i + 1 < argc)
+        {
+            port = std::atoi(argv[++i]);
         }
         else if (std::strcmp(argv[i], "--dll") == 0 && i + 1 < argc)
         {
@@ -1256,6 +1409,12 @@ int main(int argc, char** argv)
     SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_VSYNC_HINT | FLAG_WINDOW_RESIZABLE | FLAG_WINDOW_UNFOCUSED);
     InitWindow(1280, 720, "DragDoll live viewer");
     rlImGuiSetup(true);
+    {
+        std::string error;
+        app.commandStatus = port <= 0 ? "commands: off"
+                            : commands::start(port, error) ? "commands: 127.0.0.1:" + std::to_string(port) + " (dragdoll_ctl)"
+                                                             : "commands: off, " + error;
+    }
     ImGui::GetIO().IniFilename = nullptr; // No imgui.ini next to the exe
     SetExitKey(KEY_NULL); // Esc quits unless a note is being typed (see the loop condition)
 
@@ -1280,6 +1439,7 @@ int main(int argc, char** argv)
     {
         watchRigFile(app);
         watchLibrary(app);
+        commands::poll([&](const std::string& line) { return handleCommand(app, motion, line); });
         // --- input ---
         if (keyPressed(app, KEY_SPACE)) app.paused = !app.paused;
         if (keyPressed(app, KEY_H)) app.showHelp = !app.showHelp;
@@ -1407,6 +1567,7 @@ int main(int argc, char** argv)
         EndDrawing();
     }
 
+    commands::stop();
     rlImGuiShutdown();
     CloseWindow();
     dragdoll_replay_close(app.replay);

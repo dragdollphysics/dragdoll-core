@@ -64,6 +64,7 @@ if(DRAGDOLL_BUILD_TESTS)
     add_subdirectory(tests)
     add_subdirectory(tools/bench)
     add_subdirectory(tools/inspect)
+    add_subdirectory(tools/ctl)
 endif()
 
 if(CMAKE_SIZEOF_VOID_P EQUAL 4)

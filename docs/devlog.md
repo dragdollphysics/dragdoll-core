@@ -359,3 +359,20 @@ Crowd question (car through the pier) → cost is linear in awake ragdolls (~70 
 
 **Open questions**
 * None new.
+
+---
+
+## 2026-11-13 — Phase 2, task 2.7 (first slice): command channel + dragdoll_ctl
+**Changed** (local, not committed)
+* `workbench/command_server.{hpp,cpp}`: non-blocking TCP server on 127.0.0.1 only (default port 47820, `--port`, 0 = off), polled from the frame loop, one line in -> one JSON line out; status in Playback > Library.
+* Commands: `help, list, load <scenario>, restart, pause, resume, step [n], timescale <x>, autorestart on|off, state, push <body> <x> <y> <z>, note <text>, shot <file.png>`. `state` = mode, name, step, time, paused, hash, scenario HUD lines, per body: position (mm), speed (m/s), spin (deg/s).
+* `tools/ctl` (`dragdoll_ctl`): sends one command, prints the reply; exit 0 ok / 1 viewer error / 2 no viewer.
+* Verified by driving the viewer: load hit_suv_40kmh, step 240, state (pelvis 11.95 m ahead after 2 s), push, bad command -> error + exit 1, shot -> PNG saved. 4 dev presets green. CLAUDE.md tells future sessions to use it instead of screenshots.
+
+**Decision:** Tracy deferred to Phase 6 (founder agreed): the bench + budget test already catch regressions; Tracy explains hotspots when optimising for the 1 ms / 8-ragdoll target.
+
+**Next**
+* Close Phase 2: short retrospective (`docs/retrospectives/phase-2.md`) + progress clip, then Phase 3 (muscles / active ragdoll).
+
+**Open questions**
+* None new.
