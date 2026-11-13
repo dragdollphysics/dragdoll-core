@@ -160,6 +160,22 @@ void apply(DdReplay& replay, const RecordView& record)
     case Record::Note:
         replay.note = in.string();
         break;
+    case Record::TargetPose: {
+        const uint32_t id = in.u32();
+        const uint32_t count = in.u32();
+        std::vector<DdQuat> pose(count);
+        for (uint32_t i = 0; i < count; ++i)
+        {
+            pose[i] = in.quat();
+        }
+        auto it = replay.characters.find(id);
+        if (it == replay.characters.end())
+        {
+            throw std::runtime_error("replay: target pose for an unknown character");
+        }
+        dragdoll::setTargetPose(*it->second, count > 0 ? pose.data() : nullptr, count);
+        break;
+    }
     case Record::Tension: {
         const uint32_t id = in.u32();
         const uint32_t profile = in.u32();

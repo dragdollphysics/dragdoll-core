@@ -43,11 +43,21 @@ struct DdCharacter
     std::vector<int> parent;           // -1 for the root
     std::vector<float> strength;       // Peak joint torque, N*m (mass-scaled); 0 = no muscle
     std::vector<bool> hinge;           // Joint type to the parent
-    std::vector<JPH::Quat> restTarget; // Rotation relative to the parent at rest (body space): the target pose
+    std::vector<JPH::Quat> restRig;    // Body rotation at rest in rig space (+Y up, +Z forward, +X left)
+    std::vector<JPH::Vec3> hingeAxisRig; // Hinge joints: the axis in rig space
+    std::vector<JPH::Quat> targetPose; // Joint rotations the muscles pull towards (offsets from rest, rig axes)
+    // Effective inertia of each joint (kg*m^2): everything on the child side against everything on the parent side,
+    // about the joint, at rest. Turns frequency + damping ratio into real stiffness, so the chain beyond a joint (a
+    // whole arm at the shoulder) is accounted for.
+    std::vector<float> jointInertia;
     DdTension tension = DD_TENSION_LIMP;
     dragdoll::MuscleParams blendFrom, muscles, blendTo; // `muscles` = what the motors use now
     float blendTime = 0.0f, blendElapsed = 0.0f;
     bool musclesDirty = false;
+
+    // Host contract (D17)
+    float stillSeconds = 0.0f;
+    DdCharacterState state = DD_STATE_ACTIVE;
 
     // Last two fixed-step states per body, for interpolated output (ADR-0006).
     std::vector<JPH::RVec3> prevPosition, currPosition;
@@ -69,4 +79,11 @@ void setTension(DdCharacter& character, DdTension tension, float blendSeconds);
 
 // Advances the blend by one fixed step and pushes the muscle state into the joint motors when it changed.
 void updateMuscles(DdCharacter& character, float dt);
+
+// Host contract (pose.cpp). Throws std::invalid_argument on bad input.
+void setTargetPose(DdCharacter& character, const DdQuat* jointRotations, uint32_t count);
+// Joint rotations (offsets from rest, rig axes) from body world rotations.
+void jointRotations(const DdCharacter& character, const std::vector<JPH::Quat>& world, DdQuat* out);
+// After each fixed step: stillness timer and state.
+void updateState(DdCharacter& character, float dt);
 } // namespace dragdoll

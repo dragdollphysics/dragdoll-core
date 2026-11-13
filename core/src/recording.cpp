@@ -248,6 +248,18 @@ void Recorder::tension(uint32_t character, uint32_t profile, float blendSeconds)
     write(Record::Tension, mScratch);
 }
 
+void Recorder::targetPose(uint32_t character, const DdQuat* rotations, uint32_t count)
+{
+    mScratch.clear();
+    mScratch.u32(character);
+    mScratch.u32(count);
+    for (uint32_t i = 0; i < count; ++i)
+    {
+        mScratch.quat(rotations[i]);
+    }
+    write(Record::TargetPose, mScratch);
+}
+
 void Recorder::note(const char* text)
 {
     mScratch.clear();

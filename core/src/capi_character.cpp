@@ -4,6 +4,7 @@
 #include "capi_guard.hpp"
 #include "capi_world_handle.hpp"
 #include "character.hpp"
+#include "world.hpp"
 
 namespace
 {
@@ -16,6 +17,7 @@ dragdoll::rec::Recorder* recorderOf(const DdCharacter* character)
 
 #include <cmath>
 #include <cstring>
+#include <vector>
 #include <stdexcept>
 
 using namespace dragdoll::detail;
@@ -209,6 +211,108 @@ DD_API DdResult DD_CALL dragdoll_character_set_tension(DdCharacter* character, D
 DD_API DdTension DD_CALL dragdoll_character_get_tension(const DdCharacter* character)
 {
     return character != nullptr ? character->tension : DD_TENSION_LIMP;
+}
+
+DD_API DdResult DD_CALL dragdoll_character_set_target_pose(DdCharacter* character, const DdQuat* joint_rotations,
+                                                           uint32_t count)
+{
+    DD_GUARD_BEGIN
+    if (character == nullptr)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_set_target_pose: character is required");
+    }
+    try
+    {
+        dragdoll::setTargetPose(*character, joint_rotations, count);
+    }
+    catch (const std::invalid_argument& e)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, e.what());
+    }
+    if (dragdoll::rec::Recorder* recorder = recorderOf(character))
+    {
+        recorder->targetPose(character->id, joint_rotations, joint_rotations != nullptr ? count : 0);
+    }
+    return DD_OK;
+    DD_GUARD_END(DD_ERROR_INTERNAL)
+}
+
+DD_API DdResult DD_CALL dragdoll_character_get_pose(const DdCharacter* character, int interpolated, DdQuat* joint_rotations,
+                                                    uint32_t capacity, DdTransform* root)
+{
+    DD_GUARD_BEGIN
+    if (character == nullptr)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_get_pose: character is required");
+    }
+    const size_t count = character->currRotation.size();
+    if (joint_rotations != nullptr && capacity < count)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_get_pose: capacity < body count");
+    }
+    std::vector<DdTransform> bodies(count);
+    character->world->characterTransforms(*character, interpolated != 0, bodies.data(), static_cast<uint32_t>(count));
+    if (joint_rotations != nullptr)
+    {
+        std::vector<JPH::Quat> world(count);
+        for (size_t i = 0; i < count; ++i)
+        {
+            const DdQuat& q = bodies[i].rotation;
+            world[i] = JPH::Quat(q.x, q.y, q.z, q.w);
+        }
+        dragdoll::jointRotations(*character, world, joint_rotations);
+    }
+    if (root != nullptr)
+    {
+        *root = bodies[0];
+    }
+    return DD_OK;
+    DD_GUARD_END(DD_ERROR_INTERNAL)
+}
+
+DD_API DdResult DD_CALL dragdoll_character_get_info(const DdCharacter* character, DdCharacterInfo* out)
+{
+    DD_GUARD_BEGIN
+    if (character == nullptr || out == nullptr || out->struct_size != sizeof(DdCharacterInfo))
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_get_info: character and out (struct_size set) are required");
+    }
+    const JPH::Vec3 up = character->world->up();
+    const JPH::Quat pelvis = character->currRotation[0];
+    // Facing: the pelvis' forward (rig +Z) against world up.
+    const JPH::Vec3 forward = (pelvis * character->restRig[0].Conjugated()) * JPH::Vec3::sAxisZ();
+    const float forwardUp = forward.Dot(up);
+    // Head direction: pelvis -> head (or the last body of the spine chain), flattened onto the ground plane.
+    size_t head = 0;
+    for (size_t i = 0; i < character->names.size(); ++i)
+    {
+        if (character->names[i] == "head") head = i;
+    }
+    const JPH::Vec3 along = JPH::Vec3(character->currPosition[head] - character->currPosition[0]);
+    const JPH::Vec3 flat = along - up * along.Dot(up);
+    const bool lying = along.Length() > 1e-4f && flat.Length() > 0.7f * along.Length();
+    const JPH::Vec3 direction = lying ? flat.Normalized() : JPH::Vec3::sZero();
+    out->state = character->state;
+    out->still_seconds = character->stillSeconds;
+    out->facing = !lying ? 0 : forwardUp > 0.5f ? 1 : forwardUp < -0.5f ? -1 : 0;
+    out->head_direction = DdVec3{direction.GetX(), direction.GetY(), direction.GetZ()};
+    return DD_OK;
+    DD_GUARD_END(DD_ERROR_INTERNAL)
+}
+
+DD_API DdResult DD_CALL dragdoll_character_get_blend_weights(const DdCharacter* character, float* weights, uint32_t capacity)
+{
+    DD_GUARD_BEGIN
+    if (character == nullptr || weights == nullptr || capacity < character->currRotation.size())
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_get_blend_weights: character, weights and capacity >= body count are required");
+    }
+    for (size_t i = 0; i < character->currRotation.size(); ++i)
+    {
+        weights[i] = 1.0f; // Full physics until behaviours set weights
+    }
+    return DD_OK;
+    DD_GUARD_END(DD_ERROR_INTERNAL)
 }
 
 } // extern "C\"

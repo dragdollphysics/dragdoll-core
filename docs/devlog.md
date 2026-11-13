@@ -405,3 +405,21 @@ Crowd question (car through the pier) → cost is linear in awake ragdolls (~70 
 
 **Open questions**
 * Stunned ends as crumpled as limp (folds slower, same end state). Acceptable for "dazed"; revisit when behaviours use it.
+
+---
+
+## 2026-11-13 — Phase 3, task 3.2: host pose input + output contract (D17); muscles sized by real inertia
+**Changed** (local, not committed)
+* C API: `dragdoll_character_set_target_pose` (NULL = rest) / `dragdoll_character_get_pose` (+ root transform), `DdCharacterInfo` via `dragdoll_character_get_info` (state ACTIVE/SETTLED after 0.5 s still; RECOVERING/DEAD/FAILED reserved; facing +1/-1/0; horizontal head direction), `dragdoll_character_get_blend_weights` (all 1). Convention: per body, rotation relative to the parent as an offset from rest, in rig axes (+X left, +Y up, +Z forward); identity = rest. Motor targets: swing-twist `conj(P_parent) d P_child` in body space, hinge = twist angle of d about its rig axis. Target poses recorded (record type 12).
+* `core/src/pose.cpp`; scenario `pose_zero_g` (tense, zero gravity, rest -> guard -> arms up -> tuck).
+* **Founder review fixes:**
+  * "Arms up is arms front": shoulder cones recentred forward-down `[+-0.3, -0.35, 0.89]`, 115 deg (overhead reach, ~45 deg extension). Limp checks (arm-in-chest, hyperextension) still pass.
+  * "Tense wobbles, a tense body should lock": Jolt's frequency springs use only the two joint bodies' inertia, so a whole arm at the shoulder swung at ~1.4 Hz under-damped. Muscles now use `StiffnessAndDamping` from each joint's effective inertia (child side x parent side / sum, about the pivot, at rest): k = I w^2, c = 2 zeta I w. Guard pose: reached in ~0.3 s, no overshoot, then 0.0 deg / < 2 deg/s. Founder: "stays still".
+  * With honest stiffness the profiles were retuned: tense 8 Hz / 2.0 / 100%, relaxed 1.2 Hz / 1.0 / 15%, stunned 0.6 Hz / 0.3 / 30%. Lineup settled RMS: tense 2.3 < relaxed 6.0 < stunned 42.5 ~ limp 43.1 deg; stunned folds 2x slower than limp.
+* Tests (4 new): rest = identity + root; zero-g tracking at 3 headings (0.3 deg worst after 2 s); validation + NULL reset + blend weights; state/facing/head direction. 4 dev presets green, 41 test cases.
+
+**Next**
+* Task 3.3 (Opus): activation from motion — start bodies from two consecutive host poses (positions + velocities); `walk_then_activate` without a velocity pop.
+
+**Open questions**
+* Founder to re-check `tension_lineup` with the retuned relaxed/stunned profiles.

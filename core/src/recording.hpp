@@ -35,6 +35,7 @@ enum class Record : uint8_t
     Impulse = 9,          // u32 character id | u32 body | vec3 impulse | u8 has point | vec3 point
     Note = 10,            // string text
     Tension = 11,         // u32 character id | u32 profile | f32 blend seconds
+    TargetPose = 12,      // u32 character id | u32 count (0 = reset to rest) | count x quat
 };
 
 // Growable little-endian byte buffer for one record payload.
@@ -172,6 +173,7 @@ public:
     void impulse(uint32_t character, uint32_t body, const DdVec3& impulse, const DdVec3* point);
     void note(const char* text);
     void tension(uint32_t character, uint32_t profile, float blendSeconds);
+    void targetPose(uint32_t character, const DdQuat* rotations, uint32_t count);
     bool failed() const { return mFailed; }
 
 private:

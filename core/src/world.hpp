@@ -102,6 +102,7 @@ public:
     bool characterTransforms(const DdCharacter& character, bool interpolated, DdTransform* out, uint32_t capacity) const;
     void applyImpulse(DdCharacter& character, uint32_t body, const DdVec3& impulse, const DdVec3* point);
     uint32_t characterCount() const { return static_cast<uint32_t>(mCharacters.size()); }
+    const JPH::Vec3& up() const { return mUp; }
     DdCharacter* characterAt(uint32_t index) const;
 
     JPH::PhysicsSystem& physics() { return *mPhysics; }

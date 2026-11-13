@@ -35,6 +35,7 @@ add_library(dragdoll SHARED
     src/character.hpp
     src/character.cpp
     src/muscles.cpp
+    src/pose.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/generated/builtin_rigs.cpp
 )
 add_library(DragDoll::dragdoll ALIAS dragdoll)

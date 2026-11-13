@@ -7,6 +7,7 @@
 #include <Jolt/Core/JobSystemThreadPool.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyInterface.h>
+#include <Jolt/Physics/Body/BodyLock.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
@@ -317,6 +318,7 @@ void World::captureTransforms()
         {
             bodies.GetPositionAndRotation(c.ragdoll->GetBodyID(static_cast<int>(i)), c.currPosition[i], c.currRotation[i]);
         }
+        updateState(c, static_cast<float>(mFixedDt));
     }
 }
 
@@ -704,16 +706,58 @@ DdCharacter* World::createCharacter(const DdCharacterDesc& desc)
     character->parent.resize(count);
     character->strength.resize(count);
     character->hinge.resize(count);
-    character->restTarget.resize(count, JPH::Quat::sIdentity());
+    // Effective joint inertia (scalar approximation): I_child_side * I_parent_side / (sum), each side summed about the
+    // joint pivot as sum(I_cm + m d^2) over its bodies.
+    {
+        std::vector<float> mass(count), selfInertia(count);
+        std::vector<JPH::RVec3> centre(count);
+        const JPH::BodyLockInterfaceNoLock& locks = mPhysics->GetBodyLockInterfaceNoLock();
+        for (size_t i = 0; i < count; ++i)
+        {
+            JPH::BodyLockRead lock(locks, character->ragdoll->GetBodyID(static_cast<int>(i)));
+            const JPH::MotionProperties* motion = lock.GetBody().GetMotionProperties();
+            mass[i] = 1.0f / motion->GetInverseMass();
+            const JPH::Vec3 inv = motion->GetInverseInertiaDiagonal();
+            selfInertia[i] = (1.0f / inv.GetX() + 1.0f / inv.GetY() + 1.0f / inv.GetZ()) / 3.0f;
+            centre[i] = lock.GetBody().GetCenterOfMassPosition();
+        }
+        auto inSubtree = [&](size_t body, size_t root) {
+            for (int b = static_cast<int>(body); b >= 0; b = rig.bodies[static_cast<size_t>(b)].parent)
+            {
+                if (static_cast<size_t>(b) == root) return true;
+            }
+            return false;
+        };
+        character->jointInertia.assign(count, 0.0f);
+        for (size_t j = 0; j < count; ++j)
+        {
+            if (rig.bodies[j].parent < 0)
+            {
+                continue;
+            }
+            const JPH::RVec3 pivot = worldFromRig * rig.bodies[j].joint.pivot;
+            float child = 0.0f, parent = 0.0f;
+            for (size_t b = 0; b < count; ++b)
+            {
+                const float about = selfInertia[b] + mass[b] * static_cast<float>((centre[b] - pivot).LengthSq());
+                (inSubtree(b, j) ? child : parent) += about;
+            }
+            character->jointInertia[j] = child * parent / (child + parent);
+        }
+    }
+    character->restRig.resize(count);
+    character->hingeAxisRig.resize(count, JPH::Vec3::sAxisX());
+    character->targetPose.assign(count, JPH::Quat::sIdentity());
     for (size_t i = 0; i < count; ++i)
     {
         const RigBody& body = rig.bodies[i];
         character->parent[i] = body.parent;
         character->strength[i] = body.parent >= 0 ? body.joint.strength * massScale : 0.0f;
         character->hinge[i] = body.parent >= 0 && body.joint.type == RigJoint::Type::Hinge;
-        if (body.parent >= 0)
+        character->restRig[i] = (rotation.Conjugated() * character->currRotation[i]).Normalized();
+        if (character->hinge[i])
         {
-            character->restTarget[i] = character->currRotation[static_cast<size_t>(body.parent)].Conjugated() * character->currRotation[i];
+            character->hingeAxisRig[i] = body.joint.axis;
         }
     }
 

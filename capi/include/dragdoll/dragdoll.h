@@ -284,15 +284,15 @@ DD_API int32_t DD_CALL dragdoll_character_get_body_parent(const DdCharacter* cha
 
 /* ---- Muscles (Phase 3) -------------------------------------------------------------------
  * Every joint with a rig "strength" has motors that pull it towards the target pose (for now: the rig's rest pose).
- * A tension profile sets how hard (stiffness as frequency + damping ratio, ADR-0009, and the share of the joint's
- * strength). Internal torques only (ADR-0003). New characters start LIMP. Note: an active motor replaces the joint's
+ * A tension profile sets how hard (stiffness as frequency + damping ratio, ADR-0009 — applied to each joint's real
+ * effective inertia, so a whole arm swings at the stated frequency — and the share of the joint's strength). Internal torques only (ADR-0003). New characters start LIMP. Note: an active motor replaces the joint's
  * passive friction, so profiles must be stiffer than that friction to add any hold. */
 typedef enum DdTension
 {
     DD_TENSION_LIMP = 0,    /* Motors off: only passive joint friction. */
-    DD_TENSION_RELAXED = 1, /* Low tone: 40% strength, 4 Hz; sags under load but keeps some shape. */
-    DD_TENSION_TENSE = 2,   /* Braced: full strength, 6 Hz. */
-    DD_TENSION_STUNNED = 3, /* Dazed: 30% strength, 3 Hz, under-damped; folds slowly and wobbles. */
+    DD_TENSION_RELAXED = 1, /* Low tone: 15% strength, 1.2 Hz, critically damped; loose but keeps some shape. */
+    DD_TENSION_TENSE = 2,   /* Braced: full strength, 8 Hz, over-damped: reaches a pose and locks there. */
+    DD_TENSION_STUNNED = 3, /* Dazed: 30% strength, 0.6 Hz, under-damped; folds slowly and wobbles. */
     DD_TENSION_COUNT = 4,
     DD_TENSION_FORCE_32BIT = 0x7FFFFFFF
 } DdTension;
@@ -301,6 +301,48 @@ typedef enum DdTension
 DD_API DdResult DD_CALL dragdoll_character_set_tension(DdCharacter* character, DdTension tension, float blend_seconds);
 /* The profile last set (the blend towards it may still be running). */
 DD_API DdTension DD_CALL dragdoll_character_get_tension(const DdCharacter* character);
+
+/* ---- Pose input / output: the host contract (ADR-0017 / D17) ------------------------------
+ * A pose is one JOINT ROTATION per body (index = body index; entry 0, the root, is ignored on input and identity on
+ * output): the body's rotation relative to its parent, as an offset from the rig's rest pose, expressed in the rig's
+ * rest axes (+Y up, +Z forward, +X = character's left). Identity everywhere = the rest pose. Local like animation
+ * bones: a child keeps its offset when its parent moves. Example: knee flexion = rotation of the shin about +X.
+ * Hosts translate their skeleton to/from this form (e.g. SA's 32-bone ped skeleton, Phase 3). */
+
+/* Sets the pose the muscles pull towards (they only act with a tension other than LIMP). `count` must equal the body
+ * count; NULL resets the target to the rest pose. Hinge joints use only the rotation about their axis; every joint is
+ * clamped to its limits by the solver. */
+DD_API DdResult DD_CALL dragdoll_character_set_target_pose(DdCharacter* character, const DdQuat* joint_rotations,
+                                                           uint32_t count);
+
+/* The simulated pose in the same form, plus the root body's world transform (either output may be NULL). */
+DD_API DdResult DD_CALL dragdoll_character_get_pose(const DdCharacter* character, int interpolated, DdQuat* joint_rotations,
+                                                    uint32_t capacity, DdTransform* root);
+
+typedef enum DdCharacterState
+{
+    DD_STATE_ACTIVE = 0,     /* Moving under physics. */
+    DD_STATE_RECOVERING = 1, /* Reserved: getting up / regaining balance (later phases). */
+    DD_STATE_SETTLED = 2,    /* Every body has been nearly still for a while: the host may hand back (get up / die). */
+    DD_STATE_DEAD = 3,       /* Reserved: set from the host's outcome (Phase 6). */
+    DD_STATE_FAILED = 4,     /* Reserved: instability detected, character deactivated (Phase 3, task 3.5). */
+    DD_STATE_FORCE_32BIT = 0x7FFFFFFF
+} DdCharacterState;
+
+typedef struct DdCharacterInfo
+{
+    uint32_t struct_size;   /* = sizeof(DdCharacterInfo) */
+    DdCharacterState state;
+    float still_seconds;    /* How long every body has been nearly still (0 while moving). */
+    int32_t facing;         /* Recovery hint: +1 lying face up, -1 face down, 0 neither (e.g. on the side, standing). */
+    DdVec3 head_direction;  /* Recovery hint: horizontal unit vector from the pelvis towards the head (0 if upright). */
+} DdCharacterInfo;
+
+DD_API DdResult DD_CALL dragdoll_character_get_info(const DdCharacter* character, DdCharacterInfo* out);
+
+/* Per-body blend weight for the host: 1 = show the physics pose, 0 = keep the host's own animation. All 1 for now;
+ * behaviours will lower them (e.g. a hand reaching for a rail stays physics, the rest blends). */
+DD_API DdResult DD_CALL dragdoll_character_get_blend_weights(const DdCharacter* character, float* weights, uint32_t capacity);
 
 /* ---- Recording & replay (ADR-0007, ADR-0017) ------------------------------------------- */
 /* A world created with DdWorldDesc.record_path writes every call that changes it (steps, colliders, kinematic targets,

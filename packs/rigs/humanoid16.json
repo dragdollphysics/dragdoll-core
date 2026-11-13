@@ -3,7 +3,7 @@
   "version": 1,
   "name": "humanoid16",
   "description": "16-body adult humanoid, 1.75 m, 75 kg. Rest pose: standing, arms hanging at the sides.",
-  "sources": "Segment mass fractions and lengths: de Leva (1996), adult male. Joint ranges: conservative ragdoll values within normal human range of motion. Joint friction (N*m): passive tissue damping, each value well below the gravity torque on its limb so the body stays limp. Joint strength (N*m): peak muscle torque at full tension, own conservative values within published adult peak joint torques.",
+  "sources": "Segment mass fractions and lengths: de Leva (1996), adult male. Joint ranges: conservative ragdoll values within normal human range of motion (shoulders: full overhead reach, ~45 deg extension). Joint friction (N*m): passive tissue damping, each value well below the gravity torque on its limb so the body stays limp. Joint strength (N*m): peak muscle torque at full tension, own conservative values within published adult peak joint torques.",
   "space": "Rig space: metres, +Y up, +Z forward (the character faces +Z), +X = character's left. Origin = ground point between the feet.",
   "mass": 75.0,
   "bodies": [
@@ -27,8 +27,8 @@
 
     { "name": "upper_arm_l", "parent": "upper_spine", "mass_percent": 2.71, "collide_with_parent": true,
       "shape": { "type": "capsule", "from": [0.215, 1.42, 0], "to": [0.215, 1.14, 0], "radius": 0.048 },
-      "joint": { "type": "swing_twist", "friction": 1.0, "strength": 70, "pivot": [0.215, 1.42, 0], "twist_axis": [0, -1, 0], "cone_axis": [0.35, -0.75, 0.55],
-                 "swing_fwd": 85, "swing_side": 75, "twist_min": -70, "twist_max": 70 } },
+      "joint": { "type": "swing_twist", "friction": 1.0, "strength": 70, "pivot": [0.215, 1.42, 0], "twist_axis": [0, -1, 0], "cone_axis": [0.3, -0.35, 0.89],
+                 "swing_fwd": 115, "swing_side": 115, "twist_min": -70, "twist_max": 70 } },
 
     { "name": "forearm_l", "parent": "upper_arm_l", "mass_percent": 1.62,
       "shape": { "type": "capsule", "from": [0.215, 1.14, 0], "to": [0.215, 0.87, 0], "radius": 0.04 },
@@ -41,8 +41,8 @@
 
     { "name": "upper_arm_r", "parent": "upper_spine", "mass_percent": 2.71, "collide_with_parent": true,
       "shape": { "type": "capsule", "from": [-0.215, 1.42, 0], "to": [-0.215, 1.14, 0], "radius": 0.048 },
-      "joint": { "type": "swing_twist", "friction": 1.0, "strength": 70, "pivot": [-0.215, 1.42, 0], "twist_axis": [0, -1, 0], "cone_axis": [-0.35, -0.75, 0.55],
-                 "swing_fwd": 85, "swing_side": 75, "twist_min": -70, "twist_max": 70 } },
+      "joint": { "type": "swing_twist", "friction": 1.0, "strength": 70, "pivot": [-0.215, 1.42, 0], "twist_axis": [0, -1, 0], "cone_axis": [-0.3, -0.35, 0.89],
+                 "swing_fwd": 115, "swing_side": 115, "twist_min": -70, "twist_max": 70 } },
 
     { "name": "forearm_r", "parent": "upper_arm_r", "mass_percent": 1.62,
       "shape": { "type": "capsule", "from": [-0.215, 1.14, 0], "to": [-0.215, 0.87, 0], "radius": 0.04 },

@@ -30,6 +30,7 @@ add_executable(dragdoll_tests
     unit/test_character.cpp
     unit/test_vehicles.cpp
     unit/test_muscles.cpp
+    unit/test_pose.cpp
     unit/test_memory.cpp
     unit/test_recording.cpp
 )

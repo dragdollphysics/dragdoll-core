@@ -453,6 +453,126 @@ private:
     std::vector<DdTransform> mRest[4];
 };
 
+// Host contract (task 3.2): a tense humanoid floating in zero gravity is given a new target pose every 2.5 s — rest,
+// boxing guard, arms up, tucked — through dragdoll_character_set_target_pose. No gravity, so what you see is pure pose
+// tracking. With internal torques only, the whole body may slowly turn as it changes shape (angular momentum is
+// conserved, like a diver or a falling cat), which is correct.
+class PoseZeroGScenario final : public Scenario
+{
+public:
+    const char* name() const override { return "pose_zero_g"; }
+    const char* description() const override
+    {
+        return "Host pose input: a tense humanoid floats in zero gravity and is sent a new target pose every 2.5 s "
+               "(rest, guard, arms up, tuck). Judge: does it reach each pose cleanly, without jitter or overshoot? "
+               "Slow whole-body turning while changing shape is correct (no external torques).";
+    }
+    void configure(DdWorldDesc& desc) const override
+    {
+        desc.up = DdVec3{0.0f, 0.0f, 1.0f};
+        desc.gravity = 0.0f;
+    }
+    bool rateIndependent() const override { return false; } // Poses change on host frame boundaries
+    double duration() const override { return 10.0; }
+    DdCharacter* character() const override { return mCharacter; }
+    DdVec3 cameraTarget() const override { return DdVec3{0.0f, 0.0f, 1.2f}; }
+    float cameraDistance() const override { return 4.5f; }
+
+    void build(DdWorld* world) override
+    {
+        DdCharacterDesc desc;
+        dragdoll_character_desc_default(&desc);
+        desc.rig_json = rigJson();
+        desc.transform.position = DdVec3{0.0f, 0.0f, 0.3f};
+        if (dragdoll_character_create(world, &desc, &mCharacter) == DD_OK)
+        {
+            dragdoll_character_set_tension(mCharacter, DD_TENSION_TENSE, 0.0f);
+        }
+    }
+
+    void hostFrame(DdWorld*, double hostTime, float) override
+    {
+        const int pose = std::min(3, static_cast<int>(hostTime / 2.5));
+        if (mCharacter == nullptr || pose == mPose)
+        {
+            return;
+        }
+        mPose = pose;
+        mTarget.assign(dragdoll_character_get_body_count(mCharacter), DdQuat{0, 0, 0, 1});
+        // Joint rotations as offsets from rest in rig axes (+X left, +Y up, +Z forward); flexion of hip/shoulder
+        // forward = negative about +X, knee = positive about +X, elbow = positive about -X, spine forward = +X.
+        auto set = [&](const char* body, DdVec3 axis, float degrees) {
+            const int32_t i = dragdoll_character_find_body(mCharacter, body);
+            if (i >= 0) mTarget[static_cast<size_t>(i)] = axisAngle(axis, degrees);
+        };
+        const DdVec3 x{1, 0, 0}, minusX{-1, 0, 0};
+        if (pose == 1) // Boxing guard
+        {
+            for (const char* side : {"_l", "_r"})
+            {
+                set((std::string("upper_arm") + side).c_str(), x, -50.0f);
+                set((std::string("forearm") + side).c_str(), minusX, 115.0f);
+                set((std::string("thigh") + side).c_str(), x, -15.0f);
+                set((std::string("shin") + side).c_str(), x, 25.0f);
+            }
+            set("head", x, 12.0f);
+        }
+        else if (pose == 2) // Arms up
+        {
+            for (const char* side : {"_l", "_r"})
+            {
+                set((std::string("upper_arm") + side).c_str(), x, -160.0f); // Overhead
+                set((std::string("forearm") + side).c_str(), minusX, 10.0f);
+            }
+            set("lower_spine", x, -10.0f);
+            set("head", x, -15.0f);
+        }
+        else if (pose == 3) // Tuck
+        {
+            for (const char* side : {"_l", "_r"})
+            {
+                set((std::string("thigh") + side).c_str(), x, -65.0f);
+                set((std::string("shin") + side).c_str(), x, 120.0f);
+                set((std::string("upper_arm") + side).c_str(), x, -40.0f);
+                set((std::string("forearm") + side).c_str(), minusX, 100.0f);
+            }
+            set("lower_spine", x, 30.0f);
+            set("upper_spine", x, 20.0f);
+            set("head", x, 30.0f);
+        }
+        dragdoll_character_set_target_pose(mCharacter, mTarget.data(), static_cast<uint32_t>(mTarget.size()));
+    }
+
+    void hud(DdWorld*, std::vector<std::string>& lines) override
+    {
+        static const char* const kPoses[] = {"rest", "boxing guard", "arms up", "tuck"};
+        if (mCharacter == nullptr || mTarget.empty())
+        {
+            return;
+        }
+        std::vector<DdQuat> now(mTarget.size());
+        dragdoll_character_get_pose(mCharacter, 0, now.data(), static_cast<uint32_t>(now.size()), nullptr);
+        double sum = 0.0;
+        float worst = 0.0f;
+        for (size_t i = 1; i < now.size(); ++i)
+        {
+            const DdQuat &a = now[i], &b = mTarget[i];
+            const float e = 2.0f * std::acos(std::fmin(1.0f, std::fabs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w))) * 57.29578f;
+            sum += static_cast<double>(e) * e;
+            worst = std::fmax(worst, e);
+        }
+        char buffer[160];
+        std::snprintf(buffer, sizeof(buffer), "target pose: %s | tracking error RMS %.1f deg, worst %.1f deg",
+                      kPoses[std::max(0, mPose)], std::sqrt(sum / static_cast<double>(now.size() - 1)), static_cast<double>(worst));
+        lines.emplace_back(buffer);
+    }
+
+private:
+    DdCharacter* mCharacter = nullptr;
+    std::vector<DdQuat> mTarget;
+    int mPose = -1;
+};
+
 // A vehicle from the shape pack hits a standing limp ragdoll side-on and brakes on contact (task 2.6). Without muscles
 // the body only starts to sag in the 0.1 s before contact; what matters here is how each front shape catches it:
 // low fronts scoop it onto the bonnet (wrap), high flat fronts throw it ahead (forward projection).
@@ -581,6 +701,7 @@ const std::vector<std::pair<std::string, Factory>>& registry()
          }},
     };
     all.emplace_back("tension_lineup", [] { return std::make_unique<TensionLineupScenario>(); });
+    all.emplace_back("pose_zero_g", [] { return std::make_unique<PoseZeroGScenario>(); });
     for (const std::string& vehicle : vehicleNames())
     {
         all.emplace_back("hit_" + vehicle + "_40kmh", [vehicle] { return std::make_unique<VehicleHitScenario>(vehicle, 40.0f); });
