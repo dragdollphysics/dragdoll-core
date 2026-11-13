@@ -44,7 +44,7 @@ jobs:
           arch: ${{ matrix.arch }}
 
       - name: Configure
-        run: cmake --preset ${{ matrix.preset }} -DDRAGDOLL_BUILD_VIEWER=OFF
+        run: cmake --preset ${{ matrix.preset }} -DDRAGDOLL_BUILD_VIEWER=OFF -DDRAGDOLL_BENCH_SLACK=3
 
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }}

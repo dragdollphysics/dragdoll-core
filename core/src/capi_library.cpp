@@ -3,6 +3,7 @@
 // noexcept in practice and catches everything at the boundary (ADR-0020).
 
 #include "capi_guard.hpp"
+#include "memory_stats.hpp"
 
 #include <Jolt/Jolt.h>
 
@@ -117,7 +118,7 @@ DD_API DdResult DD_CALL dragdoll_init(uint32_t api_version)
         return fail(DD_ERROR_ALREADY_INITIALIZED, "dragdoll_init: already initialized");
     }
 
-    JPH::RegisterDefaultAllocator(); // Replaced by DragDoll's accounting allocator in a later task (ADR-0015)
+    dragdoll::installCountingAllocator(); // Every Jolt allocation is counted (ADR-0015)
     JPH::Factory::sInstance = new JPH::Factory();
     JPH::RegisterTypes();
 
@@ -148,6 +149,26 @@ DD_API void DD_CALL dragdoll_shutdown(void)
 DD_API const char* DD_CALL dragdoll_last_error_message(void)
 {
     return lastError();
+}
+
+DD_API DdResult DD_CALL dragdoll_get_memory_stats(DdMemoryStats* out_stats)
+{
+    DD_GUARD_BEGIN
+    if (out_stats == nullptr || out_stats->struct_size != sizeof(DdMemoryStats))
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_get_memory_stats: out_stats with a valid struct_size is required");
+    }
+    const dragdoll::MemoryStats stats = dragdoll::memoryStats();
+    out_stats->current_bytes = static_cast<uint64_t>(stats.currentBytes);
+    out_stats->peak_bytes = static_cast<uint64_t>(stats.peakBytes);
+    out_stats->allocation_count = static_cast<uint64_t>(stats.allocations);
+    return DD_OK;
+    DD_GUARD_END(DD_ERROR_INTERNAL)
+}
+
+DD_API void DD_CALL dragdoll_reset_peak_memory(void)
+{
+    dragdoll::resetPeakMemory();
 }
 
 } // extern "C"

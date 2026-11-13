@@ -146,6 +146,8 @@ Planned by **effort hours, not calendar weeks** (total ≈ **460 h** to v1, ±50
 * [ ] C API: `DdCharacter`, `DdPoseBuffer`, impulses, character state readback.
 * [x] Fixed-step accumulator + interpolated output (D6) (task 3).
 * [x] **[SA]** Host-rate test: 25–30 fps, 60 fps mods, 144 Hz and unlocked 30–200 fps all give physics identical to a steady 120 Hz feed (tasks 3, 3b).
+* [x] Memory accounting: counting allocator behind every Jolt allocation, `dragdoll_get_memory_stats` / `dragdoll_reset_peak_memory`; budget test: 8 active ragdolls + 400 boxes + a 7,200-triangle mesh peak at 25 MB (< 64 MB) and everything is returned on world destroy (task 5).
+* [x] Perf baseline: `dragdoll_bench` + `bench_budget` ctest (Release): ~70 us (x64) / ~76-81 us (x86) per active ragdoll per 120 Hz step, budget 100 / 120 us, CI slack x3 (task 5). **Finding:** see devlog — 8 *awake* ragdolls cost ~2.2 ms per frame at 30 fps, over the 1 ms ship criterion; needs a decision.
 * [x] **[SA]** Time-stamped kinematic targets: vehicle speed identical on every fixed step at any host frame rate (task 3b).
 * [ ] **[SA]** Jolt allocator hooks → per-world memory accounting; host-configurable worker thread count.
 * [x] Rig JSON (`packs/rigs/humanoid16.json`, compiled in as a built-in rig), `RagdollSettings` (`Stabilize`, `DisableParentChildCollisions`), anatomical joint limits, de Leva masses, CCD on limbs (D16) (task 4).
@@ -195,6 +197,11 @@ Planned by **effort hours, not calendar weeks** (total ≈ **460 h** to v1, ±50
 * [ ] **Pose override:** write local bone rotations into the RpHAnim hierarchy after the game's animation update; per-bone weights.
 * [ ] **Root sync:** ped position follows DragDoll root; game physics for that ped suspended while active.
 * [ ] **Handback:** choose game get-up/death animation by face-up/down + heading; blend out.
+* [ ] **Outcome tiers + ragdoll budget manager** (founder's idea, 2026-11-12): the host tells DragDoll the outcome when it activates a ped (`DD_OUTCOME_KILLED` / `DD_OUTCOME_SURVIVES`; SA knows the ped's health after the hit).
+  * **Killed → limp tier (cheapest):** no muscles, no perception/behaviour work, fewer solver iterations, early sleep; once settled the pose is frozen/handed back as a corpse (≈ zero cost afterwards).
+  * **Survives → active tier:** full behaviour chain (anticipate, guard, curl, land), then hand back to the game's get-up animation as soon as recovered (short active lifetime).
+  * **Budget manager:** cap on awake ragdolls (configurable, default ~12), priority by outcome (survivors first), distance and visibility; extras fall back to the game's own animation (`failed` path). Far ragdolls get fewer solver iterations / earlier sleep.
+  * Measure first (limp vs active vs reduced iterations); acceptance: crowd scenario (15 victims at once) costs < 1 ms per frame at 60 fps on the reference machine.
 * [ ] **Compatibility:** exclusions (missions, cutscenes, player opt-in), SA-MP auto-disable, Hoodlum/Compact exes, `dragdoll-sa.ini` with keys familiar to existing-mod users.
 * [ ] **Frame rates:** feed DragDoll the game's real frame time (never assume 30 fps); test vanilla 25/30 fps limiter, SilentPatch 60 fps, and unlocked.
 * [ ] **[SA] Dev mode:** reload `dragdoll.dll` on a key press inside the running game; capture in-game sessions as `.ddrec` for workbench replay.

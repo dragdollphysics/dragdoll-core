@@ -77,6 +77,22 @@ DD_API void DD_CALL dragdoll_shutdown(void);
 /* Detail message for the last error on the calling thread ("" if none). Owned by DragDoll. */
 DD_API const char* DD_CALL dragdoll_last_error_message(void);
 
+/* ---- Memory budget (ADR-0015) ---------------------------------------------------------- */
+/* DragDoll runs inside other programs (32-bit San Andreas has little address space), so it reports what it uses.
+ * Counts every Jolt allocation made through DragDoll's allocator (installed by dragdoll_init). Process-wide. */
+typedef struct DdMemoryStats
+{
+    uint32_t struct_size;       /* = sizeof(DdMemoryStats) */
+    uint64_t current_bytes;     /* Live heap right now */
+    uint64_t peak_bytes;        /* Highest live heap since init or the last reset */
+    uint64_t allocation_count;  /* Allocations since process start */
+} DdMemoryStats;
+
+DD_API DdResult DD_CALL dragdoll_get_memory_stats(DdMemoryStats* out_stats);
+
+/* Resets peak_bytes to the current value (to measure one phase of a game session). */
+DD_API void DD_CALL dragdoll_reset_peak_memory(void);
+
 /* ---- Math types (ADR-0004: SI units, right-handed, quaternions x,y,z,w) ---------------- */
 typedef struct DdVec3
 {

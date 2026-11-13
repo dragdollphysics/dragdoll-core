@@ -62,6 +62,7 @@ endif()
 if(DRAGDOLL_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+    add_subdirectory(tools/bench)
 endif()
 
 if(CMAKE_SIZEOF_VOID_P EQUAL 4)

@@ -187,3 +187,32 @@ Newest entry at the bottom. Every session ends with **Changed / Next / Open ques
 **Next**
 * Commit dragdoll-sa + core change; push dragdoll-core; create `dragdollphysics/dragdoll-sa` on GitHub when the founder wants.
 * Remaining Phase 1: memory accounting (64 MB budget) + perf baseline (x86/x64).
+
+---
+
+## 2026-11-12 — Phase 1, task 5: memory accounting + performance baseline
+**Changed** (local, not committed)
+* `core/src/memory_stats.{hpp,cpp}`: counting allocator (16-byte header with size + alignment, atomics, installed once in `dragdoll_init`); C API `dragdoll_get_memory_stats`, `dragdoll_reset_peak_memory`.
+* `tests/unit/test_memory.cpp`: stats validation; 8 ragdolls + 400 static boxes + 7,200-triangle mesh = **25.0 MB peak** (limit 64), everything returned after world destroy.
+* `tools/bench` (`dragdoll_bench`): N active ragdolls (staggered drops, neighbours collide, gentle shoves keep them awake), mean/p95/worst step time, per-character cost, heap peak. `bench_budget` ctest in Release builds: budget 100 us (x64) / 120 us (x86) per character per step; CI configures `DRAGDOLL_BENCH_SLACK=3` for noisy shared runners.
+* All 5 presets pass (26 unit cases / 41.6k assertions + smoke + bench).
+
+**Measurements** (Ryzen 9 3900X, single thread unless noted, per 120 Hz fixed step)
+| ragdolls | x64 | x86 |
+|---|---|---|
+| 1 | 64 us | 74 us |
+| 8 | 556 us (2 threads: 395 us) | 609 us |
+| 20 | 1445 us (2 threads: 821 us) | 1625 us |
+Per character ~70 us (x64) / ~76-81 us (x86). Heap ~24 MB (16 MB of it is the Jolt temp allocator).
+
+**Finding / decision needed — SA ship criterion**
+"≤ 8 simultaneous ragdolls, < 1 ms added CPU per frame" does not hold for 8 *awake* ragdolls at 120 Hz: SA at 30 fps = 4 steps/frame → 8 × 70 us × 4 = 2.2 ms (1.6 ms with 2 threads); at 60 fps (2 steps) 1.1 ms. Caveats: ragdolls go to sleep when they settle (the benchmark keeps them awake on purpose), and a typical car-hit scene has 1-3 awake bodies. Options: (a) restate the criterion per 120 Hz step / "typical scene", (b) allow a 60 Hz mode for SA (ADR-0006 permits 60-240; check stiffness), (c) Phase 5 optimisation pass (solver iterations 16/8 are generous; per-body motion-quality, simpler contact for far ragdolls), (d) LOD: distance-based deactivation. Decide before Phase 6.
+
+**Next**
+* Phase 1 is feature-complete: only the founder's review of the spike remains (done) → write the Phase 1 retrospective, then Phase 2 (workbench: ImGui/Dawn decision, hot reload, recordings).
+* Optional quick win for the SA plugin: log `dragdoll_get_memory_stats` once per second in `dragdoll_sa.log`.
+
+---
+
+## 2026-11-12 — Idea (founder): outcome-aware ragdoll tiers
+Crowd question (car through the pier) → cost is linear in awake ragdolls (~70 us each per step). Founder's optimisation: a ped that is **killed** by the hit needs no muscles (limp, cheap, can settle and freeze), only a ped that **survives** needs protective reactions and a get-up. Added to workplan Phase 6 as "Outcome tiers + ragdoll budget manager"; API gets an outcome hint at activation (D17 already has the `dead` state). To measure: cost of limp vs reduced solver iterations vs full active.

@@ -20,6 +20,8 @@ add_library(dragdoll SHARED
     src/capi_guard.hpp
     src/capi_world_handle.hpp
     src/capi_library.cpp
+    src/memory_stats.hpp
+    src/memory_stats.cpp
     src/capi_world.cpp
     src/capi_character.cpp
     src/capi_debug_draw.cpp
