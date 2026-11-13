@@ -162,7 +162,7 @@ Planned by **effort hours, not calendar weeks** (total ≈ **460 h** to v1, ±50
 * [ ] ImGui panels via rlImGui in the raylib viewer (ADR-0021 replaces the Dawn plan): scenario list, live parameter sliders, body inspector, click-impulse.
 * [ ] Hot-reload DLL host + replay restore.
 * [x] `.ddrec` recording at the C API boundary + replay (`dragdoll_replay_*`), notes (`dragdoll_world_record_note`), viewer `--record` / `--replay` + F9 marks (task 2.1).
-* [ ] F9/F10 annotations with text + screenshot, `dragdoll-inspect`.
+* [x] F9 annotations with typed text + screenshot (`<recording>_step<N>.png`), `dragdoll_inspect` (summary, notes with screenshot paths, `--motion`, `--body`) (tasks 2.1, 2.2). Not yet: `--at/--window/--fields`, `--render` contact sheets (add when a session needs them).
 * [ ] Tracy integration; MCP bridge.
 * [~] **[SA]** C-API-boundary recording + host-session replay in the workbench: core done (task 2.1); SA plugin capture + cross-build (x86 game → x64 viewer) determinism decision in task 2.5.
 * [ ] **Vehicle shape pack** (own geometry): sedan, sports car, SUV, van, bus, motorbike — parameterized bumper height, hood angle, windshield angle; kinematic driving at set speed/heading/braking.

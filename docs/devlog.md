@@ -243,3 +243,19 @@ Crowd question (car through the pier) → cost is linear in awake ragdolls (~70 
 **New test:** no body spins in place (> 30 deg/s, < 2 cm/s) while the rest is still (< 10 deg/s), 3 ragdoll scenarios x 30/60/144 fps. Before the fix it failed with 79-108 deg/s (`lower_spine`); after: < 7 deg/s everywhere. (A frictionless control test was tried and removed: the frictionless outcome is chaotic per build, so it was flaky.)
 **New tools:** `dragdoll_inspect` (`tools/inspect`): summary + notes, `--motion` (fastest bodies around each note and over the last second), `--body NAME` (speed trace). C API: `dragdoll_world_get_character_count / get_character`.
 **Viewer:** replays stop on their last frame (A loops), restart clears old notes, clearer HUD wording.
+
+---
+
+## 2026-11-12 — Phase 2, task 2.2: F9 notes with text + screenshot
+**Changed** (local, not committed)
+* Viewer (record mode): F9 freezes the sim and opens a note box; Enter records `<text> | shot=<file>` as a `.ddrec` note and saves `<recording>_step<N>.png` (scene as annotated, before the box is drawn); Esc cancels; empty text = plain "F9 mark" note. Hotkeys are off while typing; Esc quits the viewer only outside the note box (exit key moved into the loop condition).
+* `dragdoll_inspect` shows the note text and the screenshot path (flags a missing file).
+* Founder test: note + screenshot saved and read back via inspect. 4 dev presets green.
+
+**Known quirk:** the note's replay time is the end of the host frame it was applied in, up to a few steps after the step in the screenshot name (264 vs step 219 in the test = same host frame batch); the file name carries the exact step.
+
+**Next**
+* Task 2.3 (Opus): ImGui panels via rlImGui (scenario list, parameter sliders, body inspector, click-impulse).
+
+**Open questions**
+* Commit 44fa192 was pushed without the DCO sign-off CLAUDE.md requires (`git commit -s`); leave it or rewrite with a force-push? Use `-s` from now on.

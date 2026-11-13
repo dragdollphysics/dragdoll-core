@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -124,7 +125,23 @@ int main(int argc, char** argv)
                 frame.first_divergence == 0 ? "identical to the original at every frame" : "DIVERGED");
     for (const auto& [index, text] : notes)
     {
-        std::printf("note at frame %llu (t %.2f s): %s\n", static_cast<unsigned long long>(samples[index].frame), samples[index].time, text.c_str());
+        // The viewer appends " | shot=<file>" when it saved a screenshot next to the recording.
+        std::string shown = text;
+        std::string shot;
+        const size_t tag = text.rfind(" | shot=");
+        if (tag != std::string::npos)
+        {
+            shown = text.substr(0, tag);
+            shot = text.substr(tag + 8);
+        }
+        std::printf("note at frame %llu (t %.2f s): %s\n", static_cast<unsigned long long>(samples[index].frame), samples[index].time, shown.c_str());
+        if (!shot.empty())
+        {
+            const std::string recording = argv[1];
+            const size_t slash = recording.find_last_of("/\\");
+            const std::string path = (slash == std::string::npos ? std::string() : recording.substr(0, slash + 1)) + shot;
+            std::printf("  screenshot: %s%s\n", path.c_str(), std::filesystem::exists(path) ? "" : " (file missing)");
+        }
     }
 
     DdCharacter* character = dragdoll_world_get_character(world, 0);
@@ -147,7 +164,7 @@ int main(int argc, char** argv)
         {
             const double t = samples[index].time;
             printWindow(samples, indexAt(t - 0.25), indexAt(t + 0.25) == indexAt(t - 0.25) ? index : indexAt(t + 0.25), character,
-                        ("around note \"" + text + "\"").c_str());
+                        ("around note \"" + text.substr(0, text.rfind(" | shot=")) + "\"").c_str());
         }
         printWindow(samples, indexAt(time - 1.0), samples.size() - 1, character, "last second");
     }

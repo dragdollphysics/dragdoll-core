@@ -261,7 +261,93 @@ struct App
     uint64_t replayNoteFrame = 0;
     double replayNoteTimer = 0.0;
     std::string replayBuild;
+
+    // F9 annotation (record mode): the sim pauses, the user types a note, Enter saves it plus a screenshot.
+    bool noteEditing = false;
+    std::string noteText;
+    bool notePrevPaused = false;
+    std::string pendingShot; // Full path of the screenshot to take at the end of this frame
 };
+
+// While a note is being typed, hotkeys are off.
+bool keyPressed(const App& app, int key)
+{
+    return !app.noteEditing && IsKeyPressed(key);
+}
+
+std::string shotPathFor(const std::string& recordPath, uint64_t step)
+{
+    std::string base = recordPath;
+    const size_t dot = base.find_last_of('.');
+    const size_t slash = base.find_last_of("/\\");
+    if (dot != std::string::npos && (slash == std::string::npos || dot > slash))
+    {
+        base.erase(dot);
+    }
+    return base + "_step" + std::to_string(step) + ".png";
+}
+
+std::string fileNameOf(const std::string& path)
+{
+    const size_t slash = path.find_last_of("/\\");
+    return slash == std::string::npos ? path : path.substr(slash + 1);
+}
+
+void beginNote(App& app)
+{
+    app.noteEditing = true;
+    app.noteText.clear();
+    app.notePrevPaused = app.paused;
+    app.paused = true; // Freeze the moment being annotated
+}
+
+void editNote(App& app)
+{
+    for (int c = GetCharPressed(); c != 0; c = GetCharPressed())
+    {
+        if (c >= 32 && app.noteText.size() < 160)
+        {
+            int size = 0;
+            app.noteText += CodepointToUTF8(c, &size);
+        }
+    }
+    if ((IsKeyPressed(KEY_BACKSPACE) || IsKeyPressedRepeat(KEY_BACKSPACE)) && !app.noteText.empty())
+    {
+        // Remove one UTF-8 character
+        size_t n = app.noteText.size() - 1;
+        while (n > 0 && (static_cast<unsigned char>(app.noteText[n]) & 0xC0) == 0x80) --n;
+        app.noteText.erase(n);
+    }
+    if (IsKeyPressed(KEY_ESCAPE))
+    {
+        app.noteEditing = false;
+        app.paused = app.notePrevPaused;
+    }
+    else if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER))
+    {
+        const uint64_t step = dragdoll_world_get_step_count(app.main.world);
+        app.pendingShot = shotPathFor(app.recordPath, step);
+        std::string text = app.noteText.empty() ? "F9 mark at step " + std::to_string(step) : app.noteText;
+        text += " | shot=" + fileNameOf(app.pendingShot);
+        dragdoll_world_record_note(app.main.world, text.c_str());
+        app.noteEditing = false; // The sim stays paused until the screenshot has been taken
+    }
+}
+
+void drawNoteBox(const App& app)
+{
+    const int w = GetScreenWidth();
+    const int h = GetScreenHeight();
+    DrawRectangle(0, 0, w, h, Color{0, 0, 0, 110});
+    const int boxW = std::min(w - 40, 760);
+    const int x = (w - boxW) / 2;
+    const int y = h / 2 - 50;
+    DrawRectangle(x, y, boxW, 100, Color{30, 34, 44, 245});
+    DrawRectangleLines(x, y, boxW, 100, Color{255, 220, 120, 255});
+    DrawText("Note for this moment  (Enter = save + screenshot, Esc = cancel, empty = plain mark)", x + 12, y + 10, 16, Color{255, 220, 120, 255});
+    const std::string shown = app.noteText + (static_cast<int>(GetTime() * 2.0) % 2 == 0 ? "_" : " ");
+    DrawText(shown.c_str(), x + 12, y + 50, 22, RAYWHITE);
+}
 
 DdWorld* activeWorld(App& app)
 {
@@ -579,7 +665,7 @@ void drawHud(App& app)
     if (app.showHelp)
     {
         const int h = GetScreenHeight();
-        DrawText("Space pause | N step | Up/Down time scale | F host frame rate | R restart | A auto-restart | L joint limits | Tab next | H hide help | left-drag orbit | middle-drag pan | wheel zoom",
+        DrawText("Space pause | N step | Up/Down time scale | F host frame rate | R restart | A auto-restart | L joint limits | Tab next | F9 note (when recording) | H hide help | left-drag orbit | middle-drag pan | wheel zoom",
                  x, h - 28, 16, Color{170, 175, 185, 255});
     }
     DrawFPS(GetScreenWidth() - 90, 10);
@@ -645,7 +731,7 @@ int main(int argc, char** argv)
     SetTraceLogLevel(LOG_WARNING);
     SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_VSYNC_HINT | FLAG_WINDOW_RESIZABLE | FLAG_WINDOW_UNFOCUSED);
     InitWindow(1280, 720, "DragDoll live viewer");
-    SetExitKey(KEY_ESCAPE);
+    SetExitKey(KEY_NULL); // Esc quits unless a note is being typed (see the loop condition)
 
     if (!app.replayPath.empty())
     {
@@ -659,34 +745,36 @@ int main(int argc, char** argv)
     const DdDebugDrawCallbacks callbacks{sizeof(DdDebugDrawCallbacks), nullptr, &onLine, &onTriangle};
     Geometry geometry;
     Geometry overlay; // Joint limits, drawn translucent on top
-    while (!WindowShouldClose())
+    while (!WindowShouldClose() && !(IsKeyPressed(KEY_ESCAPE) && !app.noteEditing))
     {
         // --- input ---
-        if (IsKeyPressed(KEY_SPACE)) app.paused = !app.paused;
-        if (IsKeyPressed(KEY_H)) app.showHelp = !app.showHelp;
-        if (IsKeyPressed(KEY_A)) app.autoRestart = !app.autoRestart;
-        if (IsKeyPressed(KEY_L)) app.showLimits = !app.showLimits;
-        if (IsKeyPressed(KEY_R) && app.replay != nullptr) openReplay(app, false);
-        else if (IsKeyPressed(KEY_R)) loadScenario(app, app.scenarioIndex, false); // restart the animation, keep the camera
-        if (IsKeyPressed(KEY_TAB) && app.replay == nullptr) loadScenario(app, app.scenarioIndex + (IsKeyDown(KEY_LEFT_SHIFT) ? app.names.size() - 1 : 1), false); // keep the camera
-        if (IsKeyPressed(KEY_F)) app.hostMode = static_cast<HostMode>((static_cast<int>(app.hostMode) + 1) % static_cast<int>(HostMode::Count));
-        if (IsKeyPressed(KEY_UP)) app.timeScale = std::min(app.timeScale * 2.0f, 4.0f);
-        if (IsKeyPressed(KEY_DOWN)) app.timeScale = std::max(app.timeScale * 0.5f, 0.0625f);
-        if (IsKeyPressed(KEY_N) && app.replay != nullptr)
+        if (keyPressed(app, KEY_SPACE)) app.paused = !app.paused;
+        if (keyPressed(app, KEY_H)) app.showHelp = !app.showHelp;
+        if (keyPressed(app, KEY_A)) app.autoRestart = !app.autoRestart;
+        if (keyPressed(app, KEY_L)) app.showLimits = !app.showLimits;
+        if (keyPressed(app, KEY_R) && app.replay != nullptr) openReplay(app, false);
+        else if (keyPressed(app, KEY_R)) loadScenario(app, app.scenarioIndex, false); // restart the animation, keep the camera
+        if (keyPressed(app, KEY_TAB) && app.replay == nullptr) loadScenario(app, app.scenarioIndex + (IsKeyDown(KEY_LEFT_SHIFT) ? app.names.size() - 1 : 1), false); // keep the camera
+        if (keyPressed(app, KEY_F)) app.hostMode = static_cast<HostMode>((static_cast<int>(app.hostMode) + 1) % static_cast<int>(HostMode::Count));
+        if (keyPressed(app, KEY_UP)) app.timeScale = std::min(app.timeScale * 2.0f, 4.0f);
+        if (keyPressed(app, KEY_DOWN)) app.timeScale = std::max(app.timeScale * 0.5f, 0.0625f);
+        if (keyPressed(app, KEY_N) && app.replay != nullptr)
         {
             app.paused = true;
             advanceReplay(app); // Exactly one recorded host frame.
         }
-        else if (IsKeyPressed(KEY_N) && app.main.world != nullptr)
+        else if (keyPressed(app, KEY_N) && app.main.world != nullptr)
         {
             app.paused = true;
             advanceHostFrame(app, 1.0f / 120.0f); // Exactly one fixed step.
         }
-        if (IsKeyPressed(KEY_F9) && app.main.world != nullptr && dragdoll_world_is_recording(app.main.world))
+        if (keyPressed(app, KEY_F9) && app.main.world != nullptr && dragdoll_world_is_recording(app.main.world))
         {
-            char note[96];
-            std::snprintf(note, sizeof(note), "F9 mark at step %llu", static_cast<unsigned long long>(dragdoll_world_get_step_count(app.main.world)));
-            dragdoll_world_record_note(app.main.world, note);
+            beginNote(app);
+        }
+        if (app.noteEditing)
+        {
+            editNote(app);
         }
         app.camera.update();
 
@@ -751,6 +839,22 @@ int main(int argc, char** argv)
         else if (!app.error.empty())
         {
             DrawText(app.error.c_str(), 14, 14, 20, RED);
+        }
+        if (!app.pendingShot.empty())
+        {
+            // Taken before the note box is drawn, so the picture shows the scene exactly as annotated.
+            Image shot = LoadImageFromScreen();
+            if (!ExportImage(shot, app.pendingShot.c_str()))
+            {
+                app.error = "could not save screenshot " + app.pendingShot;
+            }
+            UnloadImage(shot);
+            app.pendingShot.clear();
+            app.paused = app.notePrevPaused;
+        }
+        if (app.noteEditing)
+        {
+            drawNoteBox(app);
         }
         EndDrawing();
     }
