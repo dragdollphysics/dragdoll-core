@@ -259,3 +259,18 @@ Crowd question (car through the pier) → cost is linear in awake ragdolls (~70 
 
 **Open questions**
 * Commit 44fa192 was pushed without the DCO sign-off CLAUDE.md requires (`git commit -s`); leave it or rewrite with a force-push? Use `-s` from now on.
+
+---
+
+## 2026-11-12 — Phase 2, task 2.3 (first slice): ImGui panels in the viewer
+**Changed** (local, not committed)
+* Dear ImGui v1.92.9 (MIT) + rlImGui 5c17e70 (zlib), fetched and pinned in `workbench/CMakeLists.txt` as the `dragdoll_imgui` static lib (no imgui.ini written).
+* Panels: **Playback** (pause, step, restart, log time-scale slider, host-rate combo, auto-restart / joint limits / help toggles), **Scenarios** (click to load, camera kept), **Bodies** (per-body m/s and deg/s between rendered steps; spin > 30 deg/s while < 2 cm/s shown orange, the founder's lower-spine pattern). Works in replay too.
+* Hotkeys and camera ignore input that ImGui captures; F9 screenshots are taken before the panels are drawn.
+* Founder: "Looks good". 4 dev presets green.
+
+**Next**
+* Task 2.3 second slice (Opus): live parameter sliders (scenario params, rig friction) + click-impulse. Or 2.4 hot-reload host if sliders can wait.
+
+**Open questions**
+* DCO sign-off missing on pushed 44fa192 (see previous entry).

@@ -11,6 +11,9 @@
 #include <raymath.h>
 #include <rlgl.h>
 
+#include <imgui.h>
+#include <rlImGui.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -272,7 +275,7 @@ struct App
 // While a note is being typed, hotkeys are off.
 bool keyPressed(const App& app, int key)
 {
-    return !app.noteEditing && IsKeyPressed(key);
+    return !app.noteEditing && !ImGui::GetIO().WantCaptureKeyboard && IsKeyPressed(key);
 }
 
 std::string shotPathFor(const std::string& recordPath, uint64_t step)
@@ -670,6 +673,144 @@ void drawHud(App& app)
     }
     DrawFPS(GetScreenWidth() - 90, 10);
 }
+// ------------------------------------------------------------------------------------------------
+// ImGui panels (task 2.3)
+// ------------------------------------------------------------------------------------------------
+struct BodyMotion
+{
+    uint64_t step = 0;
+    std::vector<DdTransform> previous;
+    std::vector<float> speed; // m/s
+    std::vector<float> spin;  // deg/s
+};
+
+void measureMotion(DdWorld* world, BodyMotion& m)
+{
+    DdCharacter* c = world != nullptr ? dragdoll_world_get_character(world, 0) : nullptr;
+    if (c == nullptr)
+    {
+        m.previous.clear();
+        return;
+    }
+    const uint64_t step = dragdoll_world_get_step_count(world);
+    std::vector<DdTransform> now(dragdoll_character_get_body_count(c));
+    dragdoll_character_get_body_transforms(c, 0, now.data(), static_cast<uint32_t>(now.size()));
+    if (now.size() != m.previous.size() || step < m.step)
+    {
+        m.speed.assign(now.size(), 0.0f); // New character or restart
+        m.spin.assign(now.size(), 0.0f);
+    }
+    else if (step > m.step)
+    {
+        const float dt = static_cast<float>(step - m.step) / 120.0f;
+        for (size_t i = 0; i < now.size(); ++i)
+        {
+            const DdVec3 &a = m.previous[i].position, &b = now[i].position;
+            m.speed[i] = std::sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y) + (a.z - b.z) * (a.z - b.z)) / dt;
+            const DdQuat &qa = m.previous[i].rotation, &qb = now[i].rotation;
+            const float d = std::fabs(qa.x * qb.x + qa.y * qb.y + qa.z * qb.z + qa.w * qb.w);
+            m.spin[i] = 2.0f * std::acos(std::min(1.0f, d)) * RAD2DEG / dt;
+        }
+    }
+    else
+    {
+        return; // Paused: keep the last measurement
+    }
+    m.previous = std::move(now);
+    m.step = step;
+}
+
+void drawPanels(App& app, BodyMotion& motion)
+{
+    const float w = static_cast<float>(GetScreenWidth());
+    const bool replaying = app.replay != nullptr;
+
+    ImGui::SetNextWindowPos(ImVec2(w - 290.0f, 40.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(280.0f, 0.0f), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Playback"))
+    {
+        ImGui::Checkbox("Paused (Space)", &app.paused);
+        ImGui::SameLine();
+        if (ImGui::Button("Step (N)"))
+        {
+            app.paused = true;
+            if (replaying) advanceReplay(app);
+            else if (app.main.world != nullptr) advanceHostFrame(app, 1.0f / 120.0f);
+        }
+        if (ImGui::Button("Restart (R)"))
+        {
+            if (replaying) openReplay(app, false);
+            else loadScenario(app, app.scenarioIndex, false);
+        }
+        ImGui::SliderFloat("Time scale", &app.timeScale, 0.0625f, 4.0f, "%.3fx", ImGuiSliderFlags_Logarithmic);
+        if (!replaying)
+        {
+            int mode = static_cast<int>(app.hostMode);
+            const char* preview = hostModeName(app.hostMode);
+            if (ImGui::BeginCombo("Host rate", preview))
+            {
+                for (int i = 0; i < static_cast<int>(HostMode::Count); ++i)
+                {
+                    if (ImGui::Selectable(hostModeName(static_cast<HostMode>(i)), i == mode)) app.hostMode = static_cast<HostMode>(i);
+                }
+                ImGui::EndCombo();
+            }
+        }
+        ImGui::Checkbox("Auto-restart (A)", &app.autoRestart);
+        ImGui::Checkbox("Joint limits (L)", &app.showLimits);
+        ImGui::Checkbox("Help line (H)", &app.showHelp);
+    }
+    ImGui::End();
+
+    if (!replaying)
+    {
+        ImGui::SetNextWindowPos(ImVec2(w - 290.0f, 300.0f), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(280.0f, 220.0f), ImGuiCond_FirstUseEver);
+        if (ImGui::Begin("Scenarios (Tab)"))
+        {
+            for (size_t i = 0; i < app.names.size(); ++i)
+            {
+                if (ImGui::Selectable(app.names[i].c_str(), i == app.scenarioIndex)) loadScenario(app, i, false);
+            }
+        }
+        ImGui::End();
+    }
+
+    measureMotion(activeWorld(app), motion);
+    DdWorld* world = activeWorld(app);
+    DdCharacter* c = world != nullptr ? dragdoll_world_get_character(world, 0) : nullptr;
+    if (c != nullptr && motion.previous.size() == motion.speed.size())
+    {
+        ImGui::SetNextWindowPos(ImVec2(w - 290.0f, 530.0f), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(280.0f, 360.0f), ImGuiCond_FirstUseEver);
+        if (ImGui::Begin("Bodies"))
+        {
+            ImGui::TextDisabled("speed between rendered steps");
+            if (ImGui::BeginTable("bodies", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
+            {
+                ImGui::TableSetupColumn("body");
+                ImGui::TableSetupColumn("m/s");
+                ImGui::TableSetupColumn("deg/s");
+                ImGui::TableHeadersRow();
+                for (uint32_t i = 0; i < motion.speed.size(); ++i)
+                {
+                    // Highlight the "moving while the rest is still" pattern the founder spotted.
+                    const bool spinning = motion.spin[i] > 30.0f && motion.speed[i] < 0.02f;
+                    ImGui::TableNextRow();
+                    ImGui::TableNextColumn();
+                    ImGui::TextUnformatted(dragdoll_character_get_body_name(c, i));
+                    ImGui::TableNextColumn();
+                    ImGui::Text("%.3f", motion.speed[i]);
+                    ImGui::TableNextColumn();
+                    if (spinning) ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.35f, 1.0f), "%.1f", motion.spin[i]);
+                    else ImGui::Text("%.1f", motion.spin[i]);
+                }
+                ImGui::EndTable();
+            }
+        }
+        ImGui::End();
+    }
+}
 } // namespace
 
 int main(int argc, char** argv)
@@ -731,6 +872,8 @@ int main(int argc, char** argv)
     SetTraceLogLevel(LOG_WARNING);
     SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_VSYNC_HINT | FLAG_WINDOW_RESIZABLE | FLAG_WINDOW_UNFOCUSED);
     InitWindow(1280, 720, "DragDoll live viewer");
+    rlImGuiSetup(true);
+    ImGui::GetIO().IniFilename = nullptr; // No imgui.ini next to the exe
     SetExitKey(KEY_NULL); // Esc quits unless a note is being typed (see the loop condition)
 
     if (!app.replayPath.empty())
@@ -745,6 +888,7 @@ int main(int argc, char** argv)
     const DdDebugDrawCallbacks callbacks{sizeof(DdDebugDrawCallbacks), nullptr, &onLine, &onTriangle};
     Geometry geometry;
     Geometry overlay; // Joint limits, drawn translucent on top
+    BodyMotion motion;
     while (!WindowShouldClose() && !(IsKeyPressed(KEY_ESCAPE) && !app.noteEditing))
     {
         // --- input ---
@@ -776,7 +920,7 @@ int main(int argc, char** argv)
         {
             editNote(app);
         }
-        app.camera.update();
+        if (!ImGui::GetIO().WantCaptureMouse) app.camera.update();
 
         // --- simulate ---
         if (app.replay != nullptr)
@@ -852,6 +996,9 @@ int main(int argc, char** argv)
             app.pendingShot.clear();
             app.paused = app.notePrevPaused;
         }
+        rlImGuiBegin();
+        drawPanels(app, motion);
+        rlImGuiEnd();
         if (app.noteEditing)
         {
             drawNoteBox(app);
@@ -859,6 +1006,7 @@ int main(int argc, char** argv)
         EndDrawing();
     }
 
+    rlImGuiShutdown();
     CloseWindow();
     dragdoll_replay_close(app.replay);
     app.main = Instance();
