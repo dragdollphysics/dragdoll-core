@@ -101,8 +101,14 @@ public:
     void destroyCharacter(DdCharacter* character);
     bool characterTransforms(const DdCharacter& character, bool interpolated, DdTransform* out, uint32_t capacity) const;
     void applyImpulse(DdCharacter& character, uint32_t body, const DdVec3& impulse, const DdVec3* point);
+    uint32_t characterCount() const { return static_cast<uint32_t>(mCharacters.size()); }
+    DdCharacter* characterAt(uint32_t index) const;
 
     JPH::PhysicsSystem& physics() { return *mPhysics; }
+
+    // The C ABI handle that owns this world (lets characters reach the recorder).
+    void setOwner(void* owner) { mOwner = owner; }
+    void* owner() const { return mOwner; }
 
 private:
     struct KinematicSample
@@ -160,6 +166,8 @@ private:
     // Characters, ordered by id (deterministic iteration).
     std::map<uint32_t, std::unique_ptr<DdCharacter>> mCharacters;
     uint32_t mNextCharacterId = 1;
+
+    void* mOwner = nullptr;
 };
 
 } // namespace dragdoll

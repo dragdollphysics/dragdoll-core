@@ -746,4 +746,15 @@ void World::applyImpulse(DdCharacter& c, uint32_t body, const DdVec3& impulse, c
     bodies.ActivateBody(id);
 }
 
+DdCharacter* World::characterAt(uint32_t index) const
+{
+    if (index >= mCharacters.size())
+    {
+        return nullptr;
+    }
+    auto it = mCharacters.begin();
+    std::advance(it, index);
+    return it->second.get();
+}
+
 } // namespace dragdoll

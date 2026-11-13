@@ -248,7 +248,25 @@ struct App
     uint64_t hash = 0;
     uint64_t shadowHash = 0;
     std::string error;
+
+    // Recording (--record) and replay (--replay) modes
+    std::string recordPath;
+    std::string replayPath;
+    DdReplay* replay = nullptr;
+    DdReplayInfo replayInfo{};
+    DdReplayFrame replayFrame{};
+    double replayWait = 0.0; // host time the last replayed frame covered
+    double replayAccumulator = 0.0;
+    std::string replayNote;
+    uint64_t replayNoteFrame = 0;
+    double replayNoteTimer = 0.0;
+    std::string replayBuild;
 };
+
+DdWorld* activeWorld(App& app)
+{
+    return app.replay != nullptr ? dragdoll_replay_get_world(app.replay) : app.main.world;
+}
 
 bool loadScenario(App& app, size_t index, bool resetCamera)
 {
@@ -257,7 +275,7 @@ bool loadScenario(App& app, size_t index, bool resetCamera)
     app.hostAccumulator = 0.0;
     app.lastHostDt = 0.0f;
     app.lastSteps = 0;
-    if (!Instance::make(app.names[app.scenarioIndex], app.main, app.error))
+    if (!Instance::make(app.names[app.scenarioIndex], app.main, app.error, app.recordPath.empty() ? nullptr : app.recordPath.c_str()))
     {
         return false;
     }
@@ -280,6 +298,130 @@ bool loadScenario(App& app, size_t index, bool resetCamera)
         app.camera.setUp(Vector3Normalize(toRay(desc.up))); // ...the world's up axis follows the scenario, the view stays.
     }
     return true;
+}
+
+bool openReplay(App& app, bool resetCamera)
+{
+    dragdoll_replay_close(app.replay);
+    app.replay = nullptr;
+    app.error.clear();
+    if (dragdoll_replay_open(app.replayPath.c_str(), &app.replay) != DD_OK)
+    {
+        app.error = std::string("replay: ") + dragdoll_last_error_message();
+        return false;
+    }
+    app.replayInfo = DdReplayInfo{};
+    app.replayInfo.struct_size = sizeof(DdReplayInfo);
+    dragdoll_replay_get_info(app.replay, &app.replayInfo);
+    app.replayBuild = app.replayInfo.recorded_build;
+    app.replayFrame = DdReplayFrame{};
+    app.replayFrame.struct_size = sizeof(DdReplayFrame);
+    app.replayWait = 0.0;
+    app.replayAccumulator = 0.0;
+    app.replayNote.clear();
+    app.replayNoteTimer = 0.0;
+    if (resetCamera)
+    {
+        app.camera.up = Vector3Normalize(toRay(app.replayInfo.up));
+        app.camera.target = Vector3Scale(app.camera.up, 0.8f);
+        app.camera.distance = 8.0f;
+    }
+    return true;
+}
+
+void advanceReplay(App& app)
+{
+    if (app.replay == nullptr || app.replayFrame.at_end != 0)
+    {
+        return;
+    }
+    if (dragdoll_replay_advance(app.replay, &app.replayFrame) != DD_OK)
+    {
+        app.error = std::string("replay: ") + dragdoll_last_error_message();
+        app.replayFrame.at_end = 1;
+        return;
+    }
+    app.replayWait = app.replayFrame.host_dt;
+    if (app.replayFrame.note != nullptr)
+    {
+        app.replayNote = app.replayFrame.note;
+        app.replayNoteFrame = app.replayFrame.frame;
+        app.replayNoteTimer = 4.0;
+    }
+}
+
+void updateReplay(App& app, float realDt)
+{
+    realDt = std::min(realDt, 0.1f);
+    app.replayNoteTimer = std::max(0.0, app.replayNoteTimer - static_cast<double>(realDt));
+    if (app.paused)
+    {
+        return;
+    }
+    if (app.replayFrame.at_end != 0)
+    {
+        if (app.autoRestart)
+        {
+            openReplay(app, false);
+        }
+        return;
+    }
+    // Play the recorded host frames back at the pace they were recorded (scaled by the time scale).
+    app.replayAccumulator += static_cast<double>(realDt) * app.timeScale;
+    int guard = 0;
+    while (app.replayAccumulator >= app.replayWait && app.replayFrame.at_end == 0 && guard++ < 64)
+    {
+        app.replayAccumulator -= app.replayWait;
+        advanceReplay(app);
+    }
+}
+
+void drawReplayHud(App& app)
+{
+    int y = 12;
+    const int x = 14;
+    auto text = [&](const std::string& s, Color color, int size = 18) {
+        DrawText(s.c_str(), x, y, size, color);
+        y += size + 5;
+    };
+    char buffer[256];
+    text("REPLAY: " + app.replayPath, RAYWHITE, 22);
+    text("saved by: " + app.replayBuild + (app.replayInfo.same_build ? "  (same program: exact copy expected)" : "  (another program build)"),
+         Color{200, 205, 215, 255}, 16);
+    std::snprintf(buffer, sizeof(buffer), "host frame %llu / %llu | last frame %.2f ms -> %u fixed step(s) | %s | time scale %.2fx",
+                  static_cast<unsigned long long>(app.replayFrame.frame), static_cast<unsigned long long>(app.replayInfo.frame_count),
+                  static_cast<double>(app.replayFrame.host_dt) * 1000.0, app.replayFrame.steps,
+                  app.paused ? "PAUSED" : (app.replayFrame.at_end ? "END" : "playing"), static_cast<double>(app.timeScale));
+    text(buffer, Color{160, 220, 255, 255});
+    if (app.replayFrame.frame > 0)
+    {
+        if (app.replayFrame.first_divergence == 0)
+        {
+            text("identical to the original run at every frame so far", Color{110, 230, 130, 255}, 16);
+        }
+        else
+        {
+            std::snprintf(buffer, sizeof(buffer), "DIVERGED from the recording first at frame %llu%s",
+                          static_cast<unsigned long long>(app.replayFrame.first_divergence),
+                          app.replayInfo.same_build ? "" : " (expected: recorded by another build)");
+            text(buffer, Color{255, 120, 90, 255}, 16);
+        }
+    }
+    if (app.replayNoteTimer > 0.0)
+    {
+        std::snprintf(buffer, sizeof(buffer), "NOTE (frame %llu): %s", static_cast<unsigned long long>(app.replayNoteFrame), app.replayNote.c_str());
+        text(buffer, Color{255, 220, 120, 255}, 20);
+    }
+    if (!app.error.empty())
+    {
+        text("ERROR: " + app.error, Color{255, 90, 90, 255});
+    }
+    if (app.showHelp)
+    {
+        DrawText("Space pause | N next frame | Up/Down time scale | R restart | A auto-restart | L joint limits | H hide help | left-drag orbit | middle-drag pan | wheel zoom",
+                 x, GetScreenHeight() - 28, 16, Color{170, 175, 185, 255});
+    }
+    DrawFPS(GetScreenWidth() - 90, 10);
 }
 
 void advanceHostFrame(App& app, float dt)
@@ -447,6 +589,7 @@ void drawHud(App& app)
 int main(int argc, char** argv)
 {
     std::string start = "car_vs_pole_120kmh";
+    std::string recordPath, replayPath;
     HostMode initialMode = HostMode::Real;
     for (int i = 1; i < argc; ++i)
     {
@@ -463,6 +606,14 @@ int main(int argc, char** argv)
             const int fps = std::atoi(argv[++i]);
             initialMode = fps == 30 ? HostMode::Fps30 : fps == 60 ? HostMode::Fps60 : fps == 144 ? HostMode::Fps144 : HostMode::Real;
         }
+        else if (std::strcmp(argv[i], "--record") == 0 && i + 1 < argc)
+        {
+            recordPath = argv[++i];
+        }
+        else if (std::strcmp(argv[i], "--replay") == 0 && i + 1 < argc)
+        {
+            replayPath = argv[++i];
+        }
         else if (argv[i][0] != '-')
         {
             start = argv[i];
@@ -478,6 +629,10 @@ int main(int argc, char** argv)
     App app;
     app.names = dragdoll::scenarios::list();
     app.hostMode = initialMode;
+    app.recordPath = recordPath;
+    // Recording: a restart would start a new recording. Replay: stop on the last frame so it can be inspected.
+    app.autoRestart = recordPath.empty() && replayPath.empty();
+    app.replayPath = replayPath;
     size_t index = 0;
     for (size_t i = 0; i < app.names.size(); ++i)
     {
@@ -492,7 +647,11 @@ int main(int argc, char** argv)
     InitWindow(1280, 720, "DragDoll live viewer");
     SetExitKey(KEY_ESCAPE);
 
-    if (!loadScenario(app, index, true))
+    if (!app.replayPath.empty())
+    {
+        openReplay(app, true);
+    }
+    else if (!loadScenario(app, index, true))
     {
         std::fprintf(stderr, "failed to load scenario: %s\n", app.error.c_str());
     }
@@ -507,20 +666,36 @@ int main(int argc, char** argv)
         if (IsKeyPressed(KEY_H)) app.showHelp = !app.showHelp;
         if (IsKeyPressed(KEY_A)) app.autoRestart = !app.autoRestart;
         if (IsKeyPressed(KEY_L)) app.showLimits = !app.showLimits;
-        if (IsKeyPressed(KEY_R)) loadScenario(app, app.scenarioIndex, false); // restart the animation, keep the camera
-        if (IsKeyPressed(KEY_TAB)) loadScenario(app, app.scenarioIndex + (IsKeyDown(KEY_LEFT_SHIFT) ? app.names.size() - 1 : 1), false); // keep the camera
+        if (IsKeyPressed(KEY_R) && app.replay != nullptr) openReplay(app, false);
+        else if (IsKeyPressed(KEY_R)) loadScenario(app, app.scenarioIndex, false); // restart the animation, keep the camera
+        if (IsKeyPressed(KEY_TAB) && app.replay == nullptr) loadScenario(app, app.scenarioIndex + (IsKeyDown(KEY_LEFT_SHIFT) ? app.names.size() - 1 : 1), false); // keep the camera
         if (IsKeyPressed(KEY_F)) app.hostMode = static_cast<HostMode>((static_cast<int>(app.hostMode) + 1) % static_cast<int>(HostMode::Count));
         if (IsKeyPressed(KEY_UP)) app.timeScale = std::min(app.timeScale * 2.0f, 4.0f);
         if (IsKeyPressed(KEY_DOWN)) app.timeScale = std::max(app.timeScale * 0.5f, 0.0625f);
-        if (IsKeyPressed(KEY_N) && app.main.world != nullptr)
+        if (IsKeyPressed(KEY_N) && app.replay != nullptr)
+        {
+            app.paused = true;
+            advanceReplay(app); // Exactly one recorded host frame.
+        }
+        else if (IsKeyPressed(KEY_N) && app.main.world != nullptr)
         {
             app.paused = true;
             advanceHostFrame(app, 1.0f / 120.0f); // Exactly one fixed step.
         }
+        if (IsKeyPressed(KEY_F9) && app.main.world != nullptr && dragdoll_world_is_recording(app.main.world))
+        {
+            char note[96];
+            std::snprintf(note, sizeof(note), "F9 mark at step %llu", static_cast<unsigned long long>(dragdoll_world_get_step_count(app.main.world)));
+            dragdoll_world_record_note(app.main.world, note);
+        }
         app.camera.update();
 
         // --- simulate ---
-        if (app.main.world != nullptr)
+        if (app.replay != nullptr)
+        {
+            updateReplay(app, GetFrameTime());
+        }
+        else if (app.main.world != nullptr)
         {
             update(app, GetFrameTime());
         }
@@ -531,17 +706,17 @@ int main(int argc, char** argv)
         overlay.tris.clear();
         overlay.lines.clear();
         DdResult drawResult = DD_ERROR_NOT_INITIALIZED;
-        if (app.main.world != nullptr)
+        if (DdWorld* world = activeWorld(app))
         {
             DdDebugDrawCallbacks cb = callbacks;
             cb.user = &geometry;
             cb.flags = DD_DRAW_SHAPES;
-            drawResult = dragdoll_world_debug_draw(app.main.world, &cb);
+            drawResult = dragdoll_world_debug_draw(world, &cb);
             if (app.showLimits && drawResult == DD_OK)
             {
                 cb.user = &overlay;
                 cb.flags = DD_DRAW_CONSTRAINT_LIMITS;
-                dragdoll_world_debug_draw(app.main.world, &cb);
+                dragdoll_world_debug_draw(world, &cb);
             }
         }
 
@@ -565,14 +740,23 @@ int main(int argc, char** argv)
         {
             DrawText("This DragDoll build has no debug renderer (use a dev preset).", 14, 300, 20, RED);
         }
-        if (app.main.world != nullptr)
+        if (app.replay != nullptr)
+        {
+            drawReplayHud(app);
+        }
+        else if (app.main.world != nullptr)
         {
             drawHud(app);
+        }
+        else if (!app.error.empty())
+        {
+            DrawText(app.error.c_str(), 14, 14, 20, RED);
         }
         EndDrawing();
     }
 
     CloseWindow();
+    dragdoll_replay_close(app.replay);
     app.main = Instance();
     app.shadow = Instance();
     dragdoll_shutdown();

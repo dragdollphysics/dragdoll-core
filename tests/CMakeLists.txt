@@ -29,6 +29,7 @@ add_executable(dragdoll_tests
     unit/test_scenarios.cpp
     unit/test_character.cpp
     unit/test_memory.cpp
+    unit/test_recording.cpp
 )
 target_link_libraries(dragdoll_tests PRIVATE DragDoll::dragdoll dragdoll_scenarios doctest::doctest)
 dragdoll_set_compile_options(dragdoll_tests)

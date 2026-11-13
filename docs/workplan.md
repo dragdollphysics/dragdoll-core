@@ -155,14 +155,16 @@ Planned by **effort hours, not calendar weeks** (total ≈ **460 h** to v1, ±50
 * [ ] **SA spike (`dragdoll-sa` prototype):** minimal ASI (plugin-sdk) that loads the 32-bit DragDoll DLL, logs ped positions and RpHAnim bone matrices, and drops one passive ragdoll on a key press. Retires the biggest technical risk early.
 * **Acceptance:** `drop_from_1m` (task 4: green on all presets, plus `fall_forward`, `shove_mid_fall`; awaiting human review) stable (no NaN/explosion, limits respected) on x86 and x64; golden hashes stable across thread counts 1/4/8; host-rate jitter test green; memory per world < 64 MB; SA spike runs 10 min without crash (version confirmed by plugin-sdk).
 
-### Phase 2 — Workbench & Tooling (~80 h, can interleave with Phase 1)
+### Phase 2 — Workbench & Tooling (~80 h)
+**Order (Phase 1 retrospective):** 2.1 `.ddrec` recording + replay at the C API boundary → 2.2 `dragdoll-inspect` + F9 annotations → 2.3 ImGui panels → 2.4 hot-reload host → 2.5 SA session capture + replay → 2.6 vehicle shape pack → 2.7 Tracy + MCP bridge.
 **Goal:** the development cockpit.
 * [x] Live scenario viewer `dragdoll_view` (raylib; windowed, real time, pause/step/slow-mo, host-rate simulation, hash match HUD) + C-API debug-draw callback (Phase 1, task 3c) — the human-validation loop. Seed of the workbench.
-* [ ] WebGPU (Dawn) + ImGui window (or keep raylib if sufficient); click-impulse, body inspector.
+* [ ] ImGui panels via rlImGui in the raylib viewer (ADR-0021 replaces the Dawn plan): scenario list, live parameter sliders, body inspector, click-impulse.
 * [ ] Hot-reload DLL host + replay restore.
-* [ ] `.ddrec` recording, F9/F10 annotations, `dragdoll-inspect`.
+* [x] `.ddrec` recording at the C API boundary + replay (`dragdoll_replay_*`), notes (`dragdoll_world_record_note`), viewer `--record` / `--replay` + F9 marks (task 2.1).
+* [ ] F9/F10 annotations with text + screenshot, `dragdoll-inspect`.
 * [ ] Tracy integration; MCP bridge.
-* [ ] **[SA]** C-API-boundary recording + host-session replay in the workbench (a recorded host session reproduces bit-identically).
+* [~] **[SA]** C-API-boundary recording + host-session replay in the workbench: core done (task 2.1); SA plugin capture + cross-build (x86 game → x64 viewer) determinism decision in task 2.5.
 * [ ] **Vehicle shape pack** (own geometry): sedan, sports car, SUV, van, bus, motorbike — parameterized bumper height, hood angle, windshield angle; kinematic driving at set speed/heading/braking.
 * **Acceptance:** edit → rebuild → see change without closing the window in < 15 s; a recorded session replays bit-identically; Claude can run a scenario and read a note via MCP/inspect.
 

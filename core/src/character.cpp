@@ -120,6 +120,7 @@ JPH::Ref<JPH::RagdollSettings> buildRagdollSettings(const Rig& rig, JPH::Mat44Ar
             c->mNormalHalfConeAngle = joint.swingSide; // About the normal axis: sideways
             c->mTwistMinAngle = joint.twistMin;
             c->mTwistMaxAngle = joint.twistMax;
+            c->mMaxFrictionTorque = joint.friction * massScale; // Passive tissue resistance
             c->mDrawConstraintSize = 0.12f; // Debug overlay sized to a human joint
             part.mToParent = c;
         }
@@ -132,6 +133,7 @@ JPH::Ref<JPH::RagdollSettings> buildRagdollSettings(const Rig& rig, JPH::Mat44Ar
             c->mNormalAxis1 = c->mNormalAxis2 = perpendicular(boneDir, c->mHingeAxis1, forward);
             c->mLimitsMin = joint.min;
             c->mLimitsMax = joint.max;
+            c->mMaxFrictionTorque = joint.friction * massScale;
             c->mDrawConstraintSize = 0.12f; // Debug overlay sized to a human joint
             part.mToParent = c;
         }

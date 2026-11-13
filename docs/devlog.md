@@ -216,3 +216,30 @@ Per character ~70 us (x64) / ~76-81 us (x86). Heap ~24 MB (16 MB of it is the Jo
 
 ## 2026-11-12 — Idea (founder): outcome-aware ragdoll tiers
 Crowd question (car through the pier) → cost is linear in awake ragdolls (~70 us each per step). Founder's optimisation: a ped that is **killed** by the hit needs no muscles (limp, cheap, can settle and freeze), only a ped that **survives** needs protective reactions and a get-up. Added to workplan Phase 6 as "Outcome tiers + ragdoll budget manager"; API gets an outcome hint at activation (D17 already has the `dead` state). To measure: cost of limp vs reduced solver iterations vs full active.
+
+---
+
+## 2026-11-12 — Phase 2, task 2.1: recordings & replay
+**Changed** (local, not committed)
+* `DdWorldDesc.record_path`: a world records every changing call at the C ABI boundary (step + steps taken + state hash after, step_fixed, add/remove colliders incl. mesh data, kinematic targets, character create (rig JSON) / destroy, impulses, notes) to a `.ddrec` file (`core/src/recording.{hpp,cpp}`; header = magic, format v1, API version, build info; records = type + size + payload; UTF-8 paths).
+* Replay (`core/src/capi_replay.cpp`): `dragdoll_replay_open / get_info / advance / get_world / close`. Rebuilds the world, re-applies calls host frame by host frame, checks the state hash every frame, reports the first divergence and keeps going; collider/character ids must match; truncated/corrupt files are rejected. `DdReplayFrame.host_dt` lets viewers play back at the recorded pace.
+* `dragdoll_world_record_note` / `is_recording`. Scenario `Instance::make(..., recordPath)`.
+* Viewer: `--record <file>` (auto-restart off, F9 adds a mark) and `--replay <file>` (recorded pace, pause / N next frame, R restart, divergence + notes in the HUD). `watch.ps1 -Record / -Replay`.
+* Tests: all 9 scenarios recorded with a jittery 25-200 fps host replay bit-identically (every frame), notes arrive with the right frame, a tampered hash is reported at frame 120, junk/truncated files and an uncreatable path fail cleanly. 29 cases, all 5 presets green.
+
+**Known limit**
+* Bit-identical only with the same binary (ADR-0007). An SA session recorded by the x86 game build and replayed in the x64 viewer will run but diverge; decide in task 2.5 (options: viewer replays through the x86 DLL via a helper, or `JPH_CROSS_PLATFORM_DETERMINISTIC` in dev builds).
+
+**Next**
+* Founder: try record → replay in the viewer.
+* Task 2.2 (Sonnet): text notes + screenshots on F9, `dragdoll-inspect` CLI.
+
+---
+
+## 2026-11-12 — Founder review via recording: twisting lower spine → passive joint friction
+**Report:** "the yellow box at the torso keeps moving after the rest of the character is almost still" (F9 mark in `shove_mid_fall`, saved as `build/shove_founder_torso.ddrec`).
+**Diagnosis with `dragdoll_inspect --motion / --body`:** `lower_spine` spins in place at ~100 deg/s (1.5-1.8 s) and creeps at ~3 deg/s until 2.2 s while its neighbours are below 5 deg/s; it hangs just above the floor between pelvis and chest, and the limp joints had zero friction, so its twist was undamped.
+**Fix:** rig joints get optional `"friction"` (N*m, passive tissue resistance) → Jolt `mMaxFrictionTorque` (scaled with mass). humanoid16 values: spine 4, neck 0.8, shoulder 1, elbow 0.4, wrist 0.1, hip 3, knee 1, ankle 0.3 — each well below the gravity torque on its limb, so the body still falls limp.
+**New test:** no body spins in place (> 30 deg/s, < 2 cm/s) while the rest is still (< 10 deg/s), 3 ragdoll scenarios x 30/60/144 fps. Before the fix it failed with 79-108 deg/s (`lower_spine`); after: < 7 deg/s everywhere. (A frictionless control test was tried and removed: the frictionless outcome is chaotic per build, so it was flaky.)
+**New tools:** `dragdoll_inspect` (`tools/inspect`): summary + notes, `--motion` (fastest bodies around each note and over the last second), `--body NAME` (speed trace). C API: `dragdoll_world_get_character_count / get_character`.
+**Viewer:** replays stop on their last frame (A loops), restart clears old notes, clearer HUD wording.

@@ -280,3 +280,71 @@ TEST_CASE("characters: impulses, destroy mid-simulation, world teardown")
     dragdoll_character_destroy(nullptr);
     // `second` is destroyed together with the world.
 }
+
+TEST_CASE("ragdoll scenarios: no body keeps spinning in place while the rest is still (founder review: twisting lower spine)")
+{
+    // A body that hardly moves (< 2 cm/s) but rotates fast (> 30 deg/s) while every other body is nearly still
+    // (< 10 deg/s) is a part twisting freely between its neighbours. Real limbs are damped by tissue.
+    Library lib;
+    for (const std::string name : {"drop_from_1m", "fall_forward", "shove_mid_fall"})
+    {
+        for (float fps : {30.0f, 60.0f, 144.0f})
+        {
+            CAPTURE(name);
+            CAPTURE(fps);
+            Instance instance;
+            std::string error;
+            REQUIRE(Instance::make(name, instance, error));
+            DdCharacter* c = instance.scenario->character();
+            std::vector<DdTransform> previous = bodiesOf(c);
+            double previousTime = 0.0;
+            float worstSpin = 0.0f;
+            std::string worstBody, spinLog;
+            while (instance.hostTime < 4.0)
+            {
+                instance.hostFrame(1.0f / fps);
+                const double t = static_cast<double>(dragdoll_world_get_step_count(instance.world)) / 120.0;
+                if (t - previousTime < 0.1)
+                {
+                    continue;
+                }
+                const std::vector<DdTransform> now = bodiesOf(c);
+                std::vector<float> lin(now.size()), ang(now.size());
+                for (size_t i = 0; i < now.size(); ++i)
+                {
+                    lin[i] = distance(now[i].position, previous[i].position) / static_cast<float>(t - previousTime);
+                    const DdQuat& a = now[i].rotation;
+                    const DdQuat& b = previous[i].rotation;
+                    const float dot = std::fabs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w);
+                    ang[i] = 2.0f * std::acos(std::fmin(1.0f, dot)) * 57.29578f / static_cast<float>(t - previousTime);
+                }
+                for (size_t i = 0; i < now.size(); ++i)
+                {
+                    // The founder's observation: one part keeps moving while the REST of the body is already still.
+                    float others = 0.0f;
+                    for (size_t j = 0; j < now.size(); ++j)
+                    {
+                        if (j != i)
+                        {
+                            others = std::fmax(others, ang[j]);
+                        }
+                    }
+                    if (t > 1.0 && lin[i] < 0.02f && others < 10.0f && ang[i] > 30.0f)
+                    {
+                        spinLog += std::string(" ") + dragdoll_character_get_body_name(c, static_cast<uint32_t>(i)) + "@" +
+                                   std::to_string(t).substr(0, 4) + "s=" + std::to_string(static_cast<int>(ang[i]));
+                    }
+                    if (t > 1.0 && lin[i] < 0.02f && others < 10.0f && ang[i] > worstSpin)
+                    {
+                        worstSpin = ang[i];
+                        worstBody = dragdoll_character_get_body_name(c, static_cast<uint32_t>(i));
+                    }
+                }
+                previous = now;
+                previousTime = t;
+            }
+            MESSAGE(name << " @" << fps << " fps: worst spin-in-place " << worstSpin << " deg/s (" << worstBody << ")" << spinLog);
+            CHECK(worstSpin < 30.0f);
+        }
+    }
+}

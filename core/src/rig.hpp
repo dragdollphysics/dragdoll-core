@@ -45,6 +45,9 @@ struct RigJoint
     // Hinge
     JPH::Vec3 axis = JPH::Vec3::sAxisX();
     float min = 0.0f, max = 0.0f; // Radians
+    // Passive joint friction (N*m): the resistance of tissue and ligaments that damps a limp body. Must stay well
+    // below the gravity torque on the limb, or the limb would no longer fall freely.
+    float friction = 0.0f;
 };
 
 struct RigBody

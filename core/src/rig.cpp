@@ -227,6 +227,14 @@ Rig Rig::parse(std::string_view text)
             const std::string jw = where + " joint";
             const Json& jtype = field(joint, "type", jw);
             body.joint.pivot = vec3(joint, "pivot", jw);
+            if (joint.contains("friction"))
+            {
+                body.joint.friction = number(joint, "friction", jw);
+                if (body.joint.friction < 0.0f)
+                {
+                    error(jw, "\"friction\" must be >= 0 (N*m)");
+                }
+            }
             if (jtype == "swing_twist")
             {
                 body.joint.type = RigJoint::Type::SwingTwist;

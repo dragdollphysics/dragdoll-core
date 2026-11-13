@@ -43,6 +43,7 @@ DD_API void DD_CALL dragdoll_world_desc_default(DdWorldDesc* desc)
     desc->max_steps_per_call = 8;
     desc->worker_threads = 0;
     desc->max_bodies = 16384;
+    desc->record_path = nullptr;
 }
 
 DD_API DdResult DD_CALL dragdoll_world_create(const DdWorldDesc* desc, DdWorld** out_world)
@@ -91,6 +92,10 @@ DD_API DdResult DD_CALL dragdoll_world_step(DdWorld* world, float dt, uint32_t* 
         {
             *out_steps = steps;
         }
+        if (world->recorder)
+        {
+            world->recorder->step(dt, steps, world->world.stateHash());
+        }
     });
     DD_GUARD_END(DD_ERROR_INTERNAL)
 }
@@ -102,7 +107,13 @@ DD_API DdResult DD_CALL dragdoll_world_step_fixed(DdWorld* world, uint32_t steps
     {
         return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_world_step_fixed: world is NULL");
     }
-    return call([&] { world->world.stepFixed(steps); });
+    return call([&] {
+        world->world.stepFixed(steps);
+        if (world->recorder)
+        {
+            world->recorder->stepFixed(steps, world->world.stateHash());
+        }
+    });
     DD_GUARD_END(DD_ERROR_INTERNAL)
 }
 
@@ -154,7 +165,13 @@ DD_API DdResult DD_CALL dragdoll_world_add_colliders(DdWorld* world, const DdCol
     {
         return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_world_add_colliders: world, descs and out_ids are required");
     }
-    return call([&] { world->world.addColliders(descs, count, out_ids); });
+    return call([&] {
+        world->world.addColliders(descs, count, out_ids);
+        if (world->recorder)
+        {
+            world->recorder->addColliders(descs, count, out_ids);
+        }
+    });
     DD_GUARD_END(DD_ERROR_INTERNAL)
 }
 
@@ -165,7 +182,13 @@ DD_API DdResult DD_CALL dragdoll_world_remove_colliders(DdWorld* world, const Dd
     {
         return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_world_remove_colliders: world and ids are required");
     }
-    return call([&] { world->world.removeColliders(ids, count); });
+    return call([&] {
+        world->world.removeColliders(ids, count);
+        if (world->recorder)
+        {
+            world->recorder->removeColliders(ids, count);
+        }
+    });
     DD_GUARD_END(DD_ERROR_INTERNAL)
 }
 
@@ -178,7 +201,13 @@ DD_API DdResult DD_CALL dragdoll_world_set_kinematic_targets(DdWorld* world, con
         return fail(DD_ERROR_INVALID_ARGUMENT,
                     "dragdoll_world_set_kinematic_targets: world, ids and targets are required");
     }
-    return call([&] { world->world.setKinematicTargets(ids, targets, count); });
+    return call([&] {
+        world->world.setKinematicTargets(ids, targets, count);
+        if (world->recorder)
+        {
+            world->recorder->kinematicTargets(ids, targets, count);
+        }
+    });
     DD_GUARD_END(DD_ERROR_INTERNAL)
 }
 
@@ -197,6 +226,26 @@ DD_API DdResult DD_CALL dragdoll_world_get_collider_transform(const DdWorld* wor
     }
     return DD_OK;
     DD_GUARD_END(DD_ERROR_INTERNAL)
+}
+
+DD_API DdResult DD_CALL dragdoll_world_record_note(DdWorld* world, const char* text)
+{
+    DD_GUARD_BEGIN
+    if (world == nullptr || text == nullptr)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_world_record_note: world and text are required");
+    }
+    if (world->recorder)
+    {
+        world->recorder->note(text);
+    }
+    return DD_OK;
+    DD_GUARD_END(DD_ERROR_INTERNAL)
+}
+
+DD_API int DD_CALL dragdoll_world_is_recording(const DdWorld* world)
+{
+    return world != nullptr && world->recorder != nullptr ? 1 : 0;
 }
 
 } // extern "C"

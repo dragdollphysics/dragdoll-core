@@ -124,6 +124,8 @@ typedef struct DdWorldDesc
     uint32_t max_steps_per_call;    /* Spiral-of-death guard: extra time is dropped. Default 8. */
     uint32_t worker_threads;        /* 0 = run on the calling thread only. Default 0. */
     uint32_t max_bodies;            /* Capacity. Default 16384. */
+    const char* record_path;        /* Non-NULL: record every call on this world to this .ddrec file (see
+                                       "Recording & replay"). Default NULL. */
 } DdWorldDesc;
 
 /* Fill a description with the defaults above. */
@@ -229,6 +231,10 @@ DD_API DdResult DD_CALL dragdoll_world_get_collider_transform(const DdWorld* wor
 /* A character is owned by its world: destroying the world destroys its characters. */
 typedef struct DdCharacter DdCharacter;
 
+/* Characters currently in a world, in creation order (for tools, replays, viewers). */
+DD_API uint32_t DD_CALL dragdoll_world_get_character_count(const DdWorld* world);
+DD_API DdCharacter* DD_CALL dragdoll_world_get_character(DdWorld* world, uint32_t index); /* NULL if out of range */
+
 /* Rig JSON compiled into the library (e.g. "humanoid16"), or NULL if unknown. Owned by DragDoll. */
 DD_API const char* DD_CALL dragdoll_get_builtin_rig(const char* name);
 
@@ -272,6 +278,58 @@ DD_API DdResult DD_CALL dragdoll_character_get_body_transforms(const DdCharacter
 /* Instant impulse (N*s) on one body, at world_point (NULL = centre of mass). */
 DD_API DdResult DD_CALL dragdoll_character_apply_impulse(DdCharacter* character, uint32_t body, DdVec3 impulse,
                                                          const DdVec3* world_point);
+
+/* ---- Recording & replay (ADR-0007, ADR-0017) ------------------------------------------- */
+/* A world created with DdWorldDesc.record_path writes every call that changes it (steps, colliders, kinematic targets,
+ * characters, impulses) to a .ddrec file, plus the state hash after every step. A replay rebuilds the world from the
+ * file and re-applies the calls host frame by host frame, so any host session (e.g. a San Andreas play session) can be
+ * reproduced in the workbench without the host. Bit-identical with the same DragDoll binary; with another build the
+ * replay still runs and reports where the state hashes first diverge. */
+
+/* Adds a human note (e.g. "foot slides here") at the current point of the recording. No-op when not recording. */
+DD_API DdResult DD_CALL dragdoll_world_record_note(DdWorld* world, const char* text);
+
+/* 1 if this world is being recorded. */
+DD_API int DD_CALL dragdoll_world_is_recording(const DdWorld* world);
+
+typedef struct DdReplay DdReplay;
+
+typedef struct DdReplayInfo
+{
+    uint32_t struct_size;       /* = sizeof(DdReplayInfo) */
+    uint64_t frame_count;       /* Host frames (step calls) in the file */
+    uint32_t recorded_api_version;
+    const char* recorded_build;  /* dragdoll_get_build_info() of the recording binary; owned by the replay */
+    int same_build;              /* 1 if recorded by a binary with identical build info (bit-identical expected) */
+    DdVec3 up;                   /* The recorded world's up axis */
+} DdReplayInfo;
+
+typedef struct DdReplayFrame
+{
+    uint32_t struct_size;       /* = sizeof(DdReplayFrame) */
+    uint64_t frame;             /* 1-based index of the host frame just replayed */
+    uint32_t steps;             /* Fixed steps it ran */
+    float host_dt;              /* Host time this frame covered (seconds): play frames back at this pace */
+    int hash_matches;           /* 1 = state identical to the recording, 0 = diverged */
+    uint64_t first_divergence;  /* First diverging frame so far, 0 = none */
+    const char* note;           /* Note recorded in this frame, or NULL. Valid until the next advance. */
+    int at_end;                 /* 1 = nothing left to replay */
+} DdReplayFrame;
+
+/* Opens a recording and rebuilds its world (without recording). */
+DD_API DdResult DD_CALL dragdoll_replay_open(const char* path, DdReplay** out_replay);
+
+/* Information about the recording. */
+DD_API DdResult DD_CALL dragdoll_replay_get_info(const DdReplay* replay, DdReplayInfo* out_info);
+
+/* Re-applies the next host frame: every recorded call up to and including the next step. */
+DD_API DdResult DD_CALL dragdoll_replay_advance(DdReplay* replay, DdReplayFrame* out_frame);
+
+/* The replayed world (owned by the replay): read transforms, draw it, query hashes. Do not change it. */
+DD_API DdWorld* DD_CALL dragdoll_replay_get_world(DdReplay* replay);
+
+/* Closes the replay and destroys its world. Safe with NULL. */
+DD_API void DD_CALL dragdoll_replay_close(DdReplay* replay);
 
 /* ---- Debug drawing (development builds only) ------------------------------------------ */
 /* Visualise every body of a world as lines and triangles in world space: for the workbench,

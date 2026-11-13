@@ -3,7 +3,7 @@
   "version": 1,
   "name": "humanoid16",
   "description": "16-body adult humanoid, 1.75 m, 75 kg. Rest pose: standing, arms hanging at the sides.",
-  "sources": "Segment mass fractions and lengths: de Leva (1996), adult male. Joint ranges: conservative ragdoll values within normal human range of motion.",
+  "sources": "Segment mass fractions and lengths: de Leva (1996), adult male. Joint ranges: conservative ragdoll values within normal human range of motion. Joint friction (N*m): passive tissue damping, each value well below the gravity torque on its limb so the body stays limp.",
   "space": "Rig space: metres, +Y up, +Z forward (the character faces +Z), +X = character's left. Origin = ground point between the feet.",
   "mass": 75.0,
   "bodies": [
@@ -12,73 +12,73 @@
 
     { "name": "lower_spine", "parent": "pelvis", "mass_percent": 16.33,
       "shape": { "type": "box", "center": [0, 1.16, 0], "half_extents": [0.14, 0.095, 0.095] },
-      "joint": { "type": "swing_twist", "pivot": [0, 1.065, 0], "twist_axis": [0, 1, 0],
+      "joint": { "type": "swing_twist", "friction": 4.0, "pivot": [0, 1.065, 0], "twist_axis": [0, 1, 0],
                  "swing_fwd": 35, "swing_side": 25, "twist_min": -20, "twist_max": 20 } },
 
     { "name": "upper_spine", "parent": "lower_spine", "mass_percent": 15.96,
       "shape": { "type": "box", "center": [0, 1.355, 0], "half_extents": [0.15, 0.095, 0.105] },
-      "joint": { "type": "swing_twist", "pivot": [0, 1.26, 0], "twist_axis": [0, 1, 0],
+      "joint": { "type": "swing_twist", "friction": 4.0, "pivot": [0, 1.26, 0], "twist_axis": [0, 1, 0],
                  "swing_fwd": 30, "swing_side": 20, "twist_min": -25, "twist_max": 25 } },
 
     { "name": "head", "parent": "upper_spine", "mass_percent": 6.94,
       "shape": { "type": "capsule", "from": [0, 1.52, 0.01], "to": [0, 1.74, 0.01], "radius": 0.095 },
-      "joint": { "type": "swing_twist", "pivot": [0, 1.47, 0], "twist_axis": [0, 1, 0],
+      "joint": { "type": "swing_twist", "friction": 0.8, "pivot": [0, 1.47, 0], "twist_axis": [0, 1, 0],
                  "swing_fwd": 45, "swing_side": 35, "twist_min": -60, "twist_max": 60 } },
 
     { "name": "upper_arm_l", "parent": "upper_spine", "mass_percent": 2.71, "collide_with_parent": true,
       "shape": { "type": "capsule", "from": [0.215, 1.42, 0], "to": [0.215, 1.14, 0], "radius": 0.048 },
-      "joint": { "type": "swing_twist", "pivot": [0.215, 1.42, 0], "twist_axis": [0, -1, 0], "cone_axis": [0.35, -0.75, 0.55],
+      "joint": { "type": "swing_twist", "friction": 1.0, "pivot": [0.215, 1.42, 0], "twist_axis": [0, -1, 0], "cone_axis": [0.35, -0.75, 0.55],
                  "swing_fwd": 85, "swing_side": 75, "twist_min": -70, "twist_max": 70 } },
 
     { "name": "forearm_l", "parent": "upper_arm_l", "mass_percent": 1.62,
       "shape": { "type": "capsule", "from": [0.215, 1.14, 0], "to": [0.215, 0.87, 0], "radius": 0.04 },
-      "joint": { "type": "hinge", "pivot": [0.215, 1.14, 0], "axis": [-1, 0, 0], "min": -3, "max": 145 } },
+      "joint": { "type": "hinge", "friction": 0.4, "pivot": [0.215, 1.14, 0], "axis": [-1, 0, 0], "min": -3, "max": 145 } },
 
     { "name": "hand_l", "parent": "forearm_l", "mass_percent": 0.61,
       "shape": { "type": "box", "center": [0.215, 0.82, 0.005], "half_extents": [0.02, 0.05, 0.042] },
-      "joint": { "type": "swing_twist", "pivot": [0.215, 0.87, 0], "twist_axis": [0, -1, 0],
+      "joint": { "type": "swing_twist", "friction": 0.1, "pivot": [0.215, 0.87, 0], "twist_axis": [0, -1, 0],
                  "swing_fwd": 70, "swing_side": 30, "twist_min": -60, "twist_max": 60 } },
 
     { "name": "upper_arm_r", "parent": "upper_spine", "mass_percent": 2.71, "collide_with_parent": true,
       "shape": { "type": "capsule", "from": [-0.215, 1.42, 0], "to": [-0.215, 1.14, 0], "radius": 0.048 },
-      "joint": { "type": "swing_twist", "pivot": [-0.215, 1.42, 0], "twist_axis": [0, -1, 0], "cone_axis": [-0.35, -0.75, 0.55],
+      "joint": { "type": "swing_twist", "friction": 1.0, "pivot": [-0.215, 1.42, 0], "twist_axis": [0, -1, 0], "cone_axis": [-0.35, -0.75, 0.55],
                  "swing_fwd": 85, "swing_side": 75, "twist_min": -70, "twist_max": 70 } },
 
     { "name": "forearm_r", "parent": "upper_arm_r", "mass_percent": 1.62,
       "shape": { "type": "capsule", "from": [-0.215, 1.14, 0], "to": [-0.215, 0.87, 0], "radius": 0.04 },
-      "joint": { "type": "hinge", "pivot": [-0.215, 1.14, 0], "axis": [-1, 0, 0], "min": -3, "max": 145 } },
+      "joint": { "type": "hinge", "friction": 0.4, "pivot": [-0.215, 1.14, 0], "axis": [-1, 0, 0], "min": -3, "max": 145 } },
 
     { "name": "hand_r", "parent": "forearm_r", "mass_percent": 0.61,
       "shape": { "type": "box", "center": [-0.215, 0.82, 0.005], "half_extents": [0.02, 0.05, 0.042] },
-      "joint": { "type": "swing_twist", "pivot": [-0.215, 0.87, 0], "twist_axis": [0, -1, 0],
+      "joint": { "type": "swing_twist", "friction": 0.1, "pivot": [-0.215, 0.87, 0], "twist_axis": [0, -1, 0],
                  "swing_fwd": 70, "swing_side": 30, "twist_min": -60, "twist_max": 60 } },
 
     { "name": "thigh_l", "parent": "pelvis", "mass_percent": 14.16,
       "shape": { "type": "capsule", "from": [0.10, 0.92, 0], "to": [0.10, 0.51, 0], "radius": 0.07 },
-      "joint": { "type": "swing_twist", "pivot": [0.10, 0.92, 0], "twist_axis": [0, -1, 0], "cone_axis": [0.12, -0.76, 0.64],
+      "joint": { "type": "swing_twist", "friction": 3.0, "pivot": [0.10, 0.92, 0], "twist_axis": [0, -1, 0], "cone_axis": [0.12, -0.76, 0.64],
                  "swing_fwd": 70, "swing_side": 40, "twist_min": -35, "twist_max": 35 } },
 
     { "name": "shin_l", "parent": "thigh_l", "mass_percent": 4.33,
       "shape": { "type": "capsule", "from": [0.10, 0.51, 0], "to": [0.10, 0.08, 0], "radius": 0.05 },
-      "joint": { "type": "hinge", "pivot": [0.10, 0.51, 0], "axis": [1, 0, 0], "min": -3, "max": 150 } },
+      "joint": { "type": "hinge", "friction": 1.0, "pivot": [0.10, 0.51, 0], "axis": [1, 0, 0], "min": -3, "max": 150 } },
 
     { "name": "foot_l", "parent": "shin_l", "mass_percent": 1.37,
       "shape": { "type": "box", "center": [0.10, 0.04, 0.06], "half_extents": [0.045, 0.035, 0.12] },
-      "joint": { "type": "swing_twist", "pivot": [0.10, 0.08, 0], "twist_axis": [0, 0, 1],
+      "joint": { "type": "swing_twist", "friction": 0.3, "pivot": [0.10, 0.08, 0], "twist_axis": [0, 0, 1],
                  "swing_fwd": 35, "swing_side": 20, "twist_min": -15, "twist_max": 15 } },
 
     { "name": "thigh_r", "parent": "pelvis", "mass_percent": 14.16,
       "shape": { "type": "capsule", "from": [-0.10, 0.92, 0], "to": [-0.10, 0.51, 0], "radius": 0.07 },
-      "joint": { "type": "swing_twist", "pivot": [-0.10, 0.92, 0], "twist_axis": [0, -1, 0], "cone_axis": [-0.12, -0.76, 0.64],
+      "joint": { "type": "swing_twist", "friction": 3.0, "pivot": [-0.10, 0.92, 0], "twist_axis": [0, -1, 0], "cone_axis": [-0.12, -0.76, 0.64],
                  "swing_fwd": 70, "swing_side": 40, "twist_min": -35, "twist_max": 35 } },
 
     { "name": "shin_r", "parent": "thigh_r", "mass_percent": 4.33,
       "shape": { "type": "capsule", "from": [-0.10, 0.51, 0], "to": [-0.10, 0.08, 0], "radius": 0.05 },
-      "joint": { "type": "hinge", "pivot": [-0.10, 0.51, 0], "axis": [1, 0, 0], "min": -3, "max": 150 } },
+      "joint": { "type": "hinge", "friction": 1.0, "pivot": [-0.10, 0.51, 0], "axis": [1, 0, 0], "min": -3, "max": 150 } },
 
     { "name": "foot_r", "parent": "shin_r", "mass_percent": 1.37,
       "shape": { "type": "box", "center": [-0.10, 0.04, 0.06], "half_extents": [0.045, 0.035, 0.12] },
-      "joint": { "type": "swing_twist", "pivot": [-0.10, 0.08, 0], "twist_axis": [0, 0, 1],
+      "joint": { "type": "swing_twist", "friction": 0.3, "pivot": [-0.10, 0.08, 0], "twist_axis": [0, 0, 1],
                  "swing_fwd": 35, "swing_side": 20, "twist_min": -15, "twist_max": 15 } }
   ]
 }

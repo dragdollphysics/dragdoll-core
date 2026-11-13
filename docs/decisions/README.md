@@ -24,6 +24,7 @@ Each ADR is one page. Change a decision only by adding a new ADR that supersedes
 | [0018](0018-mission-any-game-workflow.md) | Mission — a workflow to replace animations in any game | Accepted |
 | [0019](0019-governance.md) | Governance — community-owned from day one | Accepted |
 | [0020](0020-cpp-conventions.md) | C++ conventions | Accepted |
+| [0021](0021-workbench-raylib.md) | The workbench starts on raylib | Accepted |
 
 ## Template
 ```

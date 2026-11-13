@@ -5,6 +5,15 @@
 #include "capi_world_handle.hpp"
 #include "character.hpp"
 
+namespace
+{
+dragdoll::rec::Recorder* recorderOf(const DdCharacter* character)
+{
+    auto* handle = static_cast<DdWorld*>(character->world->owner());
+    return handle != nullptr ? handle->recorder.get() : nullptr;
+}
+} // namespace
+
 #include <cstring>
 #include <stdexcept>
 
@@ -12,6 +21,16 @@ using namespace dragdoll::detail;
 
 extern "C"
 {
+
+DD_API uint32_t DD_CALL dragdoll_world_get_character_count(const DdWorld* world)
+{
+    return world != nullptr ? world->world.characterCount() : 0;
+}
+
+DD_API DdCharacter* DD_CALL dragdoll_world_get_character(DdWorld* world, uint32_t index)
+{
+    return world != nullptr ? world->world.characterAt(index) : nullptr;
+}
 
 DD_API const char* DD_CALL dragdoll_get_builtin_rig(const char* name)
 {
@@ -46,6 +65,10 @@ DD_API DdResult DD_CALL dragdoll_character_create(DdWorld* world, const DdCharac
     try
     {
         *out_character = world->world.createCharacter(*desc);
+        if (world->recorder)
+        {
+            world->recorder->characterCreate((*out_character)->id, *desc);
+        }
     }
     catch (const std::invalid_argument& e)
     {
@@ -61,6 +84,10 @@ DD_API void DD_CALL dragdoll_character_destroy(DdCharacter* character)
     {
         if (character != nullptr)
         {
+            if (dragdoll::rec::Recorder* recorder = recorderOf(character))
+            {
+                recorder->characterDestroy(character->id);
+            }
             character->world->destroyCharacter(character);
         }
     }
@@ -132,6 +159,10 @@ DD_API DdResult DD_CALL dragdoll_character_apply_impulse(DdCharacter* character,
     try
     {
         character->world->applyImpulse(*character, body, impulse, world_point);
+        if (dragdoll::rec::Recorder* recorder = recorderOf(character))
+        {
+            recorder->impulse(character->id, body, impulse, world_point);
+        }
     }
     catch (const std::invalid_argument& e)
     {

@@ -84,7 +84,8 @@ struct Instance
 
     // Creates the world (applying the scenario's configuration) and builds the scenario.
     // Returns false and fills `error` on failure. dragdoll_init must have been called.
-    static bool make(const std::string& name, Instance& out, std::string& error);
+    // recordPath: optional .ddrec file to record the whole run to.
+    static bool make(const std::string& name, Instance& out, std::string& error, const char* recordPath = nullptr);
 
     // One host frame: scenario host logic, then dragdoll_world_step(dt). Returns steps taken.
     uint32_t hostFrame(float dt);

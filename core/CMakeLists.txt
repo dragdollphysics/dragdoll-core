@@ -25,6 +25,9 @@ add_library(dragdoll SHARED
     src/capi_world.cpp
     src/capi_character.cpp
     src/capi_debug_draw.cpp
+    src/capi_replay.cpp
+    src/recording.hpp
+    src/recording.cpp
     src/world.hpp
     src/world.cpp
     src/rig.hpp

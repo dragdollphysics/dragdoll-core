@@ -509,7 +509,7 @@ Instance::~Instance()
     dragdoll_world_destroy(world);
 }
 
-bool Instance::make(const std::string& name, Instance& out, std::string& error)
+bool Instance::make(const std::string& name, Instance& out, std::string& error, const char* recordPath)
 {
     out = Instance();
     out.scenario = create(name);
@@ -521,6 +521,7 @@ bool Instance::make(const std::string& name, Instance& out, std::string& error)
     DdWorldDesc desc;
     dragdoll_world_desc_default(&desc);
     out.scenario->configure(desc);
+    desc.record_path = recordPath;
     if (dragdoll_world_create(&desc, &out.world) != DD_OK)
     {
         error = dragdoll_last_error_message();
