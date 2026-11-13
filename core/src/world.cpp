@@ -759,6 +759,14 @@ DdCharacter* World::createCharacter(const DdCharacterDesc& desc)
         character->pivotInParent[i] = character->currRotation[p].Conjugated() * JPH::Vec3(pivot - character->currPosition[p]);
         character->bodyFromPivot[i] = character->currRotation[i].Conjugated() * JPH::Vec3(character->currPosition[i] - pivot);
     }
+    character->pivotRig.assign(count, JPH::Vec3::sZero());
+    character->centreRig.assign(count, JPH::Vec3::sZero());
+    for (size_t i = 0; i < count; ++i)
+    {
+        const RigShape& shape = rig.bodies[i].shape;
+        character->centreRig[i] = shape.type == RigShape::Type::Box ? shape.center : (shape.from + shape.to) * 0.5f;
+        character->pivotRig[i] = rig.bodies[i].parent >= 0 ? rig.bodies[i].joint.pivot : character->centreRig[i];
+    }
     character->restRig.resize(count);
     character->hingeAxisRig.resize(count, JPH::Vec3::sAxisX());
     character->targetPose.assign(count, JPH::Quat::sIdentity());

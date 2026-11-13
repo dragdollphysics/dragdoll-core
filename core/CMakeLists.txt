@@ -14,6 +14,9 @@ FetchContent_MakeAvailable(nlohmann_json)
 set(DD_RIG_FILE ${PROJECT_SOURCE_DIR}/packs/rigs/humanoid16.json)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${DD_RIG_FILE})
 file(READ ${DD_RIG_FILE} DD_RIG_HUMANOID16)
+set(DD_SKELETON_SA_PED_FILE ${PROJECT_SOURCE_DIR}/packs/skeletons/sa_ped.json)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${DD_SKELETON_SA_PED_FILE})
+file(READ ${DD_SKELETON_SA_PED_FILE} DD_SKELETON_SA_PED)
 configure_file(src/builtin_rigs.cpp.in ${CMAKE_CURRENT_BINARY_DIR}/generated/builtin_rigs.cpp @ONLY)
 
 add_library(dragdoll SHARED
@@ -36,6 +39,8 @@ add_library(dragdoll SHARED
     src/character.cpp
     src/muscles.cpp
     src/pose.cpp
+    src/skeleton_map.cpp
+    src/capi_skeleton.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/generated/builtin_rigs.cpp
 )
 add_library(DragDoll::dragdoll ALIAS dragdoll)

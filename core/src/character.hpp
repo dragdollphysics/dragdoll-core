@@ -54,6 +54,7 @@ struct DdCharacter
     // Rest geometry for placing the body from a pose (forward kinematics): the joint pivot in the parent's body frame,
     // and this body's position relative to its joint pivot in its own body frame.
     std::vector<JPH::Vec3> pivotInParent, bodyFromPivot;
+    std::vector<JPH::Vec3> pivotRig, centreRig; // Joint pivot / shape centre at rest, rig space (skeleton maps)
     DdTension tension = DD_TENSION_LIMP;
     dragdoll::MuscleParams blendFrom, muscles, blendTo; // `muscles` = what the motors use now
     float blendTime = 0.0f, blendElapsed = 0.0f;

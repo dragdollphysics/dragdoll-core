@@ -74,5 +74,7 @@ struct Rig
 
 // Built-in rigs compiled into the library (packs/rigs/*.json). nullptr if unknown.
 const char* builtinRig(std::string_view name);
+// Built-in skeleton maps (packs/skeletons/*.json). nullptr if unknown.
+const char* builtinSkeletonMap(std::string_view name);
 
 } // namespace dragdoll

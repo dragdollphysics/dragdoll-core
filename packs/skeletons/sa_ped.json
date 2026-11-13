@@ -1,0 +1,20 @@
+{
+  "format": "dragdoll-skeleton-map",
+  "version": 1,
+  "name": "sa_ped",
+  "description": "GTA San Andreas pedestrian skeleton (RpHAnim bone IDs) -> humanoid16. Bones not listed (fingers, toes, clavicles, jaw, brows, ...) follow their parent rigidly.",
+  "sources": "Bone IDs are interoperability facts (as used by the plugin-sdk ePedBones enum and existing mods); the body-to-bone choice is our own. Model axes of SA peds: +Z up, +Y forward. To be verified against the in-game hierarchy in Phase 6.",
+  "rig": "humanoid16",
+  "model_up": [0, 0, 1],
+  "model_forward": [0, 1, 0],
+  "bodies": {
+    "pelvis": 1,
+    "lower_spine": 2,
+    "upper_spine": 3,
+    "head": 4,
+    "upper_arm_l": 32, "forearm_l": 33, "hand_l": 34,
+    "upper_arm_r": 22, "forearm_r": 23, "hand_r": 24,
+    "thigh_l": 41, "shin_l": 42, "foot_l": 43,
+    "thigh_r": 51, "shin_r": 52, "foot_r": 53
+  }
+}

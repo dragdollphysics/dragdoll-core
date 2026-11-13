@@ -437,3 +437,18 @@ Crowd question (car through the pier) → cost is linear in awake ragdolls (~70 
 
 **Open questions**
 * A tense character still falls as a statue: balance is task 3.6.
+
+---
+
+## 2026-11-13 — Phase 3, task 3.4: skeleton maps (SA ped -> humanoid16)
+**Changed** (local, not committed)
+* Generic skeleton maps (any host, ADR-0018): `packs/skeletons/<name>.json` (format `dragdoll-skeleton-map` v1: model up/forward axes, rig body -> host bone id), compiled in (`dragdoll_get_builtin_skeleton_map("sa_ped")`).
+* C API: `DdHostBone` (id, parent index, bind transform in model space), `dragdoll_skeleton_map_create / destroy / to_pose / from_pose`. Math (`core/src/skeleton_map.cpp`): A = model -> rig axes; G_k = A H_k B_k^-1 A^-1 (bone rotation since bind, rig axes); per-body bind correction D_i = shortest arc from the rig's rest bone direction to the host's bind bone direction (handles T-pose vs arms-down binds); joint d_i = (G_kp D_p)^-1 (G_k D_i); unmapped host bones (fingers, toes, clavicles, jaw, a root above the pelvis) follow their parent rigidly. Independent of the host's local bone frames.
+* `packs/skeletons/sa_ped.json`: pelvis 1, spine 2/3, head <- neck 4, arms 32-34 / 22-24, legs 41-43 / 51-53; SA model axes +Z up, +Y forward. Bone ids are interoperability facts (plugin-sdk ePedBones); hierarchy to be verified in-game in Phase 6.
+* Tests (4 new) with a mock SA ped (25 bones, SA ids/hierarchy, own proportions, T-pose bind, arbitrary bone frames): T-pose -> arms straight out (head 3.6 deg: the rig's head sits 1 cm forward, a proportion difference); rig rest -> host arms hanging down, fingers keep their offset; host -> DragDoll (activate, get_pose) -> host round trip **0.056 deg worst** (criterion 0.5); invalid maps rejected. 4 dev presets green, 49 test cases; dragdoll-sa still builds.
+
+**Next**
+* Task 3.5 (Opus): `failed` state — NaN / energy-explosion guards deactivate the character and report it; host fallback test.
+
+**Open questions**
+* The SA root-position offset (pelvis bone vs pelvis body centre, ~5 cm) is taken as zero for now; tune when the mod feeds real poses (Phase 6).

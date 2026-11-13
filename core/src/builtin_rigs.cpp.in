@@ -13,4 +13,14 @@ const char* builtinRig(std::string_view name)
     }
     return nullptr;
 }
+
+const char* builtinSkeletonMap(std::string_view name)
+{
+    static const char* const kSaPed = R"DDMAP(@DD_SKELETON_SA_PED@)DDMAP";
+    if (name == "sa_ped")
+    {
+        return kSaPed;
+    }
+    return nullptr;
+}
 } // namespace dragdoll

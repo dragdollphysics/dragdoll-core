@@ -331,6 +331,41 @@ DD_API DdResult DD_CALL dragdoll_character_activate(DdCharacter* character, cons
                                                     const DdQuat* previous_joints, const DdTransform* current_root,
                                                     const DdQuat* current_joints, uint32_t count, float dt);
 
+/* ---- Skeleton maps: translate a host skeleton to/from DragDoll poses (Phase 3) ------------
+ * A map (packs/skeletons/*.json) names, for each rig body, the host bone that drives it, plus the host's model axes.
+ * The host supplies its bones once (id, parent, bind transform in model space); the map measures how the host's bind
+ * pose differs from the rig's rest pose (e.g. a T-pose vs arms down) and compensates both ways. Host bones without a
+ * body (fingers, toes, jaw...) follow their parent rigidly. Rotations are in the host's MODEL space (relative to the
+ * character root, e.g. SA's ped matrix); `model_to_world` places the model. */
+typedef struct DdSkeletonMap DdSkeletonMap;
+
+typedef struct DdHostBone
+{
+    int32_t id;        /* Host bone id (e.g. SA RpHAnim id) */
+    int32_t parent;    /* Index of the parent in the array, -1 for the root. Parents come first. */
+    DdTransform bind;  /* Bind (reference) transform in model space */
+} DdHostBone;
+
+/* Built-in maps compiled into the library (packs/skeletons/*.json), e.g. "sa_ped". NULL if unknown. */
+DD_API const char* DD_CALL dragdoll_get_builtin_skeleton_map(const char* name);
+
+/* Builds a map for `character`'s rig. Every body named in the map must find its bone id among `bones`. */
+DD_API DdResult DD_CALL dragdoll_skeleton_map_create(const char* map_json, const DdCharacter* character, const DdHostBone* bones,
+                                                     uint32_t bone_count, DdSkeletonMap** out_map);
+DD_API void DD_CALL dragdoll_skeleton_map_destroy(DdSkeletonMap* map);
+
+/* Host pose -> DragDoll pose. bone_rotations: one per host bone (model space). root_position: the root body's mapped
+ * bone position in model space (NULL = its bind position). Outputs the root transform and joint rotations, ready for
+ * dragdoll_character_activate / set_target_pose. */
+DD_API DdResult DD_CALL dragdoll_skeleton_map_to_pose(const DdSkeletonMap* map, const DdQuat* bone_rotations, uint32_t bone_count,
+                                                      const DdVec3* root_position, const DdTransform* model_to_world,
+                                                      DdTransform* out_root, DdQuat* out_joints, uint32_t joint_capacity);
+
+/* DragDoll pose (e.g. from dragdoll_character_get_pose) -> host bone rotations in model space, one per host bone. */
+DD_API DdResult DD_CALL dragdoll_skeleton_map_from_pose(const DdSkeletonMap* map, const DdTransform* root, const DdQuat* joints,
+                                                        uint32_t joint_count, const DdTransform* model_to_world,
+                                                        DdQuat* out_bone_rotations, uint32_t bone_capacity);
+
 typedef enum DdCharacterState
 {
     DD_STATE_ACTIVE = 0,     /* Moving under physics. */
