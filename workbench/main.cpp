@@ -11,6 +11,8 @@
 #include <raymath.h>
 #include <rlgl.h>
 
+#include "hot_reload.hpp"
+
 #include <imgui.h>
 #include <nlohmann/json.hpp>
 #include <rlImGui.h>
@@ -279,6 +281,19 @@ struct App
     // recorded and replays like any other input.
     float pushStrength = 40.0f; // N*s
     std::string lastPush;
+    struct Push
+    {
+        uint64_t step;
+        uint32_t body;
+        DdVec3 impulse;
+        DdVec3 point;
+    };
+    std::vector<Push> pushes; // This run's pushes, re-applied when a hot reload restores the session
+
+    // Hot reload of dragdoll.dll (task 2.4)
+    bool hotEnabled = false;
+    double hotNextCheck = 0.0;
+    std::string hotStatus;
 
     // Live rig editing (task 2.4): --rig <file> is watched; the Rig panel edits joint friction in memory.
     std::string rigPath;
@@ -378,6 +393,8 @@ bool loadScenario(App& app, size_t index, bool resetCamera)
 {
     app.scenarioIndex = index % app.names.size();
     app.error.clear();
+    app.pushes.clear();
+    app.lastPush.clear();
     app.hostAccumulator = 0.0;
     app.lastHostDt = 0.0f;
     app.lastSteps = 0;
@@ -765,6 +782,7 @@ void pushBodyUnderMouse(App& app)
     const DdVec3 impulse{ray.direction.x * app.pushStrength, ray.direction.y * app.pushStrength, ray.direction.z * app.pushStrength};
     const DdVec3 point{bestHit.point.x, bestHit.point.y, bestHit.point.z};
     dragdoll_character_apply_impulse(c, static_cast<uint32_t>(best), impulse, &point);
+    app.pushes.push_back({dragdoll_world_get_step_count(app.main.world), static_cast<uint32_t>(best), impulse, point});
     char text[128];
     std::snprintf(text, sizeof(text), "pushed %s with %.0f N*s at step %llu", dragdoll_character_get_body_name(c, static_cast<uint32_t>(best)),
                   app.pushStrength, static_cast<unsigned long long>(dragdoll_world_get_step_count(app.main.world)));
@@ -950,6 +968,81 @@ void drawRigPanel(App& app)
     ImGui::End();
 }
 
+// ------------------------------------------------------------------------------------------------
+// Hot reload: swap in a rebuilt dragdoll.dll and restore the session from its inputs
+// ------------------------------------------------------------------------------------------------
+void hotReload(App& app)
+{
+    const double started = GetTime();
+    const bool wasReplay = app.replay != nullptr;
+    const uint64_t target = wasReplay ? app.replayFrame.frame : (app.main.world != nullptr ? dragdoll_world_get_step_count(app.main.world) : 0);
+    const std::vector<App::Push> pushes = app.pushes;
+    const bool paused = app.paused;
+
+    // Release everything the old library owns, then swap it.
+    dragdoll_replay_close(app.replay);
+    app.replay = nullptr;
+    app.main = Instance();
+    app.shadow = Instance();
+    dragdoll_shutdown();
+    std::string error;
+    const bool swapped = hot::swap(error);
+    if (dragdoll_init(DD_API_VERSION) != DD_OK)
+    {
+        app.hotStatus = std::string("library failed to start: ") + dragdoll_last_error_message();
+        return;
+    }
+
+    // Restore: the same inputs reach the same moment, now simulated by the new code.
+    if (wasReplay)
+    {
+        openReplay(app, false);
+        while (app.replay != nullptr && app.replayFrame.frame < target && app.replayFrame.at_end == 0)
+        {
+            advanceReplay(app);
+        }
+    }
+    else if (loadScenario(app, app.scenarioIndex, false))
+    {
+        size_t next = 0;
+        auto applyDue = [&](uint64_t now) {
+            DdCharacter* c = dragdoll_world_get_character(app.main.world, 0);
+            for (; next < pushes.size() && pushes[next].step <= now; ++next)
+            {
+                if (c != nullptr) dragdoll_character_apply_impulse(c, pushes[next].body, pushes[next].impulse, &pushes[next].point);
+            }
+        };
+        for (uint64_t guard = 0; dragdoll_world_get_step_count(app.main.world) < target && guard < target * 2 + 16; ++guard)
+        {
+            applyDue(dragdoll_world_get_step_count(app.main.world));
+            advanceHostFrame(app, 1.0f / 120.0f);
+        }
+        applyDue(dragdoll_world_get_step_count(app.main.world));
+        app.pushes = pushes;
+    }
+    app.paused = paused;
+
+    char text[200];
+    std::snprintf(text, sizeof(text), "%s (library #%d), session restored to %s %llu in %.0f ms%s",
+                  swapped ? "reloaded" : "RELOAD FAILED, kept the old library", hot::generation(), wasReplay ? "frame" : "step",
+                  static_cast<unsigned long long>(target), (GetTime() - started) * 1000.0,
+                  !wasReplay && !app.recordPath.empty() ? " (recording restarted)" : "");
+    app.hotStatus = swapped ? text : text + std::string(": ") + error;
+}
+
+void watchLibrary(App& app)
+{
+    if (!app.hotEnabled || GetTime() < app.hotNextCheck)
+    {
+        return;
+    }
+    app.hotNextCheck = GetTime() + 0.5;
+    if (hot::changed())
+    {
+        hotReload(app);
+    }
+}
+
 void drawPanels(App& app, BodyMotion& motion)
 {
     drawRigPanel(app);
@@ -990,6 +1083,16 @@ void drawPanels(App& app, BodyMotion& motion)
         ImGui::Checkbox("Auto-restart (A)", &app.autoRestart);
         ImGui::Checkbox("Joint limits (L)", &app.showLimits);
         ImGui::Checkbox("Help line (H)", &app.showHelp);
+        ImGui::SeparatorText("Library");
+        if (app.hotEnabled)
+        {
+            ImGui::TextDisabled("hot reload on: rebuild to swap (#%d loaded)", hot::generation());
+            if (!app.hotStatus.empty()) ImGui::TextWrapped("%s", app.hotStatus.c_str());
+        }
+        else
+        {
+            ImGui::TextWrapped("hot reload off: %s", app.hotStatus.c_str());
+        }
         if (!replaying)
         {
             ImGui::SeparatorText("Push (right-click a body)");
@@ -1089,6 +1192,8 @@ int main(int argc, char** argv)
         }
     }
 
+    std::string hotError;
+    const bool hotEnabled = hot::start(hotError); // Must precede the first dragdoll_* call
     if (dragdoll_init(DD_API_VERSION) != DD_OK)
     {
         std::fprintf(stderr, "dragdoll_init failed: %s\n", dragdoll_last_error_message());
@@ -1103,6 +1208,8 @@ int main(int argc, char** argv)
     app.autoRestart = recordPath.empty() && replayPath.empty();
     app.replayPath = replayPath;
     app.rigPath = rigPath;
+    app.hotEnabled = hotEnabled;
+    app.hotStatus = hotError;
     size_t index = 0;
     for (size_t i = 0; i < app.names.size(); ++i)
     {
@@ -1139,6 +1246,7 @@ int main(int argc, char** argv)
     while (!WindowShouldClose() && !(IsKeyPressed(KEY_ESCAPE) && !app.noteEditing))
     {
         watchRigFile(app);
+        watchLibrary(app);
         // --- input ---
         if (keyPressed(app, KEY_SPACE)) app.paused = !app.paused;
         if (keyPressed(app, KEY_H)) app.showHelp = !app.showHelp;

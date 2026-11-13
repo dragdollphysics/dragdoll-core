@@ -162,7 +162,7 @@ Planned by **effort hours, not calendar weeks** (total ≈ **460 h** to v1, ±50
 * [x] ImGui panels via rlImGui in the raylib viewer (ADR-0021): Playback, Scenarios, Bodies (live speed/spin, flags spin-in-place) (task 2.3).
 * [x] Right-click push: impulse along the view ray at the picked body, strength slider 5-300 N*s, recorded like any input (task 2.3).
 * [x] Live rig editing: viewer watches `packs/rigs/humanoid16.json` (reload on save, broken rigs refused with the library's error), Rig panel with per-joint friction sliders, Save (only the numbers change) / Revert (task 2.4).
-* [ ] Hot-reload DLL host + replay restore (task 2.4, next slice); joint-limit sliders if needed.
+* [x] Hot-reload DLL host: viewer delay-loads `dragdoll.dll` from a shadow copy (`bin/hot/`), rebuild -> unload + swap without closing the window, session restored from its inputs (scenario fast-forwarded to the same step with the recorded pushes, or the replay to the same frame) (task 2.4). Joint-limit sliders: add when needed.
 * [x] `.ddrec` recording at the C API boundary + replay (`dragdoll_replay_*`), notes (`dragdoll_world_record_note`), viewer `--record` / `--replay` + F9 marks (task 2.1).
 * [x] F9 annotations with typed text + screenshot (`<recording>_step<N>.png`), `dragdoll_inspect` (summary, notes with screenshot paths, `--motion`, `--body`) (tasks 2.1, 2.2). Not yet: `--at/--window/--fields`, `--render` contact sheets (add when a session needs them).
 * [ ] Tracy integration; MCP bridge.

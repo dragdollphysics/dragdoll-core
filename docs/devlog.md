@@ -305,3 +305,21 @@ Crowd question (car through the pier) → cost is linear in awake ragdolls (~70 
 
 **Open questions**
 * None new.
+
+---
+
+## 2026-11-13 — Phase 2, task 2.4 (second slice): hot reload of dragdoll.dll
+**Changed** (local, not committed)
+* `workbench/hot_reload.{hpp,cpp}` (kept apart: `<windows.h>` clashes with raylib): the viewer links with `/DELAYLOAD:dragdoll.dll /DELAY:UNLOAD`; a delay-load hook loads a shadow copy `bin/hot/dragdoll_<pid>_<n>.dll`, so the build can overwrite `bin/dragdoll.dll` while the viewer runs. `changed()` waits until the new time stamp is stable for one 0.5 s poll (linker done).
+* Reload: destroy replay/worlds, `dragdoll_shutdown`, `__FUnloadDelayLoadedDLL2`, copy the new build, `dragdoll_init`, restore: scenario re-run with 1/120 s host frames to the same step with the logged right-click pushes re-applied at their steps, or the replay advanced to the same frame. Pause state kept; a recording restarts (noted in the status). Status line in Playback > Library.
+* Verified: 4 rebuilds while the viewer ran (copies #1-#4, old copies deleted, memory steady); founder pushed + paused, rebuild -> "Same pose". 4 dev presets green.
+
+**Known limits**
+* Viewer code itself (main.cpp, scenarios) is not hot-reloaded: rebuilding it still needs the viewer closed (`watch.ps1 -Build`).
+* Restore re-simulates from the start: long sessions take proportionally longer (~120 steps per simulated second).
+
+**Next**
+* Task 2.5 (Opus): SA session capture + replay; decide the x86-recording -> x64-viewer determinism question (devlog 2.1).
+
+**Open questions**
+* None new.
