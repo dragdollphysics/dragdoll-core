@@ -160,8 +160,8 @@ Planned by **effort hours, not calendar weeks** (total ≈ **460 h** to v1, ±50
 **Goal:** the development cockpit.
 * [x] Live scenario viewer `dragdoll_view` (raylib; windowed, real time, pause/step/slow-mo, host-rate simulation, hash match HUD) + C-API debug-draw callback (Phase 1, task 3c) — the human-validation loop. Seed of the workbench.
 * [x] ImGui panels via rlImGui in the raylib viewer (ADR-0021): Playback, Scenarios, Bodies (live speed/spin, flags spin-in-place) (task 2.3).
-* [ ] ImGui, second slice: live parameter sliders (scenario parameters, rig friction) and click-impulse.
-* [ ] Hot-reload DLL host + replay restore.
+* [x] Right-click push: impulse along the view ray at the picked body, strength slider 5-300 N*s, recorded like any input (task 2.3).
+* [ ] Hot-reload DLL host + replay restore; live rig reload with parameter sliders (joint friction, limits) moved here from 2.3.
 * [x] `.ddrec` recording at the C API boundary + replay (`dragdoll_replay_*`), notes (`dragdoll_world_record_note`), viewer `--record` / `--replay` + F9 marks (task 2.1).
 * [x] F9 annotations with typed text + screenshot (`<recording>_step<N>.png`), `dragdoll_inspect` (summary, notes with screenshot paths, `--motion`, `--body`) (tasks 2.1, 2.2). Not yet: `--at/--window/--fields`, `--render` contact sheets (add when a session needs them).
 * [ ] Tracy integration; MCP bridge.

@@ -270,6 +270,11 @@ struct App
     std::string noteText;
     bool notePrevPaused = false;
     std::string pendingShot; // Full path of the screenshot to take at the end of this frame
+
+    // Right-click push (task 2.3): an impulse along the view ray at the clicked body. Goes through the C API, so it is
+    // recorded and replays like any other input.
+    float pushStrength = 40.0f; // N*s
+    std::string lastPush;
 };
 
 // While a note is being typed, hotkeys are off.
@@ -539,12 +544,10 @@ void update(App& app, float realDt)
     // A scenario that has played out restarts at once, in the same frame (no freeze), exactly like pressing R.
     const double duration = app.main.scenario->duration();
     const bool finished = duration > 0.0 && static_cast<double>(dragdoll_world_get_step_count(app.main.world)) / 120.0 >= duration;
-    if (finished)
+    // Without auto-restart the world keeps running past the scenario's end, so it can still be pushed and inspected
+    // (resting bodies sleep, so this costs almost nothing).
+    if (finished && app.autoRestart)
     {
-        if (!app.autoRestart)
-        {
-            return; // Hold the final state (press A to turn auto-restart back on).
-        }
         loadScenario(app, app.scenarioIndex, false);
     }
     const double scaled = static_cast<double>(realDt) * app.timeScale;
@@ -668,7 +671,7 @@ void drawHud(App& app)
     if (app.showHelp)
     {
         const int h = GetScreenHeight();
-        DrawText("Space pause | N step | Up/Down time scale | F host frame rate | R restart | A auto-restart | L joint limits | Tab next | F9 note (when recording) | H hide help | left-drag orbit | middle-drag pan | wheel zoom",
+        DrawText("Space pause | N step | Up/Down time scale | F host frame rate | R restart | A auto-restart | L joint limits | Tab next | right-click push | F9 note (when recording) | H hide help | left-drag orbit | middle-drag pan | wheel zoom",
                  x, h - 28, 16, Color{170, 175, 185, 255});
     }
     DrawFPS(GetScreenWidth() - 90, 10);
@@ -720,6 +723,42 @@ void measureMotion(DdWorld* world, BodyMotion& m)
     m.step = step;
 }
 
+// Picks the body under the mouse (each body approximated by a 15 cm sphere at its centre) and pushes it.
+void pushBodyUnderMouse(App& app)
+{
+    DdCharacter* c = app.main.world != nullptr ? dragdoll_world_get_character(app.main.world, 0) : nullptr;
+    if (c == nullptr)
+    {
+        return;
+    }
+    const Ray ray = GetScreenToWorldRay(GetMousePosition(), app.camera.build());
+    std::vector<DdTransform> bodies(dragdoll_character_get_body_count(c));
+    dragdoll_character_get_body_transforms(c, 1, bodies.data(), static_cast<uint32_t>(bodies.size()));
+    int best = -1;
+    RayCollision bestHit{};
+    for (size_t i = 0; i < bodies.size(); ++i)
+    {
+        const DdVec3& p = bodies[i].position;
+        const RayCollision hit = GetRayCollisionSphere(ray, Vector3{p.x, p.y, p.z}, 0.15f);
+        if (hit.hit && (best < 0 || hit.distance < bestHit.distance))
+        {
+            best = static_cast<int>(i);
+            bestHit = hit;
+        }
+    }
+    if (best < 0)
+    {
+        return;
+    }
+    const DdVec3 impulse{ray.direction.x * app.pushStrength, ray.direction.y * app.pushStrength, ray.direction.z * app.pushStrength};
+    const DdVec3 point{bestHit.point.x, bestHit.point.y, bestHit.point.z};
+    dragdoll_character_apply_impulse(c, static_cast<uint32_t>(best), impulse, &point);
+    char text[128];
+    std::snprintf(text, sizeof(text), "pushed %s with %.0f N*s at step %llu", dragdoll_character_get_body_name(c, static_cast<uint32_t>(best)),
+                  app.pushStrength, static_cast<unsigned long long>(dragdoll_world_get_step_count(app.main.world)));
+    app.lastPush = text;
+}
+
 void drawPanels(App& app, BodyMotion& motion)
 {
     const float w = static_cast<float>(GetScreenWidth());
@@ -759,6 +798,13 @@ void drawPanels(App& app, BodyMotion& motion)
         ImGui::Checkbox("Auto-restart (A)", &app.autoRestart);
         ImGui::Checkbox("Joint limits (L)", &app.showLimits);
         ImGui::Checkbox("Help line (H)", &app.showHelp);
+        if (!replaying)
+        {
+            ImGui::SeparatorText("Push (right-click a body)");
+            ImGui::SliderFloat("Impulse", &app.pushStrength, 5.0f, 300.0f, "%.0f N*s");
+            ImGui::TextDisabled("70 N*s = the shove scenario");
+            if (!app.lastPush.empty()) ImGui::TextWrapped("%s", app.lastPush.c_str());
+        }
     }
     ImGui::End();
 
@@ -920,7 +966,14 @@ int main(int argc, char** argv)
         {
             editNote(app);
         }
-        if (!ImGui::GetIO().WantCaptureMouse) app.camera.update();
+        if (!ImGui::GetIO().WantCaptureMouse)
+        {
+            app.camera.update();
+            if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT) && app.replay == nullptr && !app.noteEditing)
+            {
+                pushBodyUnderMouse(app);
+            }
+        }
 
         // --- simulate ---
         if (app.replay != nullptr)

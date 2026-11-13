@@ -274,3 +274,18 @@ Crowd question (car through the pier) → cost is linear in awake ragdolls (~70 
 
 **Open questions**
 * DCO sign-off missing on pushed 44fa192 (see previous entry).
+
+---
+
+## 2026-11-13 — Phase 2, task 2.3 (second slice): right-click push
+**Changed** (local, not committed)
+* Viewer: right-click a body to push it (impulse along the view ray at the hit point; bodies picked as 15 cm spheres at their centres). Playback panel: Impulse slider 5-300 N*s (default 40; the shove scenario uses 70) and a "last push" line. Pushes go through `dragdoll_character_apply_impulse`, so they are recorded and replay exactly, and they wake sleeping bodies.
+* Rig/parameter sliders moved to 2.4: they need the character rebuilt, which belongs with live rig reload.
+* With auto-restart off, the world keeps running past the scenario's end (was frozen), so the ragdoll can still be pushed (founder report).
+* Founder: "feels right" (asked for the 5-300 range). 4 dev presets green.
+
+**Next**
+* Task 2.4 (Opus): hot-reload DLL host + replay restore, live rig JSON reload with sliders.
+
+**Open questions**
+* DCO sign-off missing on pushed 44fa192.
