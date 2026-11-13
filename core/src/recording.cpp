@@ -239,6 +239,15 @@ void Recorder::impulse(uint32_t character, uint32_t body, const DdVec3& impulse,
     write(Record::Impulse, mScratch);
 }
 
+void Recorder::tension(uint32_t character, uint32_t profile, float blendSeconds)
+{
+    mScratch.clear();
+    mScratch.u32(character);
+    mScratch.u32(profile);
+    mScratch.f32(blendSeconds);
+    write(Record::Tension, mScratch);
+}
+
 void Recorder::note(const char* text)
 {
     mScratch.clear();

@@ -385,6 +385,74 @@ private:
     bool mShoved = false;
 };
 
+// Muscles (task 3.1): four humanoids dropped side by side from 1 m, each with its own tension profile (set before the
+// first step, so the scenario is identical at any host frame rate). Judge: limp crumples; stunned folds slowly and
+// wobbles; relaxed sags but keeps some shape; tense lands like a stiff mannequin and topples in one piece (there is no
+// balance yet).
+class TensionLineupScenario final : public Scenario
+{
+public:
+    const char* name() const override { return "tension_lineup"; }
+    const char* description() const override
+    {
+        return "Muscles: four humanoids dropped from 1 m, left to right LIMP, STUNNED, RELAXED, TENSE. Judge: limp "
+               "crumples; stunned folds slowly and wobbles; relaxed sags but keeps some shape; tense lands stiff and "
+               "topples in one piece (no balance yet).";
+    }
+    void configure(DdWorldDesc& desc) const override { desc.up = DdVec3{0.0f, 0.0f, 1.0f}; }
+    bool rateIndependent() const override { return true; }
+    double duration() const override { return 5.0; }
+    DdCharacter* character() const override { return mCharacters[3]; } // The tense one
+    DdVec3 cameraTarget() const override { return DdVec3{0.0f, 0.0f, 0.7f}; }
+    float cameraDistance() const override { return 7.5f; }
+
+    void build(DdWorld* world) override
+    {
+        addGround(world, DdVec3{0.0f, 0.0f, 1.0f});
+        for (int i = 0; i < 4; ++i)
+        {
+            DdCharacterDesc desc;
+            dragdoll_character_desc_default(&desc);
+            desc.rig_json = rigJson();
+            desc.transform.position = DdVec3{-2.4f + 1.6f * static_cast<float>(i), 0.0f, 1.0f};
+            if (dragdoll_character_create(world, &desc, &mCharacters[i]) != DD_OK)
+            {
+                continue;
+            }
+            mRest[i].resize(dragdoll_character_get_body_count(mCharacters[i]));
+            dragdoll_character_get_body_transforms(mCharacters[i], 0, mRest[i].data(), static_cast<uint32_t>(mRest[i].size()));
+            dragdoll_character_set_tension(mCharacters[i], kOrder[i], 0.0f);
+        }
+    }
+
+    void hud(DdWorld*, std::vector<std::string>& lines) override
+    {
+        static const char* const kNames[] = {"limp", "relaxed", "tense", "stunned"};
+        for (int i = 0; i < 4; ++i)
+        {
+            if (mCharacters[i] == nullptr)
+            {
+                lines.emplace_back("character could not be created");
+                continue;
+            }
+            std::vector<DdTransform> now(mRest[i].size());
+            dragdoll_character_get_body_transforms(mCharacters[i], 0, now.data(), static_cast<uint32_t>(now.size()));
+            const metrics::PoseError e = metrics::poseError(mCharacters[i], mRest[i], now);
+            char buffer[160];
+            std::snprintf(buffer, sizeof(buffer), "%-8s pose error vs standing: RMS %5.1f deg, max %5.1f deg (%s) | pelvis height %.2f m",
+                          kNames[kOrder[i]], static_cast<double>(e.rms), static_cast<double>(e.max),
+                          e.worst >= 0 ? dragdoll_character_get_body_name(mCharacters[i], static_cast<uint32_t>(e.worst)) : "-",
+                          static_cast<double>(now[0].position.z));
+            lines.emplace_back(buffer);
+        }
+    }
+
+private:
+    static constexpr DdTension kOrder[4] = {DD_TENSION_LIMP, DD_TENSION_STUNNED, DD_TENSION_RELAXED, DD_TENSION_TENSE};
+    DdCharacter* mCharacters[4] = {};
+    std::vector<DdTransform> mRest[4];
+};
+
 // A vehicle from the shape pack hits a standing limp ragdoll side-on and brakes on contact (task 2.6). Without muscles
 // the body only starts to sag in the 0.1 s before contact; what matters here is how each front shape catches it:
 // low fronts scoop it onto the bonnet (wrap), high flat fronts throw it ahead (forward projection).
@@ -512,6 +580,7 @@ const std::vector<std::pair<std::string, Factory>>& registry()
                  DdVec3{0.0f, 0.0f, 1.0f}, DdQuat{0, 0, 0, 1});
          }},
     };
+    all.emplace_back("tension_lineup", [] { return std::make_unique<TensionLineupScenario>(); });
     for (const std::string& vehicle : vehicleNames())
     {
         all.emplace_back("hit_" + vehicle + "_40kmh", [vehicle] { return std::make_unique<VehicleHitScenario>(vehicle, 40.0f); });
@@ -540,6 +609,38 @@ float hingeBendDegrees(const DdTransform& parent, const DdTransform& child)
     const DdVec3 lateral = rotate(parent.rotation, DdVec3{1, 0, 0}); // parent's local +X (character's left)
     const DdVec3 c{a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
     return std::atan2(dot(c, lateral), dot(a, b)) * 57.29578f;
+}
+PoseError poseError(const DdCharacter* character, const std::vector<DdTransform>& reference, const std::vector<DdTransform>& now)
+{
+    auto conj = [](const DdQuat& q) { return DdQuat{-q.x, -q.y, -q.z, q.w}; };
+    auto mul = [](const DdQuat& a, const DdQuat& b) {
+        return DdQuat{a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y, a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+                      a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w, a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z};
+    };
+    PoseError e;
+    double sum = 0.0;
+    int joints = 0;
+    for (uint32_t i = 0; i < now.size() && i < reference.size(); ++i)
+    {
+        const int32_t p = dragdoll_character_get_body_parent(character, i);
+        if (p < 0)
+        {
+            continue;
+        }
+        const DdQuat relRef = mul(conj(reference[static_cast<size_t>(p)].rotation), reference[i].rotation);
+        const DdQuat relNow = mul(conj(now[static_cast<size_t>(p)].rotation), now[i].rotation);
+        const DdQuat d = mul(conj(relRef), relNow);
+        const float angle = 2.0f * std::acos(std::fmin(1.0f, std::fabs(d.w))) * 57.29578f;
+        sum += static_cast<double>(angle) * angle;
+        ++joints;
+        if (angle > e.max)
+        {
+            e.max = angle;
+            e.worst = static_cast<int>(i);
+        }
+    }
+    e.rms = joints > 0 ? static_cast<float>(std::sqrt(sum / joints)) : 0.0f;
+    return e;
 }
 } // namespace metrics
 

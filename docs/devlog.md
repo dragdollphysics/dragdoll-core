@@ -376,3 +376,32 @@ Crowd question (car through the pier) → cost is linear in awake ragdolls (~70 
 
 **Open questions**
 * None new.
+
+---
+
+## 2026-11-13 — Phase 2 closed
+**Changed** (local, not committed)
+* `docs/retrospectives/phase-2.md`: what shipped (2.1-2.7), what went well/badly, ADR-0022, plan notes for Phase 3.
+
+**Next**
+* Phase 3, task 3.1 (Opus): pose drive via joint motors (frequency + damping ratio, ADR-0009) with tension profiles `limp` / `relaxed` / `tense` / `stunned` and smooth blending; scenario `hold_pose` (ragdoll on the ground keeps a target pose), live stiffness sliders.
+
+**Decision:** no progress clips at all; the founder reviews in the live viewer (CLAUDE.md updated).
+
+---
+
+## 2026-11-13 — Phase 3, task 3.1: muscles (joint motors + tension profiles)
+**Changed** (local, not committed)
+* Rig joints: optional `"strength"` (peak torque, N*m); humanoid16: spine 250/200, neck 40, shoulder 70, elbow 60, wrist 12, hip 220, knee 200, ankle 150.
+* `core/src/muscles.cpp`: Jolt position motors (swing-twist: swing + twist to the rest orientation in body space; hinge: angle 0) with frequency + damping (ADR-0009) and torque limit = strength x share. Profiles: limp (off), stunned 3 Hz / 0.35 / 30%, relaxed 4 Hz / 1.0 / 40%, tense 6 Hz / 0.9 / 100%. Blends ramp share and stiffness (through a 0.5 Hz spring to/from limp; 0 Hz would be rigid in Jolt). Updated every fixed step before the physics update.
+* C API: `dragdoll_character_set_tension / get_tension`, `DdTension`, `dragdoll_character_get_body_parent`; recorded (record type 11) and replayed.
+* Scenario `tension_lineup` (4 humanoids, one per profile, rate-independent); `metrics::poseError` (RMS / max joint angle vs a reference pose).
+* Viewer: Playback > Muscles (scenario | limp | relaxed | tense | stunned, sticky across restarts — founder report; blend slider); ctl `tension <profile|default> [blend]`; `state` reports tension and pose error. Tension changes are restored after a hot reload.
+* **Findings while tuning (via ctl + hot reload):** an active Jolt motor *replaces* the joint's passive friction, and its spring is sized to the two joint bodies, not the load above — so the first soft profiles (1.5 Hz relaxed, 0.7 Hz stunned) held *less* than limp. Stiffer profiles fixed it; blends now ramp stiffness, not only the torque limit (which a falling body never reaches).
+* Tests (3 new): API + parents; lineup order at 30/60/144 fps (settled RMS: tense 8.4 < relaxed 22.7 < limp 43.1 deg; stunned folds slower than limp); blending. Founder: "first two look limpy, the later two stiffy". 4 dev presets green, 37 test cases.
+
+**Next**
+* Task 3.2 (Opus): host pose input + full output contract (D17): the host sets a target pose per body; motors track it.
+
+**Open questions**
+* Stunned ends as crumpled as limp (folds slower, same end state). Acceptable for "dazed"; revisit when behaviours use it.

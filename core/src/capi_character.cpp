@@ -14,6 +14,7 @@ dragdoll::rec::Recorder* recorderOf(const DdCharacter* character)
 }
 } // namespace
 
+#include <cmath>
 #include <cstring>
 #include <stdexcept>
 
@@ -172,4 +173,42 @@ DD_API DdResult DD_CALL dragdoll_character_apply_impulse(DdCharacter* character,
     DD_GUARD_END(DD_ERROR_INTERNAL)
 }
 
-} // extern "C"
+DD_API int32_t DD_CALL dragdoll_character_get_body_parent(const DdCharacter* character, uint32_t body)
+{
+    if (character == nullptr || body >= character->parent.size())
+    {
+        return -1;
+    }
+    return character->parent[body];
+}
+
+DD_API DdResult DD_CALL dragdoll_character_set_tension(DdCharacter* character, DdTension tension, float blend_seconds)
+{
+    DD_GUARD_BEGIN
+    if (character == nullptr)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_set_tension: character is required");
+    }
+    if (static_cast<int>(tension) < 0 || tension >= DD_TENSION_COUNT)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_set_tension: unknown tension profile");
+    }
+    if (!std::isfinite(blend_seconds) || blend_seconds < 0.0f)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_set_tension: blend_seconds must be finite and >= 0");
+    }
+    dragdoll::setTension(*character, tension, blend_seconds);
+    if (dragdoll::rec::Recorder* recorder = recorderOf(character))
+    {
+        recorder->tension(character->id, static_cast<uint32_t>(tension), blend_seconds);
+    }
+    return DD_OK;
+    DD_GUARD_END(DD_ERROR_INTERNAL)
+}
+
+DD_API DdTension DD_CALL dragdoll_character_get_tension(const DdCharacter* character)
+{
+    return character != nullptr ? character->tension : DD_TENSION_LIMP;
+}
+
+} // extern "C\"

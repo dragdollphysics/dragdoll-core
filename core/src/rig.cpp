@@ -235,6 +235,14 @@ Rig Rig::parse(std::string_view text)
                     error(jw, "\"friction\" must be >= 0 (N*m)");
                 }
             }
+            if (joint.contains("strength"))
+            {
+                body.joint.strength = number(joint, "strength", jw);
+                if (body.joint.strength < 0.0f)
+                {
+                    error(jw, "\"strength\" must be >= 0 (N*m)");
+                }
+            }
             if (jtype == "swing_twist")
             {
                 body.joint.type = RigJoint::Type::SwingTwist;

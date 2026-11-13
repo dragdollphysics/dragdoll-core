@@ -14,7 +14,7 @@ Append to `docs/devlog.md`: **Changed**, **Next** (one concrete task), **Open qu
 * Estimate in effort hours, never calendar dates.
 * Keep tasks small (≈ 1–6 h) and finish whole units: builds on x86 + x64, tests green, devlog updated. Never leave the build broken at a pause.
 * New ideas that aren't the current task → one line in `docs/ideas.md`, then continue.
-* Each phase ends with a short clip in `docs/progress/`.
+* No progress clips: the founder reviews in the live viewer (decided 2026-11-13).
 
 ## Layout (ADR-0013)
 ```

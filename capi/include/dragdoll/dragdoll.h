@@ -279,6 +279,29 @@ DD_API DdResult DD_CALL dragdoll_character_get_body_transforms(const DdCharacter
 DD_API DdResult DD_CALL dragdoll_character_apply_impulse(DdCharacter* character, uint32_t body, DdVec3 impulse,
                                                          const DdVec3* world_point);
 
+/* Parent body index (-1 for the root or an invalid index). Bodies follow the rig's order; parents come first. */
+DD_API int32_t DD_CALL dragdoll_character_get_body_parent(const DdCharacter* character, uint32_t body);
+
+/* ---- Muscles (Phase 3) -------------------------------------------------------------------
+ * Every joint with a rig "strength" has motors that pull it towards the target pose (for now: the rig's rest pose).
+ * A tension profile sets how hard (stiffness as frequency + damping ratio, ADR-0009, and the share of the joint's
+ * strength). Internal torques only (ADR-0003). New characters start LIMP. Note: an active motor replaces the joint's
+ * passive friction, so profiles must be stiffer than that friction to add any hold. */
+typedef enum DdTension
+{
+    DD_TENSION_LIMP = 0,    /* Motors off: only passive joint friction. */
+    DD_TENSION_RELAXED = 1, /* Low tone: 40% strength, 4 Hz; sags under load but keeps some shape. */
+    DD_TENSION_TENSE = 2,   /* Braced: full strength, 6 Hz. */
+    DD_TENSION_STUNNED = 3, /* Dazed: 30% strength, 3 Hz, under-damped; folds slowly and wobbles. */
+    DD_TENSION_COUNT = 4,
+    DD_TENSION_FORCE_32BIT = 0x7FFFFFFF
+} DdTension;
+
+/* Changes the tension profile, blending from the current muscle state over blend_seconds (0 = at once). */
+DD_API DdResult DD_CALL dragdoll_character_set_tension(DdCharacter* character, DdTension tension, float blend_seconds);
+/* The profile last set (the blend towards it may still be running). */
+DD_API DdTension DD_CALL dragdoll_character_get_tension(const DdCharacter* character);
+
 /* ---- Recording & replay (ADR-0007, ADR-0017) ------------------------------------------- */
 /* A world created with DdWorldDesc.record_path writes every call that changes it (steps, colliders, kinematic targets,
  * characters, impulses) to a .ddrec file, plus the state hash after every step. A replay rebuilds the world from the

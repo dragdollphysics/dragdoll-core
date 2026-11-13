@@ -60,6 +60,16 @@ DdVec3 rotate(const DdQuat& q, const DdVec3& v);
 // (the character's left), right-handed. Knees flex with a POSITIVE bend, elbows with a NEGATIVE bend; the opposite sign
 // means hyperextension.
 float hingeBendDegrees(const DdTransform& parent, const DdTransform& child);
+
+// How far each joint is from a reference pose (degrees): the rotation of every body relative to its parent, now vs
+// in `reference` (e.g. the rest pose captured at creation). The root has no joint and is skipped.
+struct PoseError
+{
+    float rms = 0.0f;
+    float max = 0.0f;
+    int worst = -1; // Body index with the largest error
+};
+PoseError poseError(const DdCharacter* character, const std::vector<DdTransform>& reference, const std::vector<DdTransform>& now);
 } // namespace metrics
 
 // Names of all registered scenarios, in a stable order.

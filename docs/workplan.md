@@ -173,7 +173,7 @@ Planned by **effort hours, not calendar weeks** (total ≈ **460 h** to v1, ±50
 
 ### Phase 3 — Active Body (~60 h)
 **Goal:** a standing character that holds poses and stays upright under small disturbances.
-* [ ] Pose drive via motors (D8/D9); tension profiles (`tense`, `relaxed`, `limp`, `stunned`) with smooth blending.
+* [x] Pose drive via motors (D8/D9); tension profiles (`tense`, `relaxed`, `limp`, `stunned`) with smooth blending (task 3.1: target = rest pose; host pose input in 3.2).
 * [ ] Host pose input + full output contract (D17).
 * [ ] **[SA]** Activation from motion: initialise bodies from two consecutive host poses (positions + velocities); test `walk_then_activate` shows no velocity pop.
 * [ ] **[SA]** Mock 32-bone host skeleton (SA bone IDs/hierarchy as facts, own proportions) → rig mapping round-trip test.

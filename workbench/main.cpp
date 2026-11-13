@@ -294,6 +294,16 @@ struct App
         DdVec3 point;
     };
     std::vector<Push> pushes; // This run's pushes, re-applied when a hot reload restores the session
+    struct TensionChange
+    {
+        uint64_t step;
+        DdTension tension;
+        float blend;
+    };
+    std::vector<TensionChange> tensionChanges; // Same, for tension set from the viewer or dragdoll_ctl
+    float tensionBlend = 0.3f;
+    int tensionOverride = -1; // Picked in the viewer: re-applied after every (re)load; -1 = the scenario's own
+    std::vector<DdTransform> restPose; // Character 0 as created (reference for the pose error)
 
     // Hot reload of dragdoll.dll (task 2.4)
     bool hotEnabled = false;
@@ -401,12 +411,26 @@ bool loadScenario(App& app, size_t index, bool resetCamera)
     app.error.clear();
     app.pushes.clear();
     app.lastPush.clear();
+    app.tensionChanges.clear();
+    app.restPose.clear();
     app.hostAccumulator = 0.0;
     app.lastHostDt = 0.0f;
     app.lastSteps = 0;
     if (!Instance::make(app.names[app.scenarioIndex], app.main, app.error, app.recordPath.empty() ? nullptr : app.recordPath.c_str()))
     {
         return false;
+    }
+    if (DdCharacter* c = app.main.scenario->character())
+    {
+        app.restPose.resize(dragdoll_character_get_body_count(c));
+        dragdoll_character_get_body_transforms(c, 0, app.restPose.data(), static_cast<uint32_t>(app.restPose.size()));
+    }
+    DdCharacter* mainCharacter = app.main.scenario->character();
+    if (mainCharacter == nullptr) mainCharacter = dragdoll_world_get_character(app.main.world, 0);
+    if (app.tensionOverride >= 0 && mainCharacter != nullptr &&
+        dragdoll_character_set_tension(mainCharacter, static_cast<DdTension>(app.tensionOverride), 0.0f) == DD_OK)
+    {
+        app.tensionChanges.push_back({0, static_cast<DdTension>(app.tensionOverride), 0.0f}); // Restored after a hot reload too
     }
     app.hasShadow = app.main.scenario->rateIndependent();
     if (app.hasShadow && !Instance::make(app.names[app.scenarioIndex], app.shadow, app.error))
@@ -1003,6 +1027,7 @@ void hotReload(App& app)
     const bool wasReplay = app.replay != nullptr;
     const uint64_t target = wasReplay ? app.replayFrame.frame : (app.main.world != nullptr ? dragdoll_world_get_step_count(app.main.world) : 0);
     const std::vector<App::Push> pushes = app.pushes;
+    const std::vector<App::TensionChange> tensions = app.tensionChanges;
     const bool paused = app.paused;
 
     // Release everything the old library owns, then swap it.
@@ -1030,12 +1055,16 @@ void hotReload(App& app)
     }
     else if (loadScenario(app, app.scenarioIndex, false))
     {
-        size_t next = 0;
+        size_t next = 0, nextTension = 0;
         auto applyDue = [&](uint64_t now) {
             DdCharacter* c = dragdoll_world_get_character(app.main.world, 0);
             for (; next < pushes.size() && pushes[next].step <= now; ++next)
             {
                 if (c != nullptr) dragdoll_character_apply_impulse(c, pushes[next].body, pushes[next].impulse, &pushes[next].point);
+            }
+            for (; nextTension < tensions.size() && tensions[nextTension].step <= now; ++nextTension)
+            {
+                if (c != nullptr) dragdoll_character_set_tension(c, tensions[nextTension].tension, tensions[nextTension].blend);
             }
         };
         for (uint64_t guard = 0; dragdoll_world_get_step_count(app.main.world) < target && guard < target * 2 + 16; ++guard)
@@ -1045,6 +1074,7 @@ void hotReload(App& app)
         }
         applyDue(dragdoll_world_get_step_count(app.main.world));
         app.pushes = pushes;
+        app.tensionChanges = tensions;
     }
     app.paused = paused;
 
@@ -1072,6 +1102,25 @@ void watchLibrary(App& app)
 // ------------------------------------------------------------------------------------------------
 // Command channel (task 2.7): one text command per line, one JSON reply per command.
 // ------------------------------------------------------------------------------------------------
+const char* const kTensionNames[] = {"limp", "relaxed", "tense", "stunned"};
+
+// Sets the tension of the live character (logged for hot-reload restore). false if there is none.
+bool setLiveTension(App& app, DdTension tension, float blend)
+{
+    DdCharacter* c = nullptr;
+    if (app.main.world != nullptr && app.replay == nullptr)
+    {
+        c = app.main.scenario->character() != nullptr ? app.main.scenario->character() : dragdoll_world_get_character(app.main.world, 0);
+    }
+    if (c == nullptr || dragdoll_character_set_tension(c, tension, blend) != DD_OK)
+    {
+        return false;
+    }
+    app.tensionChanges.push_back({dragdoll_world_get_step_count(app.main.world), tension, blend});
+    app.tensionOverride = static_cast<int>(tension); // Sticky: survives restarts until "scenario" is picked
+    return true;
+}
+
 std::string handleCommand(App& app, BodyMotion& motion, const std::string& line)
 {
     using nlohmann::json;
@@ -1085,7 +1134,7 @@ std::string handleCommand(App& app, BodyMotion& motion, const std::string& line)
     if (cmd == "help" || cmd.empty())
     {
         return ok({{"commands", "list | load <scenario> | restart | pause | resume | step [n] | timescale <x> | "
-                                "autorestart on|off | state | push <body> <x> <y> <z> (N*s) | note <text> | shot <file.png>"}});
+                                "autorestart on|off | state | push <body> <x> <y> <z> (N*s) | tension <limp|relaxed|tense|stunned|default> [blend s] (sticky across restarts) | note <text> | shot <file.png>"}});
     }
     if (cmd == "list")
     {
@@ -1169,6 +1218,13 @@ std::string handleCommand(App& app, BodyMotion& motion, const std::string& line)
                 list.push_back(b);
             }
             state["bodies"] = list;
+            state["tension"] = kTensionNames[dragdoll_character_get_tension(c)];
+            if (!replaying && app.restPose.size() == bodies.size())
+            {
+                const dragdoll::scenarios::metrics::PoseError e = dragdoll::scenarios::metrics::poseError(c, app.restPose, bodies);
+                state["pose_error"] = {{"rms", std::round(e.rms * 10.0) / 10.0}, {"max", std::round(e.max * 10.0) / 10.0},
+                                       {"worst", e.worst >= 0 ? dragdoll_character_get_body_name(c, static_cast<uint32_t>(e.worst)) : ""}};
+            }
         }
         if (!replaying && app.main.scenario != nullptr)
         {
@@ -1193,6 +1249,27 @@ std::string handleCommand(App& app, BodyMotion& motion, const std::string& line)
         dragdoll_character_apply_impulse(c, static_cast<uint32_t>(index), impulse, &point);
         app.pushes.push_back({dragdoll_world_get_step_count(app.main.world), static_cast<uint32_t>(index), impulse, point});
         return ok({{"body", body}});
+    }
+    if (cmd == "tension")
+    {
+        std::string name;
+        float blend = app.tensionBlend;
+        in >> name;
+        if (!(in >> blend)) blend = app.tensionBlend;
+        for (int t = 0; t < DD_TENSION_COUNT; ++t)
+        {
+            if (name == kTensionNames[t])
+            {
+                if (!setLiveTension(app, static_cast<DdTension>(t), blend)) return bad("no live character");
+                return ok({{"tension", name}, {"blend", blend}});
+            }
+        }
+        if (name == "default")
+        {
+            app.tensionOverride = -1;
+            return ok({{"tension", "scenario default from the next restart"}});
+        }
+        return bad("usage: tension limp|relaxed|tense|stunned|default [blend seconds]");
     }
     if (cmd == "note")
     {
@@ -1267,6 +1344,22 @@ void drawPanels(App& app, BodyMotion& motion)
         if (!app.commandStatus.empty()) ImGui::TextDisabled("%s", app.commandStatus.c_str());
         if (!replaying)
         {
+            DdCharacter* c = app.main.world == nullptr ? nullptr
+                             : app.main.scenario->character() != nullptr ? app.main.scenario->character()
+                                                                         : dragdoll_world_get_character(app.main.world, 0);
+            if (c != nullptr)
+            {
+                ImGui::SeparatorText("Muscles");
+                if (ImGui::RadioButton("scenario", app.tensionOverride < 0)) app.tensionOverride = -1; // From the next restart
+                ImGui::SameLine();
+                ImGui::TextDisabled("(now: %s)", kTensionNames[dragdoll_character_get_tension(c)]);
+                for (int t = 0; t < DD_TENSION_COUNT; ++t)
+                {
+                    if (t > 0) ImGui::SameLine();
+                    if (ImGui::RadioButton(kTensionNames[t], app.tensionOverride == t)) setLiveTension(app, static_cast<DdTension>(t), app.tensionBlend);
+                }
+                ImGui::SliderFloat("Blend", &app.tensionBlend, 0.0f, 2.0f, "%.2f s");
+            }
             ImGui::SeparatorText("Push (right-click a body)");
             ImGui::SliderFloat("Impulse", &app.pushStrength, 5.0f, 300.0f, "%.0f N*s");
             ImGui::TextDisabled("70 N*s = the shove scenario");

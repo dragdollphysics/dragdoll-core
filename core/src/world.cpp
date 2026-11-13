@@ -247,6 +247,10 @@ void World::simulate(uint32_t steps)
     for (uint32_t i = 0; i < steps; ++i)
     {
         driveKinematics(static_cast<double>(mStepCount + 1) * mFixedDt);
+        for (auto& [characterId, character] : mCharacters) // Ordered by id: deterministic
+        {
+            updateMuscles(*character, fixedDt);
+        }
         const JPH::EPhysicsUpdateError error = mPhysics->Update(fixedDt, 1, mTempAllocator.get(), mJobSystem.get());
         if (error != JPH::EPhysicsUpdateError::None)
         {
@@ -695,6 +699,23 @@ DdCharacter* World::createCharacter(const DdCharacterDesc& desc)
     }
     character->prevPosition = character->currPosition;
     character->prevRotation = character->currRotation;
+
+    // Muscles: the rest pose (as created) is the target pose; they start limp.
+    character->parent.resize(count);
+    character->strength.resize(count);
+    character->hinge.resize(count);
+    character->restTarget.resize(count, JPH::Quat::sIdentity());
+    for (size_t i = 0; i < count; ++i)
+    {
+        const RigBody& body = rig.bodies[i];
+        character->parent[i] = body.parent;
+        character->strength[i] = body.parent >= 0 ? body.joint.strength * massScale : 0.0f;
+        character->hinge[i] = body.parent >= 0 && body.joint.type == RigJoint::Type::Hinge;
+        if (body.parent >= 0)
+        {
+            character->restTarget[i] = character->currRotation[static_cast<size_t>(body.parent)].Conjugated() * character->currRotation[i];
+        }
+    }
 
     ++mNextCharacterId;
     DdCharacter* raw = character.get();

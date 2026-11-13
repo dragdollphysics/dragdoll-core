@@ -160,6 +160,18 @@ void apply(DdReplay& replay, const RecordView& record)
     case Record::Note:
         replay.note = in.string();
         break;
+    case Record::Tension: {
+        const uint32_t id = in.u32();
+        const uint32_t profile = in.u32();
+        const float blend = in.f32();
+        auto it = replay.characters.find(id);
+        if (it == replay.characters.end() || profile >= DD_TENSION_COUNT)
+        {
+            throw std::runtime_error("replay: tension change on an unknown character or profile");
+        }
+        dragdoll::setTension(*it->second, static_cast<DdTension>(profile), blend);
+        break;
+    }
     case Record::WorldCreate:
         throw std::runtime_error("replay: a second world in one recording");
     default:
