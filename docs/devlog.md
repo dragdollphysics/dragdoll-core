@@ -467,3 +467,22 @@ Crowd question (car through the pier) → cost is linear in awake ragdolls (~70 
 
 **Open questions**
 * The SA plugin does not react to FAILED yet (Phase 6: destroy + hand back to the game's animation).
+
+---
+
+## 2026-11-13 — Phase 3, task 3.6: standing balance (ADR-0023) — Phase 3 acceptance met
+**Changed** (local, not committed)
+* ADR-0023 (sources: Pratt et al. 2006 capture point; Hof et al. 2005 XcoM; Horak & Nashner 1986 ankle/hip strategies; Winter 1995 lateral load/unload).
+* `core/src/balance.cpp`, run each step before the muscles: centre of mass + velocity, support centre (feet), capture point `x + v/omega`; error relative to the body's own standing point (rest CoM vs feet centre); only while standing (CoM > 70% of standing height above the feet, trunk within ~45 deg). Offsets on top of the target pose: ankles (forward 120 deg/m, side 120 deg/m), hips forward past 5 cm (400 deg/m), hips sideways load/unload (150 deg/m). While balancing, stance-leg joints (thigh/shin/foot) are sized by the load they carry (parent-side inertia), not the light limb below.
+* C API `dragdoll_character_set_balance / get_balance`, `DdCharacterInfo.balance_error`; recorded (type 14). Viewer: Balance checkbox; ctl `balance on|off`; `state.library` (live-reload copy) for scripts.
+* Scenarios: `stand_balance`, `hold_stance` (5 N*s random pokes every 2 s, seeded; only while upright), `bump_5kmh` (sedan at 5 km/h, braced pedestrian).
+* **Bugs found on the way (tests + founder):** balancing around the feet centre instead of the standing point tipped a still body over; light ankle springs could not hold an inverted pendulum (-> load sizing); the 5 km/h bump was a coin flip above 120 fps host rates (-> lateral hip strategy); balance kept acting on a fallen body (founder: "shakes like a fish"); a 30 ms error filter made the sideways loop waddle (founder: "penguin") and weakened shin-push recovery — removed; hold_stance kept poking a fallen body (founder: "final twitch").
+* Tests (4 new): quiet standing (< 2 cm), **60 s under 30 pokes upright** at 30/60 fps (capture point <= 3.2 cm), **bump absorbed at 30-200 fps**, balance needs muscles. Founder: stunned + balance stays on its feet hunched; both problems gone. 4 dev presets green, 56 test cases.
+
+**Phase 3 acceptance:** hold_stance 60 s ✓ | tracking < 5 deg RMS ✓ (0.3 deg) | bump_5kmh ✓ | walk_then_activate momentum within 5% ✓ (0.6%) | mock-skeleton round trip < 0.5 deg ✓ (0.056) | forced NaN -> failed, no crash ✓.
+
+**Next**
+* Phase 3 retrospective, then Phase 4 (car-hit vertical slice).
+
+**Open questions**
+* Pushes beyond ~20-25 N*s at the chest topple the body: correct without stepping (a later phase).

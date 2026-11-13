@@ -34,6 +34,7 @@ add_executable(dragdoll_tests
     unit/test_activate.cpp
     unit/test_skeleton_map.cpp
     unit/test_failed.cpp
+    unit/test_balance.cpp
     unit/test_memory.cpp
     unit/test_recording.cpp
 )

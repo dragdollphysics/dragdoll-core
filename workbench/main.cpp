@@ -1134,7 +1134,7 @@ std::string handleCommand(App& app, BodyMotion& motion, const std::string& line)
     if (cmd == "help" || cmd.empty())
     {
         return ok({{"commands", "list | load <scenario> | restart | pause | resume | step [n] | timescale <x> | "
-                                "autorestart on|off | state | push <body> <x> <y> <z> (N*s) | tension <limp|relaxed|tense|stunned|default> [blend s] (sticky across restarts) | note <text> | shot <file.png>"}});
+                                "autorestart on|off | state | push <body> <x> <y> <z> (N*s) | tension <limp|relaxed|tense|stunned|default> [blend s] (sticky across restarts) | balance on|off | note <text> | shot <file.png>"}});
     }
     if (cmd == "list")
     {
@@ -1199,6 +1199,7 @@ std::string handleCommand(App& app, BodyMotion& motion, const std::string& line)
         json state = {{"mode", replaying ? "replay" : "scenario"},
                       {"name", replaying ? app.replayPath : app.names[app.scenarioIndex]},
                       {"step", step}, {"time", static_cast<double>(step) / 120.0}, {"paused", app.paused},
+                      {"library", hot::generation()}, // Live-reload copy in use: scripts wait for it to change
                       {"hash", [&] { char b[20]; std::snprintf(b, sizeof(b), "%016llx", static_cast<unsigned long long>(hash)); return std::string(b); }()}};
         if (DdCharacter* c = dragdoll_world_get_character(world, 0))
         {
@@ -1270,6 +1271,17 @@ std::string handleCommand(App& app, BodyMotion& motion, const std::string& line)
             return ok({{"tension", "scenario default from the next restart"}});
         }
         return bad("usage: tension limp|relaxed|tense|stunned|default [blend seconds]");
+    }
+    if (cmd == "balance")
+    {
+        std::string v;
+        in >> v;
+        DdCharacter* c = app.main.world != nullptr && app.replay == nullptr
+                             ? (app.main.scenario->character() != nullptr ? app.main.scenario->character() : dragdoll_world_get_character(app.main.world, 0))
+                             : nullptr;
+        if (c == nullptr) return bad("no live character");
+        if (dragdoll_character_set_balance(c, v == "on" ? 1 : 0) != DD_OK) return bad(dragdoll_last_error_message());
+        return ok({{"balance", v == "on"}});
     }
     if (cmd == "note")
     {
@@ -1359,6 +1371,8 @@ void drawPanels(App& app, BodyMotion& motion)
                     if (ImGui::RadioButton(kTensionNames[t], app.tensionOverride == t)) setLiveTension(app, static_cast<DdTension>(t), app.tensionBlend);
                 }
                 ImGui::SliderFloat("Blend", &app.tensionBlend, 0.0f, 2.0f, "%.2f s");
+                bool balance = dragdoll_character_get_balance(c) != 0;
+                if (ImGui::Checkbox("Balance (needs muscles)", &balance)) dragdoll_character_set_balance(c, balance ? 1 : 0);
             }
             ImGui::SeparatorText("Push (right-click a body)");
             ImGui::SliderFloat("Impulse", &app.pushStrength, 5.0f, 300.0f, "%.0f N*s");

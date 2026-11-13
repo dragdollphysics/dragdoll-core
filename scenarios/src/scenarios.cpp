@@ -3,6 +3,7 @@
 #include <dragdoll_scenarios/vehicles.hpp>
 
 #include <cmath>
+#include <random>
 #include <cstdio>
 #include <functional>
 #include <map>
@@ -684,26 +685,114 @@ private:
     bool mReleased = false;
 };
 
+// Standing balance (task 3.6, ADR-0023): a tense humanoid stands with balance on and is poked on the chest with
+// 5 N*s in a random horizontal direction every 2 s (seeded, ADR-0007). Judge: it sways and recovers with its ankles
+// (and hips for bigger pushes) without stepping; it should stay upright.
+class HoldStanceScenario final : public Scenario
+{
+public:
+    HoldStanceScenario(const char* name, float poke, double seconds) : mName(name), mPoke(poke), mSeconds(seconds) {}
+    const char* name() const override { return mName; }
+    const char* description() const override
+    {
+        return mPoke > 0.0f ? "Standing balance: a tense humanoid with balance on is poked on the chest (5 N*s, random "
+                              "direction) every 2 s. Judge: it sways and recovers with ankles and hips, no stepping, stays upright."
+                            : "Standing balance: a tense humanoid with balance on just stands. Judge: calm, upright, no jitter.";
+    }
+    void configure(DdWorldDesc& desc) const override { desc.up = DdVec3{0.0f, 0.0f, 1.0f}; }
+    bool rateIndependent() const override { return mPoke == 0.0f; } // Pokes land on host frame boundaries
+    double duration() const override { return mSeconds; }
+    DdCharacter* character() const override { return mCharacter; }
+    DdVec3 cameraTarget() const override { return DdVec3{0.0f, 0.0f, 0.9f}; }
+    float cameraDistance() const override { return 4.5f; }
+
+    void build(DdWorld* world) override
+    {
+        addGround(world, DdVec3{0.0f, 0.0f, 1.0f});
+        DdCharacterDesc desc;
+        dragdoll_character_desc_default(&desc);
+        desc.rig_json = rigJson();
+        desc.transform.position = DdVec3{0.0f, 0.0f, 0.005f};
+        if (dragdoll_character_create(world, &desc, &mCharacter) == DD_OK)
+        {
+            dragdoll_character_set_tension(mCharacter, DD_TENSION_TENSE, 0.0f);
+            dragdoll_character_set_balance(mCharacter, 1);
+        }
+    }
+
+    void hostFrame(DdWorld*, double hostTime, float) override
+    {
+        if (mCharacter == nullptr || mPoke <= 0.0f)
+        {
+            return;
+        }
+        const int poke = static_cast<int>(hostTime / 2.0);
+        DdTransform root{};
+        dragdoll_character_get_pose(mCharacter, 0, nullptr, 0, &root);
+        if (poke > mPokes && root.position.z > 0.75f) // Only poke someone who is still standing
+        {
+            mPokes = poke;
+            std::uniform_real_distribution<float> angle(0.0f, 6.2831853f);
+            const float a = angle(mRng);
+            const int32_t chest = dragdoll_character_find_body(mCharacter, "upper_spine");
+            mLastPoke = DdVec3{std::cos(a) * mPoke, std::sin(a) * mPoke, 0.0f};
+            dragdoll_character_apply_impulse(mCharacter, static_cast<uint32_t>(chest), mLastPoke, nullptr);
+        }
+    }
+
+    void hud(DdWorld*, std::vector<std::string>& lines) override
+    {
+        if (mCharacter == nullptr)
+        {
+            return;
+        }
+        DdCharacterInfo info{};
+        info.struct_size = sizeof(DdCharacterInfo);
+        dragdoll_character_get_info(mCharacter, &info);
+        DdTransform root{};
+        dragdoll_character_get_pose(mCharacter, 0, nullptr, 0, &root);
+        char buffer[160];
+        std::snprintf(buffer, sizeof(buffer), "%s | pelvis height %.2f m | capture point %.1f cm from the feet centre | pokes %d",
+                      root.position.z > 0.75f ? "UPRIGHT" : "FALLEN", static_cast<double>(root.position.z),
+                      static_cast<double>(info.balance_error * 100.0f), mPokes);
+        lines.emplace_back(buffer);
+    }
+
+private:
+    const char* mName;
+    float mPoke;
+    double mSeconds;
+    DdCharacter* mCharacter = nullptr;
+    std::mt19937 mRng{23};
+    int mPokes = 0;
+    DdVec3 mLastPoke{0, 0, 0};
+};
+
 // A vehicle from the shape pack hits a standing limp ragdoll side-on and brakes on contact (task 2.6). Without muscles
 // the body only starts to sag in the 0.1 s before contact; what matters here is how each front shape catches it:
 // low fronts scoop it onto the bonnet (wrap), high flat fronts throw it ahead (forward projection).
 class VehicleHitScenario final : public RagdollScenario
 {
 public:
-    VehicleHitScenario(const std::string& vehicle, float kmh)
-        : RagdollScenario(nullptr, nullptr, DdVec3{0.0f, 0.0f, 0.01f}, DdQuat{0, 0, 0, 1}), mVehicle(vehicle)
+    // braced: the pedestrian stands with tense muscles and balance on (task 3.6), and the vehicle arrives after 0.5 s.
+    VehicleHitScenario(const std::string& vehicle, float kmh, bool braced = false, const char* name = nullptr)
+        : RagdollScenario(nullptr, nullptr, DdVec3{0.0f, 0.0f, braced ? 0.005f : 0.01f}, DdQuat{0, 0, 0, 1}), mVehicle(vehicle),
+          mBraced(braced), mContactTime(braced ? 0.5f : 0.1f)
     {
-        mNameText = "hit_" + vehicle + "_" + std::to_string(static_cast<int>(kmh)) + "kmh";
+        mNameText = name != nullptr ? name : "hit_" + vehicle + "_" + std::to_string(static_cast<int>(kmh)) + "kmh";
         mProfile = parseVehicle(builtinVehicle(vehicle));
-        mDescriptionText = "A " + vehicle + " at " + std::to_string(static_cast<int>(kmh)) +
-                           " km/h hits a standing limp pedestrian side-on and brakes hard on contact. " + mProfile.description;
+        mDescriptionText = "A " + vehicle + " at " + std::to_string(static_cast<int>(kmh)) + " km/h " +
+                           (braced ? "nudges a standing pedestrian (tense, balance on) side-on and brakes. Judge: absorbed "
+                                     "with ankles and hips, no fall."
+                                   : "hits a standing limp pedestrian side-on and brakes hard on contact. ") +
+                           (braced ? std::string() : mProfile.description);
         mName = mNameText.c_str();
         mDescription = mDescriptionText.c_str();
         mDrive.speed = kmh / 3.6f;
-        mDrive.brakeAt = kContactTime;
+        mDrive.brakeAt = mContactTime;
         mDrive.decel = 7.0f; // Emergency braking on a dry road
-        // The front face reaches the pedestrian's near side (~0.25 m from the centre) at kContactTime.
-        mStart = -0.25f - mProfile.length * 0.5f - mDrive.speed * kContactTime;
+        // The front face reaches the pedestrian's near side (~0.25 m from the centre) at the contact time.
+        mStart = -0.25f - mProfile.length * 0.5f - mDrive.speed * mContactTime;
     }
     DdVec3 cameraTarget() const override { return DdVec3{1.5f, 0.0f, 0.8f}; }
     float cameraDistance() const override { return mProfile.length > 8.0f ? 16.0f : 9.0f; }
@@ -715,6 +804,11 @@ public:
     void build(DdWorld* world) override
     {
         RagdollScenario::build(world);
+        if (mBraced && mCharacter != nullptr)
+        {
+            dragdoll_character_set_tension(mCharacter, DD_TENSION_TENSE, 0.0f);
+            dragdoll_character_set_balance(mCharacter, 1);
+        }
         mMesh = buildVehicleMesh(mProfile, DdVec3{1, 0, 0}, DdVec3{0, 1, 0}, DdVec3{0, 0, 1}); // Z-up, drives along +X
         DdColliderDesc car;
         dragdoll_collider_desc_default(&car);
@@ -747,7 +841,8 @@ public:
     }
 
 private:
-    static constexpr float kContactTime = 0.1f;
+    bool mBraced = false;
+    float mContactTime = 0.1f;
     std::string mVehicle, mNameText, mDescriptionText;
     VehicleProfile mProfile;
     VehicleMesh mMesh;
@@ -814,6 +909,9 @@ const std::vector<std::pair<std::string, Factory>>& registry()
     all.emplace_back("tension_lineup", [] { return std::make_unique<TensionLineupScenario>(); });
     all.emplace_back("pose_zero_g", [] { return std::make_unique<PoseZeroGScenario>(); });
     all.emplace_back("walk_then_activate", [] { return std::make_unique<WalkThenActivateScenario>(); });
+    all.emplace_back("stand_balance", [] { return std::make_unique<HoldStanceScenario>("stand_balance", 0.0f, 10.0); });
+    all.emplace_back("hold_stance", [] { return std::make_unique<HoldStanceScenario>("hold_stance", 5.0f, 20.0); });
+    all.emplace_back("bump_5kmh", [] { return std::make_unique<VehicleHitScenario>("sedan", 5.0f, true, "bump_5kmh"); });
     for (const std::string& vehicle : vehicleNames())
     {
         all.emplace_back("hit_" + vehicle + "_40kmh", [vehicle] { return std::make_unique<VehicleHitScenario>(vehicle, 40.0f); });

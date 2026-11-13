@@ -221,6 +221,32 @@ DD_API DdResult DD_CALL dragdoll_character_set_tension(DdCharacter* character, D
     DD_GUARD_END(DD_ERROR_INTERNAL)
 }
 
+DD_API DdResult DD_CALL dragdoll_character_set_balance(DdCharacter* character, int enabled)
+{
+    DD_GUARD_BEGIN
+    if (character == nullptr)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_set_balance: character is required");
+    }
+    if (character->state == DD_STATE_FAILED)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_set_balance: the character has FAILED (destroy it and use the host animation)");
+    }
+    character->balance = enabled != 0;
+    character->ragdoll->Activate();
+    if (dragdoll::rec::Recorder* recorder = recorderOf(character))
+    {
+        recorder->balance(character->id, enabled != 0);
+    }
+    return DD_OK;
+    DD_GUARD_END(DD_ERROR_INTERNAL)
+}
+
+DD_API int DD_CALL dragdoll_character_get_balance(const DdCharacter* character)
+{
+    return character != nullptr && character->balance ? 1 : 0;
+}
+
 DD_API DdTension DD_CALL dragdoll_character_get_tension(const DdCharacter* character)
 {
     return character != nullptr ? character->tension : DD_TENSION_LIMP;
@@ -348,6 +374,7 @@ DD_API DdResult DD_CALL dragdoll_character_get_info(const DdCharacter* character
     out->facing = !lying ? 0 : forwardUp > 0.5f ? 1 : forwardUp < -0.5f ? -1 : 0;
     out->head_direction = DdVec3{direction.GetX(), direction.GetY(), direction.GetZ()};
     out->failure = character->failure;
+    out->balance_error = character->balanceError;
     return DD_OK;
     DD_GUARD_END(DD_ERROR_INTERNAL)
 }

@@ -305,6 +305,11 @@ DD_API DdResult DD_CALL dragdoll_character_set_tension(DdCharacter* character, D
 /* The profile last set (the blend towards it may still be running). */
 DD_API DdTension DD_CALL dragdoll_character_get_tension(const DdCharacter* character);
 
+/* Standing balance (ADR-0023): keeps the capture point over the feet with ankle and hip strategies, by offsetting the
+ * muscles' targets (internal torques only). Needs a tension other than LIMP; no stepping yet. Off by default. */
+DD_API DdResult DD_CALL dragdoll_character_set_balance(DdCharacter* character, int enabled);
+DD_API int DD_CALL dragdoll_character_get_balance(const DdCharacter* character);
+
 /* ---- Pose input / output: the host contract (ADR-0017 / D17) ------------------------------
  * A pose is one JOINT ROTATION per body (index = body index; entry 0, the root, is ignored on input and identity on
  * output): the body's rotation relative to its parent, as an offset from the rig's rest pose, expressed in the rig's
@@ -395,6 +400,7 @@ typedef struct DdCharacterInfo
     int32_t facing;         /* Recovery hint: +1 lying face up, -1 face down, 0 neither (e.g. on the side, standing). */
     DdVec3 head_direction;  /* Recovery hint: horizontal unit vector from the pelvis towards the head (0 if upright). */
     DdFailure failure;      /* Why the state is FAILED (NONE otherwise). */
+    float balance_error;    /* Balance on: horizontal distance (m) from the capture point to the support centre. */
 } DdCharacterInfo;
 
 DD_API DdResult DD_CALL dragdoll_character_get_info(const DdCharacter* character, DdCharacterInfo* out);

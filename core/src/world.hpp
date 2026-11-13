@@ -106,6 +106,7 @@ public:
                            const DdTransform& currentRoot, const DdQuat* currentJoints, float dt);
     uint32_t characterCount() const { return static_cast<uint32_t>(mCharacters.size()); }
     const JPH::Vec3& up() const { return mUp; }
+    float gravity() const { return mGravity; }
     DdCharacter* characterAt(uint32_t index) const;
 
     JPH::PhysicsSystem& physics() { return *mPhysics; }
@@ -146,6 +147,7 @@ private:
 
     // Settings
     JPH::Vec3 mUp;
+    float mGravity = 9.81f;
     JPH::Quat mYToUp; // Rotates Jolt's +Y shape axis (capsules) onto the world up axis.
     double mFixedDt;
     uint32_t mMaxStepsPerCall;

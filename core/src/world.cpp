@@ -139,6 +139,7 @@ World::World(const DdWorldDesc& desc)
     mPhysics = std::make_unique<JPH::PhysicsSystem>();
     mPhysics->Init(desc.max_bodies, 0, desc.max_bodies, desc.max_bodies, mBroadPhaseLayers, mObjectVsBroadPhase,
                    mObjectPairs);
+    mGravity = desc.gravity;
     mPhysics->SetGravity(-mUp * desc.gravity);
 
     // Jolt tolerates 2 cm of penetration by default; hands and feet are only 4-7 cm thick, so that much sinking into
@@ -256,6 +257,7 @@ void World::simulate(uint32_t steps)
         {
             if (character->state != DD_STATE_FAILED)
             {
+                updateBalance(*character, mUp, mGravity, fixedDt);
                 updateMuscles(*character, fixedDt);
             }
         }
@@ -746,6 +748,7 @@ DdCharacter* World::createCharacter(const DdCharacterDesc& desc)
         };
         character->bodyMass = mass;
         character->jointInertia.assign(count, 0.0f);
+        character->loadInertia.assign(count, 0.0f);
         for (size_t j = 0; j < count; ++j)
         {
             if (rig.bodies[j].parent < 0)
@@ -760,6 +763,7 @@ DdCharacter* World::createCharacter(const DdCharacterDesc& desc)
                 (inSubtree(b, j) ? child : parent) += about;
             }
             character->jointInertia[j] = child * parent / (child + parent);
+            character->loadInertia[j] = parent;
         }
     }
     character->pivotInParent.assign(count, JPH::Vec3::sZero());
@@ -782,6 +786,38 @@ DdCharacter* World::createCharacter(const DdCharacterDesc& desc)
         const RigShape& shape = rig.bodies[i].shape;
         character->centreRig[i] = shape.type == RigShape::Type::Box ? shape.center : (shape.from + shape.to) * 0.5f;
         character->pivotRig[i] = rig.bodies[i].parent >= 0 ? rig.bodies[i].joint.pivot : character->centreRig[i];
+    }
+    character->balanceOffset.assign(count, JPH::Quat::sIdentity());
+    for (size_t i = 0; i < count; ++i)
+    {
+        const std::string& n = rig.bodies[i].name;
+        if (n == "foot_l") character->footLeft = static_cast<int>(i);
+        if (n == "foot_r") character->footRight = static_cast<int>(i);
+        if (n == "thigh_l") character->thighLeft = static_cast<int>(i);
+        if (n == "thigh_r") character->thighRight = static_cast<int>(i);
+    }
+    character->stanceJoint.assign(count, false);
+    for (size_t i = 0; i < count; ++i)
+    {
+        const std::string& n = rig.bodies[i].name;
+        character->stanceJoint[i] = n == "thigh_l" || n == "thigh_r" || n == "shin_l" || n == "shin_r" || n == "foot_l" || n == "foot_r";
+    }
+    if (character->footLeft >= 0 && character->footRight >= 0)
+    {
+        // Standing point for balance: the rest-pose centre of mass relative to the feet centre, in rig axes.
+        JPH::Vec3 com = JPH::Vec3::sZero();
+        float total = 0.0f;
+        for (size_t i = 0; i < count; ++i)
+        {
+            com += character->centreRig[i] * character->bodyMass[i];
+            total += character->bodyMass[i];
+        }
+        const JPH::Vec3 feet = (character->centreRig[static_cast<size_t>(character->footLeft)] +
+                                character->centreRig[static_cast<size_t>(character->footRight)]) * 0.5f;
+        const JPH::Vec3 offset = com / total - feet;
+        character->standForward = offset.GetZ(); // Rig +Z forward
+        character->standLeft = offset.GetX();    // Rig +X left
+        character->standHeight = offset.GetY();  // Rig +Y up
     }
     character->restRig.resize(count);
     character->hingeAxisRig.resize(count, JPH::Vec3::sAxisX());

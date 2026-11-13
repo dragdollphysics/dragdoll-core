@@ -51,6 +51,10 @@ struct DdCharacter
     // whole arm at the shoulder) is accounted for.
     std::vector<float> jointInertia;
     std::vector<float> bodyMass; // kg, as simulated
+    // Inertia of everything on the PARENT side of each joint (the load a planted leg carries): used for the stance
+    // leg's joints while balancing, where the foot is fixed and the body above swings like an inverted pendulum.
+    std::vector<float> loadInertia;
+    std::vector<bool> stanceJoint; // thigh / shin / foot joints
     // Rest geometry for placing the body from a pose (forward kinematics): the joint pivot in the parent's body frame,
     // and this body's position relative to its joint pivot in its own body frame.
     std::vector<JPH::Vec3> pivotInParent, bodyFromPivot;
@@ -66,6 +70,15 @@ struct DdCharacter
     DdFailure failure = DD_FAILURE_NONE;
     bool inPhysics = true;          // false once FAILED: removed from the physics system
     bool debugCorrupt = false;      // Test hook: inject NaN on the next capture
+
+    // Standing balance (ADR-0023)
+    bool balance = false;
+    std::vector<JPH::Quat> balanceOffset; // Per body, applied on top of the target pose (rig axes)
+    int footLeft = -1, footRight = -1, thighLeft = -1, thighRight = -1;
+    float balanceError = 0.0f;
+    float standForward = 0.0f, standLeft = 0.0f; // Rest-pose centre of mass relative to the feet centre (m, character axes)
+    float standHeight = 0.9f;        // Rest-pose centre of mass height above the feet centres (m)
+    bool balanceActive = false;      // Balance on AND actually standing (else the corrections fade out)
 
     // Last two fixed-step states per body, for interpolated output (ADR-0006).
     std::vector<JPH::RVec3> prevPosition, currPosition;
@@ -92,6 +105,9 @@ void updateMuscles(DdCharacter& character, float dt);
 void setTargetPose(DdCharacter& character, const DdQuat* jointRotations, uint32_t count);
 // Joint rotations (offsets from rest, rig axes) from body world rotations.
 void jointRotations(const DdCharacter& character, const std::vector<JPH::Quat>& world, DdQuat* out);
+// Standing balance (balance.cpp): updates balanceOffset from the last fixed step; call before updateMuscles.
+void updateBalance(DdCharacter& character, JPH::Vec3Arg up, float gravity, float dt);
+
 // After each fixed step: stillness timer and state.
 void updateState(DdCharacter& character, float dt);
 // World transforms of every body for a pose (root = the root body's world transform; joints may be null = rest).

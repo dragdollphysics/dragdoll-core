@@ -51,14 +51,16 @@ void applyMuscles(DdCharacter& c)
         const JPH::EMotorState state = torque > 0.0f ? JPH::EMotorState::Position : JPH::EMotorState::Off;
         // ADR-0009 units, applied to the joint's real (effective) inertia: k = I w^2, c = 2 zeta I w.
         const float omega = 2.0f * 3.14159265f * m.frequency;
-        const float inertia = c.jointInertia[i];
+        // Balancing: the planted legs carry the body above them (inverted pendulum), so size them by that load.
+        const bool stance = c.balanceActive && c.stanceJoint[i];
+        const float inertia = stance ? c.loadInertia[i] : c.jointInertia[i];
         auto configure = [&](JPH::MotorSettings& motor) {
             motor.mSpringSettings.mMode = JPH::ESpringMode::StiffnessAndDamping;
             motor.mSpringSettings.mStiffness = inertia * omega * omega;
             motor.mSpringSettings.mDamping = 2.0f * m.damping * inertia * omega;
             motor.SetTorqueLimit(torque);
         };
-        const JPH::Quat& d = c.targetPose[i]; // Offset from rest, rig axes
+        const JPH::Quat d = c.balanceOffset[i] * c.targetPose[i]; // Offset from rest, rig axes (+ balance)
         if (c.hinge[i])
         {
             auto* hinge = static_cast<JPH::HingeConstraint*>(constraint);

@@ -274,6 +274,14 @@ void Recorder::activate(uint32_t character, const DdTransform* previousRoot, con
     write(Record::Activate, mScratch);
 }
 
+void Recorder::balance(uint32_t character, bool enabled)
+{
+    mScratch.clear();
+    mScratch.u32(character);
+    mScratch.u8(enabled ? 1 : 0);
+    write(Record::Balance, mScratch);
+}
+
 void Recorder::note(const char* text)
 {
     mScratch.clear();

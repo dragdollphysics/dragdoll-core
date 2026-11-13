@@ -39,6 +39,7 @@ add_library(dragdoll SHARED
     src/character.cpp
     src/muscles.cpp
     src/pose.cpp
+    src/balance.cpp
     src/skeleton_map.cpp
     src/capi_skeleton.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/generated/builtin_rigs.cpp
