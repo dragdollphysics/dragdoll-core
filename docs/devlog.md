@@ -452,3 +452,18 @@ Crowd question (car through the pier) → cost is linear in awake ragdolls (~70 
 
 **Open questions**
 * The SA root-position offset (pelvis bone vs pelvis body centre, ~5 cm) is taken as zero for now; tune when the mod feeds real poses (Phase 6).
+
+---
+
+## 2026-11-13 — Phase 3, task 3.5: the FAILED state (ADR-0017)
+**Changed** (local, not committed)
+* Guards after every step (`pose.cpp checkHealth`): any body not finite, faster than 100 m/s (Jolt caps speed at 500 m/s, so real blow-ups show as speed or stretch before NaN), or a joint's two ends > 0.25 m apart. On failure: state FAILED + `DdCharacterInfo.failure` (NOT_FINITE / TOO_FAST / TORN_APART), the ragdoll is removed from the physics system at once, the last good pose is kept (the bad step discarded), muscles stop; impulse / tension / target pose / activate return a clear error; get_pose / transforms / info keep working; the host destroys it and falls back to its own animation.
+* `dragdoll_debug_corrupt_character` (dev builds only; DD_ERROR_UNSUPPORTED otherwise): injects NaN where a real blow-up would surface.
+* **Bug found by the tests:** destroying a world that still held a FAILED character removed its ragdoll from the physics system twice (segfault). World destructor now guards like `destroyCharacter`.
+* Tests (3 new): forced NaN -> FAILED / NOT_FINITE, last good pose readable, commands refused, the other character keeps falling, world keeps stepping, destroy works; absurd impulse (1e6 N*s) caught (TOO_FAST); no false alarms in any scenario at 30/60/144 fps. 4 dev presets green, 52 test cases; dragdoll-sa builds.
+
+**Next**
+* Task 3.6 (Opus): standing balance — CoM, support polygon, capture point, ankle and hip strategies; `hold_stance` upright 60 s under 5 N*s pokes, `bump_5kmh` absorbed.
+
+**Open questions**
+* The SA plugin does not react to FAILED yet (Phase 6: destroy + hand back to the game's animation).

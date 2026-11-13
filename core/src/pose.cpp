@@ -92,8 +92,58 @@ void bodiesFromPose(const DdCharacter& c, const DdTransform& root, const DdQuat*
     }
 }
 
+namespace
+{
+// The guards (ADR-0017): anything that should never happen to a body made of muscle and bone.
+DdFailure checkHealth(const DdCharacter& c, float dt)
+{
+    constexpr float kMaxSpeed = 100.0f;  // m/s; a 120 km/h car is 33 m/s
+    constexpr float kMaxStretch = 0.25f; // m between a joint's two ends (normally millimetres)
+    for (size_t i = 0; i < c.currPosition.size(); ++i)
+    {
+        const JPH::RVec3& p = c.currPosition[i];
+        const JPH::Quat& q = c.currRotation[i];
+        if (!std::isfinite(p.GetX()) || !std::isfinite(p.GetY()) || !std::isfinite(p.GetZ()) || !std::isfinite(q.GetX()) ||
+            !std::isfinite(q.GetY()) || !std::isfinite(q.GetZ()) || !std::isfinite(q.GetW()))
+        {
+            return DD_FAILURE_NOT_FINITE;
+        }
+    }
+    for (size_t i = 0; i < c.currPosition.size(); ++i)
+    {
+        if (static_cast<float>((c.currPosition[i] - c.prevPosition[i]).Length()) / dt > kMaxSpeed)
+        {
+            return DD_FAILURE_TOO_FAST;
+        }
+        if (c.parent[i] >= 0)
+        {
+            const size_t p = static_cast<size_t>(c.parent[i]);
+            const JPH::RVec3 fromParent = c.currPosition[p] + c.currRotation[p] * c.pivotInParent[i];
+            const JPH::RVec3 fromChild = c.currPosition[i] - c.currRotation[i] * c.bodyFromPivot[i];
+            if (static_cast<float>((fromParent - fromChild).Length()) > kMaxStretch)
+            {
+                return DD_FAILURE_TORN_APART;
+            }
+        }
+    }
+    return DD_FAILURE_NONE;
+}
+} // namespace
+
 void updateState(DdCharacter& c, float dt)
 {
+    const DdFailure failure = checkHealth(c, dt);
+    if (failure != DD_FAILURE_NONE)
+    {
+        // Out of the simulation at once so it cannot disturb anything else; keep the last good pose for the host.
+        c.state = DD_STATE_FAILED;
+        c.failure = failure;
+        c.currPosition = c.prevPosition;
+        c.currRotation = c.prevRotation;
+        c.ragdoll->RemoveFromPhysicsSystem();
+        c.inPhysics = false;
+        return;
+    }
     // "Nearly still": every body slower than 5 cm/s and 10 deg/s.
     constexpr float kLinear = 0.05f, kAngular = 10.0f * 3.14159265f / 180.0f;
     bool still = true;

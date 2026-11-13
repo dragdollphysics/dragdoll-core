@@ -372,9 +372,20 @@ typedef enum DdCharacterState
     DD_STATE_RECOVERING = 1, /* Reserved: getting up / regaining balance (later phases). */
     DD_STATE_SETTLED = 2,    /* Every body has been nearly still for a while: the host may hand back (get up / die). */
     DD_STATE_DEAD = 3,       /* Reserved: set from the host's outcome (Phase 6). */
-    DD_STATE_FAILED = 4,     /* Reserved: instability detected, character deactivated (Phase 3, task 3.5). */
+    DD_STATE_FAILED = 4,     /* Instability detected: the character was taken out of the simulation (see failure).
+                              * Its last good pose stays readable; other calls on it fail. The host should destroy it
+                              * and fall back to its own animation. DragDoll never takes the host down with it. */
     DD_STATE_FORCE_32BIT = 0x7FFFFFFF
 } DdCharacterState;
+
+typedef enum DdFailure
+{
+    DD_FAILURE_NONE = 0,
+    DD_FAILURE_NOT_FINITE = 1, /* A body position or rotation became NaN / infinite. */
+    DD_FAILURE_TOO_FAST = 2,   /* A body moved faster than 100 m/s (an energy explosion). */
+    DD_FAILURE_TORN_APART = 3, /* A joint's two ends separated by more than 0.25 m. */
+    DD_FAILURE_FORCE_32BIT = 0x7FFFFFFF
+} DdFailure;
 
 typedef struct DdCharacterInfo
 {
@@ -383,9 +394,14 @@ typedef struct DdCharacterInfo
     float still_seconds;    /* How long every body has been nearly still (0 while moving). */
     int32_t facing;         /* Recovery hint: +1 lying face up, -1 face down, 0 neither (e.g. on the side, standing). */
     DdVec3 head_direction;  /* Recovery hint: horizontal unit vector from the pelvis towards the head (0 if upright). */
+    DdFailure failure;      /* Why the state is FAILED (NONE otherwise). */
 } DdCharacterInfo;
 
 DD_API DdResult DD_CALL dragdoll_character_get_info(const DdCharacter* character, DdCharacterInfo* out);
+
+/* Test hook (dev builds only; DD_ERROR_UNSUPPORTED otherwise): on the next step the character's state is corrupted
+ * with NaN exactly where a real numerical blow-up would surface, to exercise the FAILED path. */
+DD_API DdResult DD_CALL dragdoll_debug_corrupt_character(DdCharacter* character);
 
 /* Per-body blend weight for the host: 1 = show the physics pose, 0 = keep the host's own animation. All 1 for now;
  * behaviours will lower them (e.g. a hand reaching for a rail stays physics, the rest blends). */

@@ -159,6 +159,10 @@ DD_API DdResult DD_CALL dragdoll_character_apply_impulse(DdCharacter* character,
     {
         return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_apply_impulse: character is required");
     }
+    if (character->state == DD_STATE_FAILED)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_apply_impulse: the character has FAILED (destroy it and use the host animation)");
+    }
     try
     {
         character->world->applyImpulse(*character, body, impulse, world_point);
@@ -196,6 +200,10 @@ DD_API DdResult DD_CALL dragdoll_character_set_tension(DdCharacter* character, D
     {
         return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_set_tension: character is required");
     }
+    if (character->state == DD_STATE_FAILED)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_set_tension: the character has FAILED (destroy it and use the host animation)");
+    }
     if (static_cast<int>(tension) < 0 || tension >= DD_TENSION_COUNT)
     {
         return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_set_tension: unknown tension profile");
@@ -225,6 +233,10 @@ DD_API DdResult DD_CALL dragdoll_character_set_target_pose(DdCharacter* characte
     if (character == nullptr)
     {
         return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_set_target_pose: character is required");
+    }
+    if (character->state == DD_STATE_FAILED)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_set_target_pose: the character has FAILED (destroy it and use the host animation)");
     }
     try
     {
@@ -284,6 +296,10 @@ DD_API DdResult DD_CALL dragdoll_character_activate(DdCharacter* character, cons
     {
         return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_activate: character and current_root are required");
     }
+    if (character->state == DD_STATE_FAILED)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_activate: the character has FAILED (destroy it and use the host animation)");
+    }
     if ((current_joints != nullptr || previous_joints != nullptr) && count != character->parent.size())
     {
         return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_activate: count must equal the body count");
@@ -331,7 +347,24 @@ DD_API DdResult DD_CALL dragdoll_character_get_info(const DdCharacter* character
     out->still_seconds = character->stillSeconds;
     out->facing = !lying ? 0 : forwardUp > 0.5f ? 1 : forwardUp < -0.5f ? -1 : 0;
     out->head_direction = DdVec3{direction.GetX(), direction.GetY(), direction.GetZ()};
+    out->failure = character->failure;
     return DD_OK;
+    DD_GUARD_END(DD_ERROR_INTERNAL)
+}
+
+DD_API DdResult DD_CALL dragdoll_debug_corrupt_character(DdCharacter* character)
+{
+    DD_GUARD_BEGIN
+    if (character == nullptr)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_debug_corrupt_character: character is required");
+    }
+#ifdef JPH_DEBUG_RENDERER // Dev builds only (follows DRAGDOLL_DEV_TOOLS, ADR-0012)
+    character->debugCorrupt = true;
+    return DD_OK;
+#else
+    return fail(DD_ERROR_UNSUPPORTED, "dragdoll_debug_corrupt_character: test hook not available in this build");
+#endif
     DD_GUARD_END(DD_ERROR_INTERNAL)
 }
 

@@ -63,6 +63,9 @@ struct DdCharacter
     // Host contract (D17)
     float stillSeconds = 0.0f;
     DdCharacterState state = DD_STATE_ACTIVE;
+    DdFailure failure = DD_FAILURE_NONE;
+    bool inPhysics = true;          // false once FAILED: removed from the physics system
+    bool debugCorrupt = false;      // Test hook: inject NaN on the next capture
 
     // Last two fixed-step states per body, for interpolated output (ADR-0006).
     std::vector<JPH::RVec3> prevPosition, currPosition;

@@ -177,7 +177,7 @@ Planned by **effort hours, not calendar weeks** (total ≈ **460 h** to v1, ±50
 * [x] Host pose input + full output contract (D17) (task 3.2): `set_target_pose` / `get_pose` (joint rotations = offsets from rest in rig axes, root transform), `get_info` (state active/settled + facing + head direction; recovering/dead/failed reserved), per-body blend weights (1 for now); target poses recorded.
 * [x] **[SA]** Activation from motion: initialise bodies from two consecutive host poses (positions + velocities); test `walk_then_activate` shows no velocity pop (task 3.3: momentum 1.40 -> 1.39 m/s at 30/60/144 fps).
 * [x] **[SA]** Mock 32-bone host skeleton (SA bone IDs/hierarchy as facts, own proportions) → rig mapping round-trip test (task 3.4: generic skeleton maps, `packs/skeletons/sa_ped.json`; round trip 0.056 deg worst).
-* [ ] **[SA]** `failed` state: NaN/energy-explosion guards deactivate the character and report it; host fallback test.
+* [x] **[SA]** `failed` state: NaN/energy-explosion guards deactivate the character and report it; host fallback test (task 3.5: not finite / > 100 m/s / joint torn > 0.25 m).
 * [ ] **Standing balance:** CoM, support polygon, Capture Point `xCP = x + v/ω`, ankle strategy, hip strategy (internal torques via stance hip). No stepping.
 * **Acceptance:** `hold_stance` — upright 60 s under 5 N·s random pokes; joint tracking error < 5° RMS; low-speed `bump_5kmh` absorbed without falling; `walk_then_activate` momentum preserved within 5 %; mock-skeleton mapping round-trip error < 0.5°; forced-NaN test ends in `failed`, never a crash.
 

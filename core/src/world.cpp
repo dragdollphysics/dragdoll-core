@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <stdexcept>
 
 namespace dragdoll
@@ -155,7 +156,10 @@ World::~World()
     }
     for (auto& [id, character] : mCharacters)
     {
-        character->ragdoll->RemoveFromPhysicsSystem();
+        if (character->inPhysics) // A FAILED character was already removed
+        {
+            character->ragdoll->RemoveFromPhysicsSystem();
+        }
     }
     mCharacters.clear(); // Releases the ragdolls (and their bodies) while the physics system still exists.
 
@@ -250,7 +254,10 @@ void World::simulate(uint32_t steps)
         driveKinematics(static_cast<double>(mStepCount + 1) * mFixedDt);
         for (auto& [characterId, character] : mCharacters) // Ordered by id: deterministic
         {
-            updateMuscles(*character, fixedDt);
+            if (character->state != DD_STATE_FAILED)
+            {
+                updateMuscles(*character, fixedDt);
+            }
         }
         const JPH::EPhysicsUpdateError error = mPhysics->Update(fixedDt, 1, mTempAllocator.get(), mJobSystem.get());
         if (error != JPH::EPhysicsUpdateError::None)
@@ -312,11 +319,20 @@ void World::captureTransforms()
     for (auto& [id, character] : mCharacters)
     {
         DdCharacter& c = *character;
+        if (c.state == DD_STATE_FAILED)
+        {
+            continue; // Frozen at its last good pose
+        }
         c.prevPosition = c.currPosition;
         c.prevRotation = c.currRotation;
         for (size_t i = 0; i < c.currPosition.size(); ++i)
         {
             bodies.GetPositionAndRotation(c.ragdoll->GetBodyID(static_cast<int>(i)), c.currPosition[i], c.currRotation[i]);
+        }
+        if (c.debugCorrupt)
+        {
+            c.debugCorrupt = false;
+            c.currPosition[c.currPosition.size() / 2] = JPH::RVec3::sReplicate(std::numeric_limits<float>::quiet_NaN());
         }
         updateState(c, static_cast<float>(mFixedDt));
     }
@@ -796,7 +812,10 @@ void World::destroyCharacter(DdCharacter* character)
     {
         return;
     }
-    character->ragdoll->RemoveFromPhysicsSystem();
+    if (character->inPhysics)
+    {
+        character->ragdoll->RemoveFromPhysicsSystem();
+    }
     mCharacters.erase(it);
 }
 
