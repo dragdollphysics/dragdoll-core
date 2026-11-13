@@ -1,0 +1,22 @@
+{
+  "format": "dragdoll-vehicle",
+  "version": 1,
+  "name": "suv",
+  "description": "Sport utility vehicle: high, blunt bonnet edge at pelvis height, upright windscreen. Tends towards forward projection rather than wrap.",
+  "space": "Vehicle space: metres, origin = ground point under the vehicle's centre; forward = driving direction. Angles in degrees: hood_angle = rise of the bonnet towards the windscreen, windshield_angle = from horizontal.",
+  "sources": "Own generic class dimensions; bonnet-edge-height classes follow the pedestrian-impact literature (low / medium / high fronts).",
+  "profile": {
+    "length": 4.8,
+    "width": 1.95,
+    "clearance": 0.22,
+    "bumper_height": 0.65,
+    "bonnet_edge_height": 1.0,
+    "bonnet_edge_setback": 0.15,
+    "hood_length": 1.2,
+    "hood_angle": 6,
+    "windshield_angle": 35,
+    "roof_height": 1.85,
+    "roof_length": 2.0,
+    "rear_height": 1.8
+  }
+}

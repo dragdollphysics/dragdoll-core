@@ -119,6 +119,15 @@ DD_API DdResult DD_CALL dragdoll_init(uint32_t api_version)
     }
 
     dragdoll::installCountingAllocator(); // Every Jolt allocation is counted (ADR-0015)
+#ifdef JPH_ENABLE_ASSERTS
+    // Debug builds: say which Jolt check failed before breaking (by default Jolt breaks silently).
+    JPH::AssertFailed = [](const char* expression, const char* message, const char* file, JPH::uint line) {
+        std::fprintf(stderr, "Jolt assert failed: %s%s%s (%s:%u)\n", expression, message != nullptr ? " - " : "",
+                     message != nullptr ? message : "", file, line);
+        std::fflush(stderr);
+        return true; // Break into the debugger / crash, as before
+    };
+#endif
     JPH::Factory::sInstance = new JPH::Factory();
     JPH::RegisterTypes();
 

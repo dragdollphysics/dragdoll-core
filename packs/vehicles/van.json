@@ -1,0 +1,22 @@
+{
+  "format": "dragdoll-vehicle",
+  "version": 1,
+  "name": "van",
+  "description": "Delivery van: short sloped bonnet, high front, box body. Mostly forward projection.",
+  "space": "Vehicle space: metres, origin = ground point under the vehicle's centre; forward = driving direction. Angles in degrees: hood_angle = rise of the bonnet towards the windscreen, windshield_angle = from horizontal.",
+  "sources": "Own generic class dimensions; bonnet-edge-height classes follow the pedestrian-impact literature (low / medium / high fronts).",
+  "profile": {
+    "length": 5.0,
+    "width": 2.0,
+    "clearance": 0.18,
+    "bumper_height": 0.6,
+    "bonnet_edge_height": 1.05,
+    "bonnet_edge_setback": 0.2,
+    "hood_length": 0.6,
+    "hood_angle": 15,
+    "windshield_angle": 50,
+    "roof_height": 2.2,
+    "roof_length": 3.2,
+    "rear_height": 2.2
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "format": "dragdoll-vehicle",
+  "version": 1,
+  "name": "sports",
+  "description": "Low sports car: very low bumper and bonnet edge, long flat bonnet, steep-raked windscreen. Tends to scoop the body up (wrap / roof vault at speed).",
+  "space": "Vehicle space: metres, origin = ground point under the vehicle's centre; forward = driving direction. Angles in degrees: hood_angle = rise of the bonnet towards the windscreen, windshield_angle = from horizontal.",
+  "sources": "Own generic class dimensions; bonnet-edge-height classes follow the pedestrian-impact literature (low / medium / high fronts).",
+  "profile": {
+    "length": 4.4,
+    "width": 1.9,
+    "clearance": 0.12,
+    "bumper_height": 0.42,
+    "bonnet_edge_height": 0.6,
+    "bonnet_edge_setback": 0.12,
+    "hood_length": 1.4,
+    "hood_angle": 8,
+    "windshield_angle": 25,
+    "roof_height": 1.2,
+    "roof_length": 1.0,
+    "rear_height": 0.95
+  }
+}

@@ -508,6 +508,14 @@ void World::addColliders(const DdColliderDesc* descs, uint32_t count, DdCollider
                 settings.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
                 settings.mMassPropertiesOverride.mMass = desc.mass;
             }
+            if (desc.motion == DD_MOTION_KINEMATIC && desc.shape == DD_SHAPE_MESH)
+            {
+                // Jolt cannot compute mass for a mesh, and a kinematic body never uses it (it is never pushed), but
+                // the body still needs valid values: a nominal 1000 kg solid box of the mesh's bounds.
+                const JPH::Vec3 size = JPH::Vec3::sMax(shape->GetLocalBounds().GetSize(), JPH::Vec3::sReplicate(0.01f));
+                settings.mOverrideMassProperties = JPH::EOverrideMassProperties::MassAndInertiaProvided;
+                settings.mMassPropertiesOverride.SetMassAndInertiaOfSolidBox(size, 1000.0f / (size.GetX() * size.GetY() * size.GetZ()));
+            }
             settings.mUserData = mNextColliderId + i; // Collider id, for contact reporting later.
 
             JPH::Body* body = bodies.CreateBody(settings);

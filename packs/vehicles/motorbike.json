@@ -1,0 +1,22 @@
+{
+  "format": "dragdoll-vehicle",
+  "version": 1,
+  "name": "motorbike",
+  "description": "Motorbike as one solid block (no rider): narrow, front wheel and fairing up front, tank, seat. Hits low and narrow.",
+  "space": "Vehicle space: metres, origin = ground point under the vehicle's centre; forward = driving direction. Angles in degrees: hood_angle = rise of the bonnet towards the windscreen, windshield_angle = from horizontal.",
+  "sources": "Own generic class dimensions; bonnet-edge-height classes follow the pedestrian-impact literature (low / medium / high fronts).",
+  "profile": {
+    "length": 2.1,
+    "width": 0.7,
+    "clearance": 0.3,
+    "bumper_height": 0.7,
+    "bonnet_edge_height": 0.95,
+    "bonnet_edge_setback": 0.3,
+    "hood_length": 0.55,
+    "hood_angle": 0,
+    "windshield_angle": 65,
+    "roof_height": 1.25,
+    "roof_length": 0.5,
+    "rear_height": 0.85
+  }
+}

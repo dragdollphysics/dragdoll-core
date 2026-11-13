@@ -1,0 +1,22 @@
+{
+  "format": "dragdoll-vehicle",
+  "version": 1,
+  "name": "bus",
+  "description": "City bus: flat vertical front up to the roof. Pure forward projection.",
+  "space": "Vehicle space: metres, origin = ground point under the vehicle's centre; forward = driving direction. Angles in degrees: hood_angle = rise of the bonnet towards the windscreen, windshield_angle = from horizontal.",
+  "sources": "Own generic class dimensions; bonnet-edge-height classes follow the pedestrian-impact literature (low / medium / high fronts).",
+  "profile": {
+    "length": 12.0,
+    "width": 2.55,
+    "clearance": 0.3,
+    "bumper_height": 0.7,
+    "bonnet_edge_height": 1.1,
+    "bonnet_edge_setback": 0.0,
+    "hood_length": 0.0,
+    "hood_angle": 0,
+    "windshield_angle": 85,
+    "roof_height": 3.1,
+    "roof_length": 11.5,
+    "rear_height": 3.1
+  }
+}

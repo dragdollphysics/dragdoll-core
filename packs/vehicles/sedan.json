@@ -1,0 +1,22 @@
+{
+  "format": "dragdoll-vehicle",
+  "version": 1,
+  "name": "sedan",
+  "description": "Mid-size saloon car: low bonnet edge, raked windscreen. Typical adult impact: legs then pelvis on the bonnet edge, torso and head wrap onto the bonnet/windscreen.",
+  "space": "Vehicle space: metres, origin = ground point under the vehicle's centre; forward = driving direction. Angles in degrees: hood_angle = rise of the bonnet towards the windscreen, windshield_angle = from horizontal.",
+  "sources": "Own generic class dimensions; bonnet-edge-height classes follow the pedestrian-impact literature (low / medium / high fronts).",
+  "profile": {
+    "length": 4.6,
+    "width": 1.8,
+    "clearance": 0.15,
+    "bumper_height": 0.5,
+    "bonnet_edge_height": 0.72,
+    "bonnet_edge_setback": 0.15,
+    "hood_length": 1.15,
+    "hood_angle": 10,
+    "windshield_angle": 30,
+    "roof_height": 1.45,
+    "roof_length": 1.4,
+    "rear_height": 1.0
+  }
+}

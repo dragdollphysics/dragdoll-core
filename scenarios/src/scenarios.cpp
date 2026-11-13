@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include <dragdoll_scenarios/scenario.hpp>
+#include <dragdoll_scenarios/vehicles.hpp>
 
 #include <cmath>
 #include <cstdio>
@@ -384,11 +385,84 @@ private:
     bool mShoved = false;
 };
 
+// A vehicle from the shape pack hits a standing limp ragdoll side-on and brakes on contact (task 2.6). Without muscles
+// the body only starts to sag in the 0.1 s before contact; what matters here is how each front shape catches it:
+// low fronts scoop it onto the bonnet (wrap), high flat fronts throw it ahead (forward projection).
+class VehicleHitScenario final : public RagdollScenario
+{
+public:
+    VehicleHitScenario(const std::string& vehicle, float kmh)
+        : RagdollScenario(nullptr, nullptr, DdVec3{0.0f, 0.0f, 0.01f}, DdQuat{0, 0, 0, 1}), mVehicle(vehicle)
+    {
+        mNameText = "hit_" + vehicle + "_" + std::to_string(static_cast<int>(kmh)) + "kmh";
+        mProfile = parseVehicle(builtinVehicle(vehicle));
+        mDescriptionText = "A " + vehicle + " at " + std::to_string(static_cast<int>(kmh)) +
+                           " km/h hits a standing limp pedestrian side-on and brakes hard on contact. " + mProfile.description;
+        mName = mNameText.c_str();
+        mDescription = mDescriptionText.c_str();
+        mDrive.speed = kmh / 3.6f;
+        mDrive.brakeAt = kContactTime;
+        mDrive.decel = 7.0f; // Emergency braking on a dry road
+        // The front face reaches the pedestrian's near side (~0.25 m from the centre) at kContactTime.
+        mStart = -0.25f - mProfile.length * 0.5f - mDrive.speed * kContactTime;
+    }
+    DdVec3 cameraTarget() const override { return DdVec3{1.5f, 0.0f, 0.8f}; }
+    float cameraDistance() const override { return mProfile.length > 8.0f ? 16.0f : 9.0f; }
+    // Braking is a curved path, and kinematic targets are interpolated linearly between host samples, so the exact
+    // path depends (by millimetres) on the host frame rate — exactly as in the game. Constant-speed driving stays
+    // rate-independent (car_vs_pole, car_speed).
+    bool rateIndependent() const override { return false; }
+
+    void build(DdWorld* world) override
+    {
+        RagdollScenario::build(world);
+        mMesh = buildVehicleMesh(mProfile, DdVec3{1, 0, 0}, DdVec3{0, 1, 0}, DdVec3{0, 0, 1}); // Z-up, drives along +X
+        DdColliderDesc car;
+        dragdoll_collider_desc_default(&car);
+        car.shape = DD_SHAPE_MESH;
+        car.motion = DD_MOTION_KINEMATIC;
+        car.vertices = mMesh.vertices.data();
+        car.vertex_count = static_cast<uint32_t>(mMesh.vertices.size());
+        car.indices = mMesh.indices.data();
+        car.index_count = static_cast<uint32_t>(mMesh.indices.size());
+        car.transform.position = DdVec3{mStart, 0.0f, 0.0f};
+        mCar = addOne(world, car);
+    }
+
+    void hostFrame(DdWorld* world, double hostTime, float) override
+    {
+        const DdTransform target{{mStart + mDrive.distance(std::fmin(hostTime, duration())), 0.0f, 0.0f}, {0, 0, 0, 1}};
+        dragdoll_world_set_kinematic_targets(world, &mCar, &target, 1);
+    }
+
+    void hud(DdWorld* world, std::vector<std::string>& lines) override
+    {
+        RagdollScenario::hud(world, lines);
+        const double t = static_cast<double>(dragdoll_world_get_step_count(world)) / 120.0;
+        const double v = t <= mDrive.brakeAt ? mDrive.speed : std::fmax(0.0, mDrive.speed - mDrive.decel * (t - mDrive.brakeAt));
+        char buffer[160];
+        std::snprintf(buffer, sizeof(buffer), "%s: bumper %.2f m, bonnet edge %.2f m | speed now %.1f km/h (braking from %.2f s)",
+                      mVehicle.c_str(), static_cast<double>(mProfile.bumperHeight), static_cast<double>(mProfile.bonnetEdgeHeight),
+                      v * 3.6, static_cast<double>(mDrive.brakeAt));
+        lines.emplace_back(buffer);
+    }
+
+private:
+    static constexpr float kContactTime = 0.1f;
+    std::string mVehicle, mNameText, mDescriptionText;
+    VehicleProfile mProfile;
+    VehicleMesh mMesh;
+    Drive mDrive;
+    float mStart = 0.0f;
+    DdColliderId mCar = DD_INVALID_COLLIDER;
+};
+
 using Factory = std::function<std::unique_ptr<Scenario>()>;
 
 const std::vector<std::pair<std::string, Factory>>& registry()
 {
-    static const std::vector<std::pair<std::string, Factory>> sRegistry = {
+    static const std::vector<std::pair<std::string, Factory>> sRegistry = [] {
+    std::vector<std::pair<std::string, Factory>> all = {
         {"pile_zup",
          [] {
              return std::make_unique<PileScenario>(
@@ -438,6 +512,12 @@ const std::vector<std::pair<std::string, Factory>>& registry()
                  DdVec3{0.0f, 0.0f, 1.0f}, DdQuat{0, 0, 0, 1});
          }},
     };
+    for (const std::string& vehicle : vehicleNames())
+    {
+        all.emplace_back("hit_" + vehicle + "_40kmh", [vehicle] { return std::make_unique<VehicleHitScenario>(vehicle, 40.0f); });
+    }
+    return all;
+    }();
     return sRegistry;
 }
 } // namespace

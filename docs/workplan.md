@@ -167,7 +167,7 @@ Planned by **effort hours, not calendar weeks** (total ≈ **460 h** to v1, ±50
 * [x] F9 annotations with typed text + screenshot (`<recording>_step<N>.png`), `dragdoll_inspect` (summary, notes with screenshot paths, `--motion`, `--body`) (tasks 2.1, 2.2). Not yet: `--at/--window/--fields`, `--render` contact sheets (add when a session needs them).
 * [ ] Tracy integration; MCP bridge.
 * [x] **[SA]** C-API-boundary recording + host-session replay in the workbench (task 2.1); SA plugin records every F7 drop (`scripts\dragdoll_recordings\sa_*.ddrec`, F9 marks) and replays bit-identically in the x86 viewer with the game's DLL (ADR-0022, task 2.5).
-* [ ] **Vehicle shape pack** (own geometry): sedan, sports car, SUV, van, bus, motorbike — parameterized bumper height, hood angle, windshield angle; kinematic driving at set speed/heading/braking.
+* [x] **Vehicle shape pack** (own geometry): sedan, sports car, SUV, van, bus, motorbike — parameterized bumper height, hood angle, windshield angle; kinematic driving at set speed/heading/braking (`packs/vehicles/*.json`, `scenarios/vehicles.hpp`, `hit_<class>_40kmh`, task 2.6).
 * **Acceptance:** edit → rebuild → see change without closing the window in < 15 s; a recorded session replays bit-identically; Claude can run a scenario and read a note via MCP/inspect.
 
 ### Phase 3 — Active Body (~60 h)

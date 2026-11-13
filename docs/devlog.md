@@ -342,3 +342,20 @@ Crowd question (car through the pier) → cost is linear in awake ragdolls (~70 
 
 **Open questions**
 * F8 direction change not yet tried in game.
+
+---
+
+## 2026-11-13 — Phase 2, task 2.6: vehicle shape pack
+**Changed** (local, not committed)
+* `packs/vehicles/{sedan,sports,suv,van,bus,motorbike}.json` (format `dragdoll-vehicle` v1): side profile = length, width, clearance, bumper height, bonnet edge height + setback, hood length + angle, windshield angle, roof height + length, rear height. Own generic class values (bonnet edge: sports 0.60 < sedan 0.72 < SUV 1.00 < van 1.05 < bus flat front).
+* `scenarios/vehicles.{hpp,cpp}`: strict parser, profile outline -> ear-clipped sides + perimeter quads = closed outward mesh (windings fixed per face), `Drive` (constant speed then braking). Packs compiled into the scenarios lib (CMake-generated `builtin_vehicles.cpp`, reconfigures when a JSON changes).
+* Scenarios `hit_<class>_40kmh` (6): kinematic mesh vehicle hits a standing limp ragdoll side-on at 0.1 s, brakes at 7 m/s^2. Not rate-independent: braking is a curve and kinematic targets are interpolated linearly between host samples (mm differences, as in the game).
+* **Core fix:** kinematic mesh colliders asserted in debug builds (Jolt cannot compute a mesh's mass; release builds ran with invalid mass). They now get a nominal 1000 kg box mass/inertia (never used: kinematic). The game's deployed DLL predates this fix (only matters if the SA plugin adds kinematic meshes, Phase 6).
+* Debug builds print the failed Jolt assert (expression, message, file:line) to stderr before breaking.
+* Tests (4 new): meshes closed + outward + right size, bonnet-edge class order, invalid profiles rejected, braking maths, every hit throws the pedestrian ahead of / onto the vehicle (never through or under). Founder: hits "look fine". 4 dev presets green, 34 test cases.
+
+**Next**
+* Task 2.7 (Opus): Tracy profiler zones + workbench command socket / MCP bridge (spawn scenario, step, get state, query recording).
+
+**Open questions**
+* None new.
