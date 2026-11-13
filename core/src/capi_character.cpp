@@ -175,6 +175,11 @@ DD_API DdResult DD_CALL dragdoll_character_apply_impulse(DdCharacter* character,
     DD_GUARD_END(DD_ERROR_INTERNAL)
 }
 
+DD_API float DD_CALL dragdoll_character_get_body_mass(const DdCharacter* character, uint32_t body)
+{
+    return character != nullptr && body < character->bodyMass.size() ? character->bodyMass[body] : 0.0f;
+}
+
 DD_API int32_t DD_CALL dragdoll_character_get_body_parent(const DdCharacter* character, uint32_t body)
 {
     if (character == nullptr || body >= character->parent.size())
@@ -265,6 +270,36 @@ DD_API DdResult DD_CALL dragdoll_character_get_pose(const DdCharacter* character
     if (root != nullptr)
     {
         *root = bodies[0];
+    }
+    return DD_OK;
+    DD_GUARD_END(DD_ERROR_INTERNAL)
+}
+
+DD_API DdResult DD_CALL dragdoll_character_activate(DdCharacter* character, const DdTransform* previous_root,
+                                                    const DdQuat* previous_joints, const DdTransform* current_root,
+                                                    const DdQuat* current_joints, uint32_t count, float dt)
+{
+    DD_GUARD_BEGIN
+    if (character == nullptr || current_root == nullptr)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_activate: character and current_root are required");
+    }
+    if ((current_joints != nullptr || previous_joints != nullptr) && count != character->parent.size())
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_activate: count must equal the body count");
+    }
+    try
+    {
+        character->world->activateCharacter(*character, previous_root, previous_joints, *current_root, current_joints, dt);
+    }
+    catch (const std::invalid_argument& e)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, e.what());
+    }
+    if (dragdoll::rec::Recorder* recorder = recorderOf(character))
+    {
+        recorder->activate(character->id, previous_root, previous_joints, *current_root, current_joints,
+                           static_cast<uint32_t>(character->parent.size()), dt);
     }
     return DD_OK;
     DD_GUARD_END(DD_ERROR_INTERNAL)

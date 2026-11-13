@@ -728,6 +728,7 @@ DdCharacter* World::createCharacter(const DdCharacterDesc& desc)
             }
             return false;
         };
+        character->bodyMass = mass;
         character->jointInertia.assign(count, 0.0f);
         for (size_t j = 0; j < count; ++j)
         {
@@ -744,6 +745,19 @@ DdCharacter* World::createCharacter(const DdCharacterDesc& desc)
             }
             character->jointInertia[j] = child * parent / (child + parent);
         }
+    }
+    character->pivotInParent.assign(count, JPH::Vec3::sZero());
+    character->bodyFromPivot.assign(count, JPH::Vec3::sZero());
+    for (size_t i = 0; i < count; ++i)
+    {
+        if (rig.bodies[i].parent < 0)
+        {
+            continue;
+        }
+        const size_t p = static_cast<size_t>(rig.bodies[i].parent);
+        const JPH::RVec3 pivot = worldFromRig * rig.bodies[i].joint.pivot;
+        character->pivotInParent[i] = character->currRotation[p].Conjugated() * JPH::Vec3(pivot - character->currPosition[p]);
+        character->bodyFromPivot[i] = character->currRotation[i].Conjugated() * JPH::Vec3(character->currPosition[i] - pivot);
     }
     character->restRig.resize(count);
     character->hingeAxisRig.resize(count, JPH::Vec3::sAxisX());
@@ -794,6 +808,52 @@ bool World::characterTransforms(const DdCharacter& c, bool interpolated, DdTrans
         out[i].rotation = toDd(rotation);
     }
     return true;
+}
+
+void World::activateCharacter(DdCharacter& c, const DdTransform* previousRoot, const DdQuat* previousJoints,
+                              const DdTransform& currentRoot, const DdQuat* currentJoints, float dt)
+{
+    if (!isFinite(currentRoot.position) || (previousRoot != nullptr && !isFinite(previousRoot->position)))
+    {
+        throw std::invalid_argument("activate: root position is not finite");
+    }
+    if (previousRoot != nullptr && !(dt > 0.0f && std::isfinite(dt)))
+    {
+        throw std::invalid_argument("activate: dt must be > 0 when a previous pose is given");
+    }
+    std::vector<JPH::RVec3> now, before;
+    std::vector<JPH::Quat> nowRot, beforeRot;
+    bodiesFromPose(c, currentRoot, currentJoints, now, nowRot);
+    if (previousRoot != nullptr)
+    {
+        bodiesFromPose(c, *previousRoot, previousJoints, before, beforeRot);
+    }
+    JPH::BodyInterface& bodies = mPhysics->GetBodyInterface();
+    for (size_t i = 0; i < now.size(); ++i)
+    {
+        const JPH::BodyID id = c.ragdoll->GetBodyID(static_cast<int>(i));
+        bodies.SetPositionAndRotation(id, now[i], nowRot[i], JPH::EActivation::Activate);
+        JPH::Vec3 linear = JPH::Vec3::sZero(), angular = JPH::Vec3::sZero();
+        if (previousRoot != nullptr)
+        {
+            linear = JPH::Vec3(now[i] - before[i]) / dt;
+            JPH::Quat delta = (nowRot[i] * beforeRot[i].Conjugated()).Normalized();
+            if (delta.GetW() < 0.0f) delta = -delta; // Shortest way round
+            JPH::Vec3 axis;
+            float angle;
+            delta.GetAxisAngle(axis, angle);
+            angular = angle > 1e-7f ? axis * (angle / dt) : JPH::Vec3::sZero();
+        }
+        bodies.SetLinearAndAngularVelocity(id, linear, angular);
+        c.currPosition[i] = now[i];
+        c.currRotation[i] = nowRot[i];
+    }
+    // The muscles hold the pose the body was handed over in (not the rest pose) until the host sets another target.
+    setTargetPose(c, currentJoints, currentJoints != nullptr ? static_cast<uint32_t>(c.parent.size()) : 0);
+    c.prevPosition = c.currPosition; // No interpolation across the jump
+    c.prevRotation = c.currRotation;
+    c.stillSeconds = 0.0f;
+    if (c.state == DD_STATE_SETTLED) c.state = DD_STATE_ACTIVE;
 }
 
 void World::applyImpulse(DdCharacter& c, uint32_t body, const DdVec3& impulse, const DdVec3* point)

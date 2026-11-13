@@ -101,6 +101,9 @@ public:
     void destroyCharacter(DdCharacter* character);
     bool characterTransforms(const DdCharacter& character, bool interpolated, DdTransform* out, uint32_t capacity) const;
     void applyImpulse(DdCharacter& character, uint32_t body, const DdVec3& impulse, const DdVec3* point);
+    // Activation from motion (ADR-0017). Throws std::invalid_argument on bad input.
+    void activateCharacter(DdCharacter& character, const DdTransform* previousRoot, const DdQuat* previousJoints,
+                           const DdTransform& currentRoot, const DdQuat* currentJoints, float dt);
     uint32_t characterCount() const { return static_cast<uint32_t>(mCharacters.size()); }
     const JPH::Vec3& up() const { return mUp; }
     DdCharacter* characterAt(uint32_t index) const;

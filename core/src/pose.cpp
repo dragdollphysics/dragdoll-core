@@ -57,6 +57,41 @@ void jointRotations(const DdCharacter& c, const std::vector<JPH::Quat>& world, D
     }
 }
 
+void bodiesFromPose(const DdCharacter& c, const DdTransform& root, const DdQuat* joints, std::vector<JPH::RVec3>& positions,
+                    std::vector<JPH::Quat>& rotations)
+{
+    const size_t count = c.parent.size();
+    positions.resize(count);
+    rotations.resize(count);
+    const DdQuat& r = root.rotation;
+    const float length = std::sqrt(r.x * r.x + r.y * r.y + r.z * r.z + r.w * r.w);
+    if (!std::isfinite(length) || length < 1e-6f)
+    {
+        throw std::invalid_argument("activate: root rotation must be a finite, non-zero quaternion");
+    }
+    positions[0] = JPH::RVec3(root.position.x, root.position.y, root.position.z);
+    rotations[0] = JPH::Quat(r.x / length, r.y / length, r.z / length, r.w / length);
+    for (size_t i = 1; i < count; ++i) // Parents come first
+    {
+        const size_t p = static_cast<size_t>(c.parent[i]);
+        JPH::Quat d = JPH::Quat::sIdentity();
+        if (joints != nullptr)
+        {
+            const DdQuat& q = joints[i];
+            const float n = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+            if (!std::isfinite(n) || n < 1e-6f)
+            {
+                throw std::invalid_argument("activate: joint rotations must be finite, non-zero quaternions");
+            }
+            d = JPH::Quat(q.x / n, q.y / n, q.z / n, q.w / n);
+        }
+        // R_child = R_parent * conj(P_parent) * d * P_child   (see setTargetPose / jointRotations)
+        rotations[i] = (rotations[p] * c.restRig[p].Conjugated() * d * c.restRig[i]).Normalized();
+        const JPH::RVec3 pivot = positions[p] + rotations[p] * c.pivotInParent[i];
+        positions[i] = pivot + rotations[i] * c.bodyFromPivot[i];
+    }
+}
+
 void updateState(DdCharacter& c, float dt)
 {
     // "Nearly still": every body slower than 5 cm/s and 10 deg/s.

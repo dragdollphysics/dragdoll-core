@@ -573,6 +573,117 @@ private:
     int mPose = -1;
 };
 
+// Activation from motion (task 3.3, ADR-0017): two humanoids are "animated" by the host as a simple walk for 1 s
+// (each host frame hands DragDoll the new pose plus the previous one, so physics follows like a puppet), then physics
+// takes over, limp. LEFT: handed over with its momentum (activate with the previous pose). RIGHT: handed over without
+// velocity, the classic freeze-then-drop.
+class WalkThenActivateScenario final : public Scenario
+{
+public:
+    const char* name() const override { return "walk_then_activate"; }
+    const char* description() const override
+    {
+        return "Activation from motion: two walkers are animated for 1 s, then go limp. LEFT keeps its walking momentum "
+               "(new way: two consecutive poses), RIGHT is handed over without velocity (classic freeze-then-drop). "
+               "Judge: the left one should stumble forward naturally; the right one stops dead, then collapses.";
+    }
+    void configure(DdWorldDesc& desc) const override { desc.up = DdVec3{0.0f, 0.0f, 1.0f}; }
+    bool rateIndependent() const override { return false; } // The host animation is sampled per host frame
+    double duration() const override { return 4.0; }
+    DdCharacter* character() const override { return mWalkers[0]; }
+    DdVec3 cameraTarget() const override { return DdVec3{0.0f, -1.5f, 0.8f}; }
+    float cameraDistance() const override { return 7.0f; }
+
+    void build(DdWorld* world) override
+    {
+        addGround(world, DdVec3{0.0f, 0.0f, 1.0f});
+        for (int i = 0; i < 2; ++i)
+        {
+            DdCharacterDesc desc;
+            dragdoll_character_desc_default(&desc);
+            desc.rig_json = rigJson();
+            desc.transform.position = DdVec3{i == 0 ? 0.8f : -0.8f, 0.0f, 0.01f};
+            if (dragdoll_character_create(world, &desc, &mWalkers[i]) != DD_OK)
+            {
+                return;
+            }
+            dragdoll_character_get_pose(mWalkers[i], 0, nullptr, 0, &mRestRoot[i]);
+        }
+        const DdQuat& q = mRestRoot[0].rotation; // Forward = rig +Z in world space
+        mForward = DdVec3{2.0f * (q.x * q.z + q.w * q.y), 2.0f * (q.y * q.z - q.w * q.x), 1.0f - 2.0f * (q.x * q.x + q.y * q.y)};
+        mCount = dragdoll_character_get_body_count(mWalkers[0]);
+    }
+
+    void hostFrame(DdWorld*, double hostTime, float dt) override
+    {
+        if (mWalkers[1] == nullptr || mReleased)
+        {
+            return;
+        }
+        DdTransform before, now;
+        std::vector<DdQuat> jointsBefore, jointsNow;
+        for (int i = 0; i < 2; ++i)
+        {
+            walkPose(i, hostTime - std::max(dt, 1e-3f), before, jointsBefore);
+            walkPose(i, hostTime, now, jointsNow);
+            const bool release = hostTime >= kRelease;
+            const bool withMomentum = !release || i == 0; // The right walker loses its velocity at the handover
+            dragdoll_character_activate(mWalkers[i], withMomentum ? &before : nullptr, withMomentum ? jointsBefore.data() : nullptr,
+                                        &now, jointsNow.data(), mCount, std::max(dt, 1e-3f));
+        }
+        mReleased = hostTime >= kRelease;
+    }
+
+    void hud(DdWorld*, std::vector<std::string>& lines) override
+    {
+        for (int i = 0; i < 2; ++i)
+        {
+            if (mWalkers[i] == nullptr)
+            {
+                lines.emplace_back("character could not be created");
+                return;
+            }
+            std::vector<DdTransform> t(mCount);
+            dragdoll_character_get_body_transforms(mWalkers[i], 0, t.data(), mCount);
+            DdTransform pelvis = t[0];
+            char buffer[160];
+            std::snprintf(buffer, sizeof(buffer), "%s: pelvis %.2f m along the walk, height %.2f m | %s",
+                          i == 0 ? "LEFT  (with momentum)" : "RIGHT (no velocity) ",
+                          static_cast<double>(dot(DdVec3{pelvis.position.x - mRestRoot[i].position.x, pelvis.position.y - mRestRoot[i].position.y, 0.0f}, mForward)),
+                          static_cast<double>(pelvis.position.z), mReleased ? "physics" : "animated by the host");
+            lines.emplace_back(buffer);
+        }
+    }
+
+private:
+    static constexpr double kRelease = 1.0;
+    // Host-side walk: root along forward at 1.4 m/s, legs and arms swinging at 0.9 Hz.
+    void walkPose(int i, double t, DdTransform& root, std::vector<DdQuat>& joints) const
+    {
+        constexpr double kSpeed = 1.4, kStride = 2.0 * 3.14159265 * 0.9;
+        root = mRestRoot[i];
+        root.position.x += mForward.x * static_cast<float>(kSpeed * t);
+        root.position.y += mForward.y * static_cast<float>(kSpeed * t);
+        joints.assign(mCount, DdQuat{0, 0, 0, 1});
+        const char* thighs[] = {"thigh_l", "thigh_r"};
+        const char* shins[] = {"shin_l", "shin_r"};
+        const char* arms[] = {"upper_arm_l", "upper_arm_r"};
+        for (int side = 0; side < 2; ++side)
+        {
+            const float phase = static_cast<float>(std::sin(kStride * t + side * 3.14159265));
+            joints[static_cast<size_t>(dragdoll_character_find_body(mWalkers[i], thighs[side]))] = axisAngle(DdVec3{1, 0, 0}, -25.0f * phase);
+            joints[static_cast<size_t>(dragdoll_character_find_body(mWalkers[i], shins[side]))] = axisAngle(DdVec3{1, 0, 0}, 20.0f + 20.0f * phase);
+            joints[static_cast<size_t>(dragdoll_character_find_body(mWalkers[i], arms[side]))] = axisAngle(DdVec3{1, 0, 0}, 20.0f * phase);
+        }
+    }
+
+    DdCharacter* mWalkers[2] = {};
+    DdTransform mRestRoot[2] = {};
+    DdVec3 mForward{0, 0, 1};
+    uint32_t mCount = 0;
+    bool mReleased = false;
+};
+
 // A vehicle from the shape pack hits a standing limp ragdoll side-on and brakes on contact (task 2.6). Without muscles
 // the body only starts to sag in the 0.1 s before contact; what matters here is how each front shape catches it:
 // low fronts scoop it onto the bonnet (wrap), high flat fronts throw it ahead (forward projection).
@@ -702,6 +813,7 @@ const std::vector<std::pair<std::string, Factory>>& registry()
     };
     all.emplace_back("tension_lineup", [] { return std::make_unique<TensionLineupScenario>(); });
     all.emplace_back("pose_zero_g", [] { return std::make_unique<PoseZeroGScenario>(); });
+    all.emplace_back("walk_then_activate", [] { return std::make_unique<WalkThenActivateScenario>(); });
     for (const std::string& vehicle : vehicleNames())
     {
         all.emplace_back("hit_" + vehicle + "_40kmh", [vehicle] { return std::make_unique<VehicleHitScenario>(vehicle, 40.0f); });

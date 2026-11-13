@@ -160,6 +160,26 @@ void apply(DdReplay& replay, const RecordView& record)
     case Record::Note:
         replay.note = in.string();
         break;
+    case Record::Activate: {
+        const uint32_t id = in.u32();
+        const float dt = in.f32();
+        const uint8_t flags = in.u8();
+        auto it = replay.characters.find(id);
+        if (it == replay.characters.end())
+        {
+            throw std::runtime_error("replay: activation of an unknown character");
+        }
+        const size_t count = it->second->parent.size();
+        DdTransform previousRoot{};
+        std::vector<DdQuat> previousJoints, joints;
+        if (flags & 1) previousRoot = in.transform();
+        if (flags & 2) { previousJoints.resize(count); for (DdQuat& q : previousJoints) q = in.quat(); }
+        const DdTransform root = in.transform();
+        if (flags & 4) { joints.resize(count); for (DdQuat& q : joints) q = in.quat(); }
+        world.activateCharacter(*it->second, (flags & 1) ? &previousRoot : nullptr, (flags & 2) ? previousJoints.data() : nullptr,
+                                root, (flags & 4) ? joints.data() : nullptr, dt);
+        break;
+    }
     case Record::TargetPose: {
         const uint32_t id = in.u32();
         const uint32_t count = in.u32();

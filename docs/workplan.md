@@ -175,7 +175,7 @@ Planned by **effort hours, not calendar weeks** (total ≈ **460 h** to v1, ±50
 **Goal:** a standing character that holds poses and stays upright under small disturbances.
 * [x] Pose drive via motors (D8/D9); tension profiles (`tense`, `relaxed`, `limp`, `stunned`) with smooth blending (task 3.1: target = rest pose; host pose input in 3.2).
 * [x] Host pose input + full output contract (D17) (task 3.2): `set_target_pose` / `get_pose` (joint rotations = offsets from rest in rig axes, root transform), `get_info` (state active/settled + facing + head direction; recovering/dead/failed reserved), per-body blend weights (1 for now); target poses recorded.
-* [ ] **[SA]** Activation from motion: initialise bodies from two consecutive host poses (positions + velocities); test `walk_then_activate` shows no velocity pop.
+* [x] **[SA]** Activation from motion: initialise bodies from two consecutive host poses (positions + velocities); test `walk_then_activate` shows no velocity pop (task 3.3: momentum 1.40 -> 1.39 m/s at 30/60/144 fps).
 * [ ] **[SA]** Mock 32-bone host skeleton (SA bone IDs/hierarchy as facts, own proportions) → rig mapping round-trip test.
 * [ ] **[SA]** `failed` state: NaN/energy-explosion guards deactivate the character and report it; host fallback test.
 * [ ] **Standing balance:** CoM, support polygon, Capture Point `xCP = x + v/ω`, ankle strategy, hip strategy (internal torques via stance hip). No stepping.

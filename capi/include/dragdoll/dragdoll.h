@@ -279,6 +279,9 @@ DD_API DdResult DD_CALL dragdoll_character_get_body_transforms(const DdCharacter
 DD_API DdResult DD_CALL dragdoll_character_apply_impulse(DdCharacter* character, uint32_t body, DdVec3 impulse,
                                                          const DdVec3* world_point);
 
+/* Mass of one body in kg as simulated (0 for an invalid index). */
+DD_API float DD_CALL dragdoll_character_get_body_mass(const DdCharacter* character, uint32_t body);
+
 /* Parent body index (-1 for the root or an invalid index). Bodies follow the rig's order; parents come first. */
 DD_API int32_t DD_CALL dragdoll_character_get_body_parent(const DdCharacter* character, uint32_t body);
 
@@ -318,6 +321,15 @@ DD_API DdResult DD_CALL dragdoll_character_set_target_pose(DdCharacter* characte
 /* The simulated pose in the same form, plus the root body's world transform (either output may be NULL). */
 DD_API DdResult DD_CALL dragdoll_character_get_pose(const DdCharacter* character, int interpolated, DdQuat* joint_rotations,
                                                     uint32_t capacity, DdTransform* root);
+
+/* Activation from motion (ADR-0017): places every body at the CURRENT pose (root transform = the root body's world
+ * transform, as get_pose returns it, plus joint rotations) and gives it the velocity of the motion from the PREVIOUS
+ * pose over `dt` seconds, so a walking or falling character keeps its momentum when physics takes over. Pass NULL as
+ * previous_root to start at rest; NULL joint arrays mean the rest pose. `count` = body count (when arrays are given).
+ * Also sets the target pose to the current pose, so muscles hold the handed-over pose until the host sets another. */
+DD_API DdResult DD_CALL dragdoll_character_activate(DdCharacter* character, const DdTransform* previous_root,
+                                                    const DdQuat* previous_joints, const DdTransform* current_root,
+                                                    const DdQuat* current_joints, uint32_t count, float dt);
 
 typedef enum DdCharacterState
 {

@@ -50,6 +50,10 @@ struct DdCharacter
     // about the joint, at rest. Turns frequency + damping ratio into real stiffness, so the chain beyond a joint (a
     // whole arm at the shoulder) is accounted for.
     std::vector<float> jointInertia;
+    std::vector<float> bodyMass; // kg, as simulated
+    // Rest geometry for placing the body from a pose (forward kinematics): the joint pivot in the parent's body frame,
+    // and this body's position relative to its joint pivot in its own body frame.
+    std::vector<JPH::Vec3> pivotInParent, bodyFromPivot;
     DdTension tension = DD_TENSION_LIMP;
     dragdoll::MuscleParams blendFrom, muscles, blendTo; // `muscles` = what the motors use now
     float blendTime = 0.0f, blendElapsed = 0.0f;
@@ -86,4 +90,7 @@ void setTargetPose(DdCharacter& character, const DdQuat* jointRotations, uint32_
 void jointRotations(const DdCharacter& character, const std::vector<JPH::Quat>& world, DdQuat* out);
 // After each fixed step: stillness timer and state.
 void updateState(DdCharacter& character, float dt);
+// World transforms of every body for a pose (root = the root body's world transform; joints may be null = rest).
+void bodiesFromPose(const DdCharacter& character, const DdTransform& root, const DdQuat* joints,
+                    std::vector<JPH::RVec3>& positions, std::vector<JPH::Quat>& rotations);
 } // namespace dragdoll

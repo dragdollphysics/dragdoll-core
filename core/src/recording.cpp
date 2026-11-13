@@ -260,6 +260,20 @@ void Recorder::targetPose(uint32_t character, const DdQuat* rotations, uint32_t 
     write(Record::TargetPose, mScratch);
 }
 
+void Recorder::activate(uint32_t character, const DdTransform* previousRoot, const DdQuat* previousJoints,
+                        const DdTransform& root, const DdQuat* joints, uint32_t count, float dt)
+{
+    mScratch.clear();
+    mScratch.u32(character);
+    mScratch.f32(dt);
+    mScratch.u8(static_cast<uint8_t>((previousRoot != nullptr ? 1 : 0) | (previousJoints != nullptr ? 2 : 0) | (joints != nullptr ? 4 : 0)));
+    if (previousRoot != nullptr) mScratch.transform(*previousRoot);
+    for (uint32_t i = 0; previousJoints != nullptr && i < count; ++i) mScratch.quat(previousJoints[i]);
+    mScratch.transform(root);
+    for (uint32_t i = 0; joints != nullptr && i < count; ++i) mScratch.quat(joints[i]);
+    write(Record::Activate, mScratch);
+}
+
 void Recorder::note(const char* text)
 {
     mScratch.clear();

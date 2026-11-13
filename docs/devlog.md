@@ -423,3 +423,17 @@ Crowd question (car through the pier) → cost is linear in awake ragdolls (~70 
 
 **Open questions**
 * Founder to re-check `tension_lineup` with the retuned relaxed/stunned profiles.
+
+---
+
+## 2026-11-13 — Phase 3, task 3.3: activation from motion (ADR-0017)
+**Changed** (local, not committed)
+* C API: `dragdoll_character_activate(character, previous_root, previous_joints, current_root, current_joints, count, dt)`: forward kinematics from root + joint rotations (rest geometry: joint pivot in the parent body frame, body offset from its pivot), bodies teleported to the current pose with linear/angular velocity from previous -> current over dt; no previous = at rest. Also sets the target pose to the current pose (founder: a tense walker snapped straight to the rest pose). Interpolation history reset, state back to active. Recorded (record type 13). `dragdoll_character_get_body_mass` added.
+* Scenario `walk_then_activate`: two synthetic walkers puppeted for 1 s via activate each host frame, then limp; LEFT handed over with momentum, RIGHT without (classic freeze-then-drop). Founder: "noticeably keeps the momentum"; with tense it "keeps stride".
+* Tests (4 new): FK round trip (get_pose -> activate reproduces bodies; 5 mm because simulated joints stretch a few mm), momentum within 5% at 30/60/144 fps (measured 1.40 -> 1.39 m/s), validation + body mass, muscles hold the handed-over pose. 4 dev presets green, 45 test cases.
+
+**Next**
+* Task 3.4 (Opus): mock 32-bone SA ped skeleton (bone IDs/hierarchy as facts, own proportions) -> rig mapping, round-trip error < 0.5 deg.
+
+**Open questions**
+* A tense character still falls as a statue: balance is task 3.6.
