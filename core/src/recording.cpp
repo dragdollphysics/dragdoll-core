@@ -70,6 +70,7 @@ void writeColliderDesc(Buffer& out, const DdColliderDesc& d)
     out.f32(d.restitution);
     out.f32(d.mass);
     out.u64(d.user_data);
+    out.u32(d.group);
     const uint32_t vertexCount = d.vertices != nullptr ? d.vertex_count : 0;
     out.u32(vertexCount);
     for (uint32_t i = 0; i < vertexCount; ++i)
@@ -98,6 +99,7 @@ DdColliderDesc readColliderDesc(Cursor& in, std::vector<DdVec3>& vertices, std::
     d.restitution = in.f32();
     d.mass = in.f32();
     d.user_data = in.u64();
+    d.group = in.u32();
     vertices.resize(in.u32());
     for (DdVec3& v : vertices)
     {

@@ -819,6 +819,7 @@ public:
         car.indices = mMesh.indices.data();
         car.index_count = static_cast<uint32_t>(mMesh.indices.size());
         car.transform.position = DdVec3{mStart, 0.0f, 0.0f};
+        car.group = 1; // One vehicle = one perceived object (ADR-0024)
         mCar = addOne(world, car);
     }
 

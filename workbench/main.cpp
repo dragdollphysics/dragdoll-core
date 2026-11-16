@@ -521,6 +521,32 @@ void drawNoteBox(const App& app)
     DrawText(shown.c_str(), x + 12, y + 50, 22, RAYWHITE);
 }
 
+// Perception (ADR-0024): for every character with a threat, the probed front silhouette of that object (drawn on the
+// vehicle) and one line of text: time to collision, expected trajectory, measured front.
+void collectThreats(DdWorld* world, std::vector<Line>& lines, std::vector<std::string>& text)
+{
+    static const char* const kClass[] = {"?", "wrap", "forward projection", "fender vault", "roof vault", "somersault"};
+    const uint32_t count = dragdoll_world_get_character_count(world);
+    for (uint32_t i = 0; i < count; ++i)
+    {
+        DdCharacter* c = dragdoll_world_get_character(world, i);
+        DdThreat threat{};
+        threat.struct_size = sizeof(DdThreat);
+        if (dragdoll_character_get_threat(c, &threat) != DD_OK || threat.collider == DD_INVALID_COLLIDER) continue;
+        DdVec3 points[160];
+        const uint32_t n = std::min<uint32_t>(dragdoll_character_get_threat_silhouette(c, points, 160), 160);
+        for (uint32_t k = 0; k + 1 < n; ++k) lines.push_back(Line{toRay(points[k]), toRay(points[k + 1]), Color{255, 210, 90, 255}});
+        if (text.size() >= 4) continue; // A crowd: the silhouettes are enough
+        const char* name = dragdoll_character_get_name(c);
+        char line[220];
+        std::snprintf(line, sizeof(line), "%s%sthreat in %.2f s at %.0f km/h | expects %s | front: bumper %.2f m, leading edge %.2f m, bonnet %.1f m",
+                      name[0] != 0 ? name : "", name[0] != 0 ? ": " : "", threat.time_to_collision, threat.closing_speed * 3.6f,
+                      kClass[std::min(static_cast<int>(threat.predicted), 5)], threat.profile.front_top_height,
+                      threat.profile.leading_edge_height, threat.profile.bonnet_length);
+        text.emplace_back(line);
+    }
+}
+
 DdWorld* activeWorld(App& app)
 {
     if (app.attachPort > 0) return app.live;
@@ -2358,6 +2384,8 @@ int main(int argc, char** argv)
         overlay.tris.clear();
         overlay.lines.clear();
         DdResult drawResult = DD_ERROR_NOT_INITIALIZED;
+        std::vector<Line> overlayLines;
+        std::vector<std::string> threatText;
         if (DdWorld* world = activeWorld(app))
         {
             DdDebugDrawCallbacks cb = callbacks;
@@ -2372,6 +2400,7 @@ int main(int argc, char** argv)
                 cb.flags = DD_DRAW_CONSTRAINT_LIMITS;
                 dragdoll_world_debug_draw(world, &cb);
             }
+            collectThreats(world, overlayLines, threatText);
         }
 
         BeginDrawing();
@@ -2412,7 +2441,16 @@ int main(int argc, char** argv)
             rlDrawRenderBatchActive();
             rlEnableDepthMask();
         }
+        rlDisableDepthTest(); // What a character perceives is drawn on top of the vehicle
+        for (const Line& l : overlayLines) DrawLine3D(l.a, l.b, l.color);
+        rlDrawRenderBatchActive();
+        rlEnableDepthTest();
         EndMode3D();
+        for (size_t i = 0; i < threatText.size(); ++i)
+        {
+            DrawText(threatText[i].c_str(), 14, GetScreenHeight() - 26 - 22 * static_cast<int>(threatText.size() - 1 - i), 18,
+                     Color{255, 210, 90, 255});
+        }
         if (drawResult == DD_ERROR_UNSUPPORTED)
         {
             DrawText("This DragDoll build has no debug renderer (use a dev preset).", 14, 300, 20, RED);

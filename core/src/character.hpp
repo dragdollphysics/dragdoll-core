@@ -83,6 +83,14 @@ struct DdCharacter
     float standHeight = 0.9f;        // Rest-pose centre of mass height above the feet centres (m)
     bool balanceActive = false;      // Balance on AND actually standing (else the corrections fade out)
 
+    // Perception (ADR-0024): the most imminent threat and the probed front of that object.
+    DdThreat threat{};
+    std::vector<DdVec3> threatSilhouette; // Per point: x = distance behind the object's front, z = height above the ground
+    float probedGround = 0.0f;            // Ground height (along up) under the object's front when probed
+    uint64_t probedKey = 0;               // Which object the profile belongs to (0 = none)
+    uint32_t probedRevision = 0;          // ...and its member set at that time
+    float probedLateral = 0.0f;           // ...and the lateral line that was probed
+
     // Last two fixed-step states per body, for interpolated output (ADR-0006).
     std::vector<JPH::RVec3> prevPosition, currPosition;
     std::vector<JPH::Quat> prevRotation, currRotation;

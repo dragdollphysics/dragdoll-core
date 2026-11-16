@@ -199,6 +199,7 @@ typedef struct DdColliderDesc
     float restitution;       /* Default 0.0 */
     float mass;              /* Dynamic only; 0 = derive from shape at 1000 kg/m^3. */
     uint64_t user_data;      /* Opaque host value, e.g. a game object pointer. */
+    uint32_t group;          /* Parts of one object share a group (a car's parts = one threat, ADR-0024); 0 = on its own. */
 } DdColliderDesc;
 
 /* Fill a description with defaults: unit sphere, static, identity transform. */
@@ -419,6 +420,57 @@ typedef struct DdCharacterInfo
 } DdCharacterInfo;
 
 DD_API DdResult DD_CALL dragdoll_character_get_info(const DdCharacter* character, DdCharacterInfo* out);
+
+/* ---- Perception: threat (ADR-0024). Read-only senses, updated every fixed step for every character. ---- */
+
+/* Post-impact trajectory classes of the pedestrian-impact literature. DragDoll predicts and measures them; it never
+ * forces one. */
+typedef enum DdTrajectory
+{
+    DD_TRAJECTORY_NONE = 0,
+    DD_TRAJECTORY_WRAP = 1,               /* Struck below the centre of mass: rotates onto the bonnet. */
+    DD_TRAJECTORY_FORWARD_PROJECTION = 2, /* Centre of mass inside the front face: thrown forward. */
+    DD_TRAJECTORY_FENDER_VAULT = 3,
+    DD_TRAJECTORY_ROOF_VAULT = 4,
+    DD_TRAJECTORY_SOMERSAULT = 5,
+    DD_TRAJECTORY_FORCE_32BIT = 0x7FFFFFFF
+} DdTrajectory;
+
+/* The front of a moving object, measured from its own collision geometry along the predicted impact line (about 50
+ * ray casts, once per approach). Heights are above the ground under its front; lengths run back from its foremost
+ * point; angles are in degrees from horizontal. */
+typedef struct DdFrontProfile
+{
+    int32_t valid;              /* 0 until a threat has been probed. */
+    float front_top_height;     /* Top of the near-vertical front face (a car's bumper line). */
+    float leading_edge_height;  /* Where the front turns into a top surface (bonnet leading edge; the roof for a flat front). */
+    float leading_edge_setback; /* How far behind the foremost point that is. */
+    float bonnet_length;        /* Length of the low, shallow surface behind the leading edge (0 for a flat front). */
+    float bonnet_angle;
+    float windscreen_angle;     /* 0 if there is none. */
+    float roof_height;          /* Highest point within the probed length. */
+} DdFrontProfile;
+
+typedef struct DdThreat
+{
+    uint32_t struct_size;     /* = sizeof(DdThreat) */
+    uint32_t group;           /* Group of the threatening object (0 if it is a single ungrouped collider). */
+    DdColliderId collider;    /* One of its colliders; DD_INVALID_COLLIDER = no threat (the other fields are then 0). */
+    float time_to_collision;  /* s until its front reaches the character (0 = now). */
+    float miss_distance;      /* m between the character and the object's side at that moment (0 = in its path). */
+    float lateral_offset;     /* m from the object's centre line at that moment (+ = the object's left). */
+    float closing_speed;      /* m/s */
+    DdVec3 direction;         /* Unit vector: the object's direction of travel (horizontal). */
+    DdTrajectory predicted;   /* Expected class from the front profile and the character's centre-of-mass height. */
+    DdFrontProfile profile;
+} DdThreat;
+
+/* The most imminent threat to this character: a moving collider or group (> 1 m/s) on course to reach it within 2 s. */
+DD_API DdResult DD_CALL dragdoll_character_get_threat(const DdCharacter* character, DdThreat* out);
+
+/* For tools: the probed front silhouette as a world-space polyline (front face bottom to top, then back over the
+ * top). Returns the number of points (0 = no profile); copies at most `capacity`. */
+DD_API uint32_t DD_CALL dragdoll_character_get_threat_silhouette(const DdCharacter* character, DdVec3* out_points, uint32_t capacity);
 
 /* Test hook (dev builds only; DD_ERROR_UNSUPPORTED otherwise): on the next step the character's state is corrupted
  * with NaN exactly where a real numerical blow-up would surface, to exercise the FAILED path. */

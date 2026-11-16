@@ -40,6 +40,7 @@ add_library(dragdoll SHARED
     src/muscles.cpp
     src/pose.cpp
     src/balance.cpp
+    src/perception.cpp
     src/skeleton_map.cpp
     src/capi_skeleton.cpp
     src/live_tap.cpp

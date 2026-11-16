@@ -20,7 +20,7 @@ namespace dragdoll::rec
 {
 
 inline constexpr char kMagic[8] = {'D', 'D', 'R', 'E', 'C', 0, 0, 0};
-inline constexpr uint32_t kFormatVersion = 1;
+inline constexpr uint32_t kFormatVersion = 2; // 2: collider group (ADR-0024)
 
 enum class Record : uint8_t
 {

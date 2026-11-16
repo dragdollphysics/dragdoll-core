@@ -68,7 +68,7 @@ Events with times: first contact (body, zone, vehicle speed, lateral offset), co
   * *forward projection* — no trunk or head contact above the leading edge; body ahead of the vehicle at separation;
   * *wrap* — trunk or head contact on bonnet or windscreen; body leaves forward of the vehicle;
   * *roof vault* — centre of mass passes over the roof line; lands behind the vehicle's front;
-  * *fender vault* — first contact beyond 35 % of the half width from the centre line; body leaves sideways;
+  * *fender vault* — first contact within about 0.15 m of a front corner; body leaves sideways;
   * *somersault* — wrap with more than 270 deg of pitch rotation before ground contact.
 * **Throw-distance corridor** (amended 2026-11-16 after the reading in `docs/reference/pedestrian-impact.md`): the
   throw distance from the impact point is carry + flight + slide. The corridor applies to flight + slide from the

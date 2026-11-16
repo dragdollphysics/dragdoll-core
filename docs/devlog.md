@@ -564,3 +564,21 @@ Crowd question (car through the pier) → cost is linear in awake ragdolls (~70 
 
 **Open questions**
 * Body-on-bonnet friction; launch-speed ratio per trajectory type; whole-body startle latencies.
+
+---
+
+## 2026-11-16 — Task 4.4: threat perception and the front profile probe
+**Changed** (local, not committed)
+* `core/src/perception.cpp`: moving colliders are perceived as objects (a group, or one ungrouped collider); every fixed step each character gets its most imminent threat (time to collision, miss distance, impact line, closing speed). The first time an object threatens a character its front is probed with rays against that object only (horizontal rays for the front face, vertical rays for the top, every 10 cm, median-of-3): bumper line, leading edge, bonnet, windscreen, roof; predicted trajectory class. Read-only: no effect on the simulation (determinism tests unchanged).
+* C API: `DdColliderDesc.group`, `DdThreat`, `DdFrontProfile`, `DdTrajectory`, `dragdoll_character_get_threat`, `dragdoll_character_get_threat_silhouette`. Recording format 2 (collider group); live tap sends the group.
+* Tests (4, `perception*`): sedan measured exactly (leading edge 0.72 m, bonnet 10 deg, windscreen 29 vs 30 deg); all six packs within tolerance; sedan / sports -> wrap, SUV / van / bus -> forward projection; sphere-built car: leading edge 0.66 m (true 0.72), wrap. Targeted run on x64-release (determinism, replay, recording, live tap, kinematic, colliders, memory, perception): 26 cases green. x86 builds (via dragdoll-sa). Four-preset run still owed.
+* Viewer: probed silhouette drawn over the vehicle, threat line at the bottom left. dragdoll-sa: car parts and wheels share a group per vehicle (built and deployed, not yet run in the game).
+* Correction to the previous entry: humanoid16 **does** have hands (`hand_l`, `hand_r`); the open question about Reach without hands is void.
+
+**Next**
+* Task 4.5 (behaviour SDK + muscles per region) — Fable; or 4.1 (contacts, per-body velocity change, airborne, ground probe) — Opus.
+
+**Open questions**
+* A turning vehicle is extrapolated in a straight line (fine at 2 s; revisit if cornering hits look wrong).
+* In the live mirror the viewer recomputes threats from mirrored motion (speeds about 20 % off at 144 redraws/s); the tap should stream the host's own threat.
+* Forward-projection threshold (leading edge >= 95 % of centre-of-mass height) is ours; the passive baseline (4.3) calibrates it.

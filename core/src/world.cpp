@@ -253,6 +253,7 @@ void World::simulate(uint32_t steps)
     for (uint32_t i = 0; i < steps; ++i)
     {
         driveKinematics(static_cast<double>(mStepCount + 1) * mFixedDt);
+        updatePerception(); // Senses first: what the muscles (and later the behaviours) react to
         for (auto& [characterId, character] : mCharacters) // Ordered by id: deterministic
         {
             if (character->state != DD_STATE_FAILED && !character->kinematic) // Host-animated: no muscles or balance
@@ -580,6 +581,7 @@ void World::addColliders(const DdColliderDesc* descs, uint32_t count, DdCollider
         collider.body = created[i];
         collider.motion = descs[i].motion;
         collider.userData = descs[i].user_data;
+        collider.group = descs[i].group;
         bodies.GetPositionAndRotation(collider.body, collider.currPosition, collider.currRotation);
         collider.prevPosition = collider.currPosition;
         collider.prevRotation = collider.currRotation;
@@ -587,6 +589,13 @@ void World::addColliders(const DdColliderDesc* descs, uint32_t count, DdCollider
         {
             // The trajectory starts where the collider was created, at the current host time.
             collider.samples.push_back(KinematicSample{simTime() + mAccumulator, collider.currPosition, collider.currRotation});
+        }
+        if (collider.motion != DD_MOTION_STATIC)
+        {
+            Object& object = mObjects[objectKey(collider.group, id)];
+            object.group = collider.group;
+            object.members.push_back(id);
+            ++object.revision;
         }
         mColliders.emplace(id, std::move(collider));
         outIds[i] = id;
@@ -604,6 +613,16 @@ void World::removeColliders(const DdColliderId* ids, uint32_t count)
             continue; // Unknown or already removed: ignored by contract.
         }
         mScratchBodies.push_back(it->second.body);
+        if (auto object = mObjects.find(objectKey(it->second.group, ids[i])); object != mObjects.end())
+        {
+            std::vector<DdColliderId>& members = object->second.members;
+            members.erase(std::remove(members.begin(), members.end(), ids[i]), members.end());
+            ++object->second.revision;
+            if (members.empty())
+            {
+                mObjects.erase(object);
+            }
+        }
         mColliders.erase(it);
     }
     if (!mScratchBodies.empty())

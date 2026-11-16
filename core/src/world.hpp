@@ -110,6 +110,8 @@ public:
     const JPH::Vec3& up() const { return mUp; }
     float gravity() const { return mGravity; }
     DdCharacter* characterAt(uint32_t index) const;
+    // The probed front of the character's threat as a world-space polyline, where the object is now (for tools).
+    uint32_t threatSilhouette(const DdCharacter& character, DdVec3* out, uint32_t capacity) const;
 
     JPH::PhysicsSystem& physics() { return *mPhysics; }
 
@@ -130,6 +132,7 @@ private:
         JPH::BodyID body;
         DdMotionType motion = DD_MOTION_STATIC;
         uint64_t userData = 0;
+        uint32_t group = 0;
         JPH::RVec3 prevPosition, currPosition;
         JPH::Quat prevRotation = JPH::Quat::sIdentity(), currRotation = JPH::Quat::sIdentity();
         // Kinematic trajectory: host targets stamped with host time. Every fixed step samples
@@ -139,6 +142,24 @@ private:
         bool hasPending = false;
         KinematicSample pending; // Set by the host; stamped with time in the next step call.
     };
+
+    // Perception (ADR-0024, perception.cpp): moving colliders seen as objects. A group's parts are one object; an
+    // ungrouped collider is an object by itself.
+    struct Object
+    {
+        std::vector<DdColliderId> members;
+        uint32_t group = 0;
+        uint32_t revision = 0; // Bumped when members change (invalidates probed profiles)
+        // Refreshed every fixed step:
+        bool moving = false;
+        JPH::Vec3 velocity = JPH::Vec3::sZero(), direction = JPH::Vec3::sZero(), left = JPH::Vec3::sZero();
+        float front = 0, rear = 0, leftMost = 0, rightMost = 0, bottom = 0, top = 0; // Extents along direction / left / up
+    };
+    static uint64_t objectKey(uint32_t group, DdColliderId id) { return group != 0 ? group : (uint64_t{1} << 32) | id; }
+    void updatePerception();
+    void refreshObjects();
+    void updateThreat(DdCharacter& character);
+    void probeFront(DdCharacter& character, uint64_t key, const Object& object, float lateral, float comHeightWorld);
 
     JPH::Ref<JPH::Shape> createShape(const DdColliderDesc& desc) const;
     void stampPendingTargets(double hostTime);
@@ -169,6 +190,7 @@ private:
     // Colliders, ordered by id so iteration (hashing, capture) is deterministic.
     std::map<DdColliderId, Collider> mColliders;
     DdColliderId mNextColliderId = 1;
+    std::map<uint64_t, Object> mObjects; // Non-static colliders by object key (deterministic order)
     std::vector<JPH::BodyID> mScratchBodies;
 
     // Characters, ordered by id (deterministic iteration).

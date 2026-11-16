@@ -448,6 +448,35 @@ DD_API DdResult DD_CALL dragdoll_character_get_info(const DdCharacter* character
     DD_GUARD_END(DD_ERROR_INTERNAL)
 }
 
+DD_API DdResult DD_CALL dragdoll_character_get_threat(const DdCharacter* character, DdThreat* out)
+{
+    DD_GUARD_BEGIN
+    if (character == nullptr || out == nullptr || out->struct_size != sizeof(DdThreat))
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_get_threat: character and out (with struct_size set) are required");
+    }
+    *out = character->threat;
+    out->struct_size = sizeof(DdThreat);
+    if (out->collider == DD_INVALID_COLLIDER)
+    {
+        const DdFrontProfile none{};
+        *out = DdThreat{};
+        out->struct_size = sizeof(DdThreat);
+        out->profile = none;
+    }
+    return DD_OK;
+    DD_GUARD_END(DD_ERROR_INTERNAL)
+}
+
+DD_API uint32_t DD_CALL dragdoll_character_get_threat_silhouette(const DdCharacter* character, DdVec3* out_points, uint32_t capacity)
+{
+    if (character == nullptr || character->world == nullptr || character->threat.collider == DD_INVALID_COLLIDER)
+    {
+        return 0;
+    }
+    return character->world->threatSilhouette(*character, out_points, capacity);
+}
+
 DD_API DdResult DD_CALL dragdoll_debug_corrupt_character(DdCharacter* character)
 {
     DD_GUARD_BEGIN

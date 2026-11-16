@@ -82,7 +82,7 @@ void LiveTap::collidersAdded(const DdColliderDesc* descs, uint32_t count, const 
         const DdColliderDesc& d = descs[i];
         Json c = {{"id", ids[i]}, {"shape", static_cast<int>(d.shape)}, {"motion", static_cast<int>(d.motion)},
                   {"p", vec(d.transform.position)}, {"q", quat(d.transform.rotation)}, {"radius", d.radius},
-                  {"half_height", d.half_height}, {"half", vec(d.half_extents)}};
+                  {"half_height", d.half_height}, {"half", vec(d.half_extents)}, {"group", d.group}};
         if (d.shape == DD_SHAPE_MESH && d.vertices != nullptr)
         {
             std::vector<float> v;
