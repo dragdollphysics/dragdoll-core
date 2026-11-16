@@ -521,3 +521,46 @@ Crowd question (car through the pier) → cost is linear in awake ragdolls (~70 
 **Open questions**
 * Remote F7/F8 can retrigger if held across a reconnect (rare now that F7 keeps the world).
 * Dynamic map objects (fences, lamp posts) are not level collision yet.
+
+---
+
+## 2026-11-16 — Commit of bridge task 3.7; Phase 4 design (ADR-0024, ADR-0025)
+**Changed**
+* Committed and pushed dragdoll-core `05a1f08` (bridge task 3.7); dragdoll-sa `06bdc94` (local repo). Targeted tests only (x64-release: live tap, kinematic, replay, recording, determinism, failed — 21 cases green); the four-preset run is still owed.
+* **ADR-0024 (Proposed):** senses (contacts, per-body velocity change, self state, threat with time to collision), collider groups, the **front profile probe** (a vehicle's silhouette measured from its own collision geometry: no per-game vehicle tables), the impact report, and the rule that wrap / projection / vault are **measured outcomes of the physics**, with a passive-baseline gate before any behaviour.
+* **ADR-0025 (Proposed):** behaviours command muscles only; reaction clock (reflex 0.1 s, voluntary 0.5 s), vitality, awareness; stages Watch -> Anticipate -> Impact -> Carried -> Airborne -> Landing -> Tumble -> Settle -> Handback; reflex layers Guard / Reach / Curl / Startle; behaviour SDK; v1 exclusions (stepping, diving, get-up).
+* Sources checked online before citing (bibliographic details and abstracts; full texts not read yet — task 4.2).
+* Workplan: Phase 4 split into tasks 4.1-4.10 with estimates and model hints.
+
+**Next**
+* ADR-0024 and ADR-0025 accepted by the founder (2026-11-16).
+* Then task 4.1 (senses I: contacts and self state) — Opus. Fable tasks: 4.2, 4.4, 4.5, 4.6, 4.7.
+
+**Open questions**
+* Values to source in 4.2: body-on-bonnet friction, head-strike times, projection efficiency per class, reflex latency for a whole-body startle.
+* humanoid16 has no separate hands: is the forearm end enough for Reach and break-fall?
+
+---
+
+## 2026-11-16 — ADR-0025 amended: rest poses (one animation slot, nothing left behind)
+**Changed**
+* Founder's design: the chain starts from the host's pose at the hit and ends in the host's own lying pose (face up / face down, read from the game at runtime); the ragdoll is destroyed at handback for every outcome, so crowded scenes leave ordinary game corpses. ADR-0025 §3a; workplan §0 scope, task 4.8, Phase 6 Handback, roadmap (one slot at a time: lying dead, walking, per-part weights).
+
+**Next**
+* Task 4.2, reading half: `docs/reference/pedestrian-impact.md` from the open-access sources (Fable).
+
+---
+
+## 2026-11-16 — Task 4.2, reading (first pass): docs/reference/pedestrian-impact.md
+**Changed**
+* `docs/reference/pedestrian-impact.md`: the literature's numbers for Phase 4, each tagged [read] / [abstract] / [via X] / [ours]. Full texts read: PEDPCREACT final report (CORDIS), Li Q. et al. 2021 (avoidance), Li G. et al. 2021 (head kinematics from 57 real collisions), Simms 2013 (Engineers Journal), Saulić et al. 2020 (throw distance; reports Burg & Moser 2007).
+* Key numbers: head strike 50-140 ms after first contact (77 % of cases), wrap-around distance 1.5-2.3 m (mean 1.84), head speed 83 ± 23 % of vehicle speed, bonnet 39 % / windscreen 61 %; flight 0.45-0.7 s at 33-49 km/h; slide 7.2-8.2 m/s²; road friction 0.66-0.79 (Searle); reaction time 501 ms (young) / 721 ms (older); getting clear needs >= 1.6-1.8 s to collision.
+* ADR-0024 §5 corrected: the throw corridor applies to flight + slide from the separation point (carry is separate), with the launch height term. ADR-0025: Shield has the two observed shapes (cover / fend); §3b records the timing argument for the reaction clock. Workplan 4.2 split; Phase 4 acceptance uses the sourced numbers.
+* Not reachable by automated fetch (repository refuses it, or paywalled): Wood, Simms & Walsh 2005; Bhalla et al. 2002; Ravani 1981; Searle 1983.
+
+**Next**
+* Task 4.1 (senses I: collider groups, contacts, per-body velocity change, airborne, ground probe, landing prediction) — Opus.
+* Founder, optional: download Wood, Simms & Walsh 2005 (TCD TARA, open access) into `dragdoll-core/private/` for the second reading pass.
+
+**Open questions**
+* Body-on-bonnet friction; launch-speed ratio per trajectory type; whole-body startle latencies.

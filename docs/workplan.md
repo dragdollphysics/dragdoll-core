@@ -13,6 +13,8 @@ Games still play the same canned "fall down" clip whether you're hit by a scoote
 ## 0. First Main Goal — DragDoll SA v1
 **A GTA San Andreas (PC classic 1.0 US) mod in which DragDoll takes over pedestrians hit by vehicles.**
 
+> **Scope: one animation slot.** v1 replaces only the game's "hit by a vehicle" animations: DragDoll starts from the ped's pose at the hit and ends in the game's own lying pose, then the ragdoll is destroyed and the game carries on (founder, 2026-11-16). No ragdoll outlives its crash.
+>
 > When an NPC is hit by a vehicle, DragDoll takes over: **pre-impact** (brace/dive if aware) → **impact** → **wrap / roof-vault / forward projection** (depending on vehicle front shape and speed) → **airborne** → **landing** → **ground settle** → **hand back** to the game (death or get-up).
 
 **Ship criteria**
@@ -201,11 +203,24 @@ Planned by **effort hours, not calendar weeks** (total ≈ **460 h** to v1, ±50
 * Later: WebSocket transport for a browser viewer (three.js phase). Dynamic map objects (breakable fences, lamp posts) as level collision. Collision geometry derived from game files stays local (captures, `.ddrec`).
 
 ### Phase 4 — Car-Hit Vertical Slice (~70 h)
-**Goal:** the core experience, end to end, in the workbench.
-* [ ] **Perception:** vehicle time-to-collision, contact classification (bumper / hood / windshield / roof / ground), airborne detection, ground probe, settle detection.
-* [ ] **Behaviour chain** (DragDoll names, final vocabulary in ADR): *Anticipate* (brace hands toward hood or dive, if aware & time allows) → *Impact* (stiffness spike, knee/hip give) → *Wrap / Vault / Project* → *Guard* (protect head, curl) → *Airborne* (flail, prepare landing) → *Landing* (absorb, roll/slide) → *Settle* (injured on ground) → *Handback*.
-* [ ] Reference metrics implemented: impact pattern classification, throw distance, head contact position, contact order, time to settle.
-* **Acceptance:** sedan at 30 km/h produces a wrap with correct contact order in ≥ 90 % of randomized runs; SUV/van produce forward projection; bus never produces a roof vault; no instability 5–120 km/h; human review notes recorded.
+**Goal:** the core experience, end to end, in the workbench. Design: **ADR-0024** (perception; trajectories are measured outcomes, never scripted) and **ADR-0025** (reaction chain: stages, reflex layers, vitality, behaviour SDK) — both accepted by the founder (2026-11-16).
+
+Tasks in dependency order (model hint per task: F = Fable, O = Opus, S = Sonnet):
+* [ ] **4.1 Senses I — contacts and self state** (~6 h, O): collider groups (`DdColliderDesc.group`); contact listener (per body: other collider/group, point, normal, static or moving); per-body Δv; airborne, ground probe, landing prediction, supports. Percept visible in the viewer and `dragdoll_ctl state`. Perf test: <= 0.1 ms per character per step still holds.
+* [~] **4.2 Impact report + reference numbers** (~7 h, F):
+  * [x] Reading, first pass: `docs/reference/pedestrian-impact.md` — trajectory types, head-strike time (50-140 ms), wrap-around distance, head speed, flight and slide values, road friction, the throw equation, pre-crash reactions and reaction times, fall protection; each fact tagged by how it was verified; pass criteria and default parameters derived.
+  * [ ] Reading, second pass (needs PDFs in `/private/`, founder downloads: Wood, Simms & Walsh 2005 from TCD's TARA; Bhalla et al. 2002 IRCOBI): launch-speed ratios per class, speed-vs-distance regressions with confidence limits, body-on-bonnet friction, conditions for fender vault / roof vault / somersault.
+  * [ ] Impact report in code (after 4.1): events, wrap-around distance, launch speed and height, throw distance split into carry / flight / slide, measured class (ADR-0024 §5).
+* [ ] **4.3 Passive baseline** (~6 h, O): limp body x 6 vehicle classes x 10-80 km/h x seeds, headless; a table of measured class, throw distance vs Searle corridor, head-strike zone. **Gate:** sedan -> wrap, SUV / van -> forward projection, bus never a roof vault, no instability 5-120 km/h. Fix rig / vehicle shapes / friction until it holds (founder reviews a sample live).
+* [ ] **4.4 Senses II — threat** (~6 h, F): time to collision + miss distance per group; front profile probe (silhouette polyline, zones, predicted class); checked against the vehicle packs' known profiles and against a sphere-built car.
+* [ ] **4.5 Behaviour SDK + muscles per region** (~8 h, F): `behaviour_sdk.h`, command / percept, tension per region, aim helper (two-bone, joint limits respected), pose library, `packs/behaviours/car_hit.json`, CMake isolation of Layer 1, live reload of the JSON; reaction clock, vitality, awareness (API + recording).
+* [ ] **4.6 Impact + Carried + Guard** (~8 h, F): the handover (kinematic -> dynamic), struck-leg yield, co-contraction, Guard and Curl layers; scenarios per vehicle class; metric: head Δv and head-strike zone vs the passive baseline.
+* [ ] **4.7 Airborne + Landing + Tumble** (~9 h, F): Reach, tuck / extend from angular momentum and time to ground, break-fall, roll-on; metric: first ground contact is a limb, not the head, in >= X % of runs (X set from the baseline); `death_drop` scenario as a cheap landing test (ideas.md).
+* [ ] **4.8 Settle + Handback** (~5 h, O): `set_rest_poses` (host's floor poses: face up / face down); Settle eases into the one matching the body's facing, by vitality; settle detection; facing hints checked on slopes and kerbs; metric: pose error at handback (flat ground, alive) small enough for a short blend; the character is destroyed at handback for every outcome (ADR-0025 §3a).
+* [ ] **4.9 Anticipate** (~6 h, O): Startle and Shield with the two latencies; aware vs unaware runs differ as ADR-0025 predicts.
+* [ ] **4.10 Acceptance sweep + founder review** (~8 h, O/S): randomized runs, success rates, review notes; workplan + devlog; Phase 4 retrospective.
+* **Acceptance:** sedan at 30 km/h produces a wrap with correct contact order in ≥ 90 % of randomized runs; SUV/van produce forward projection; bus never produces a roof vault; head strike 50–140 ms after first contact with a wrap-around distance of 1.5–2.3 m (sedan, adult); flight + slide inside the throw corridor for the measured launch speed (ADR-0024 §5); no instability 5–120 km/h; aware vs unaware vs killed visibly different; human review notes recorded.
+* **In the game, in parallel once 4.6 exists** (dragdoll-sa, pulls Phase 6 forward): the handover on a real hit, pose written back to the ped, root sync (see Phase 6 "Pose override", "Root sync"); smooth car hulls from the game's own parts.
 
 ### Phase 5 — dragdoll-lab (~50 h)
 **Goal:** overnight optimisation of the car-hit chain.
@@ -220,7 +235,7 @@ Planned by **effort hours, not calendar weeks** (total ≈ **460 h** to v1, ±50
 * [~] **Collider streaming:** nearby COL meshes → static proxies; vehicles → kinematic proxies from their COL data with velocity. (Done live in 3.7: buildings + cars; left: dynamic map objects, smooth car hull for sliding bodies.)
 * [ ] **Pose override:** write local bone rotations into the RpHAnim hierarchy after the game's animation update; per-bone weights.
 * [ ] **Root sync:** ped position follows DragDoll root; game physics for that ped suspended while active.
-* [ ] **Handback:** choose game get-up/death animation by face-up/down + heading; blend out.
+* [ ] **Handback** (ADR-0025 §3a): read the game's two floor poses from its own animations at runtime and pass them as rest poses; when settled, move the ped to the ragdoll's root, put the game's hit animation at its end (lying face up / down), blend the remainder, destroy the ragdoll; the game then continues by itself (dead or get-up).
 * [ ] **Tracy profiler zones** (moved from Phase 2, task 2.7): step, solver, character update, collider streaming; first tool for the 1 ms / 8-ragdoll target. Founder installs the Tracy viewer app.
 * [ ] **Outcome tiers + ragdoll budget manager** (founder's idea, 2026-11-12): the host tells DragDoll the outcome when it activates a ped (`DD_OUTCOME_KILLED` / `DD_OUTCOME_SURVIVES`; SA knows the ped's health after the hit).
   * **Killed → limp tier (cheapest):** no muscles, no perception/behaviour work, fewer solver iterations, early sleep; once settled the pose is frozen/handed back as a corpse (≈ zero cost afterwards).
@@ -245,6 +260,7 @@ Planned by **effort hours, not calendar weeks** (total ≈ **460 h** to v1, ±50
 
 ## 5. After v1 (Roadmap, not commitments)
 **Community ports via the Integration Workflow** (other games through their mod loaders; engines like Godot/Unity/Unreal) — the main growth path.
+**One animation slot at a time** (founder, 2026-11-16): after the vehicle hit, the next slots in the same game are the **lying-dead pose** (bodies keep the pose physics left them in), then **walking** and **per-body-part weights from behaviours** (partial overrides, ADR-0017).
 Curriculum order (frequency × visibility): **v2 shots** (`KO_shot_*`) → **v3 falls** (`FALL_*`, `FLOOR_hit*`, high falls) → **ejected from vehicles** (`CAR_fallout_*`, `BIKE_fall_off`) → **explosions** → **melee**. Then:
 * Stepping recovery (Capture-Point stepping, two-bone IK, SIMBICON-style feedback).
 * GTA III / Vice City ports (same plugin, different addresses/rig maps).
