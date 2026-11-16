@@ -486,3 +486,38 @@ Crowd question (car through the pier) → cost is linear in awake ragdolls (~70 
 
 **Open questions**
 * Pushes beyond ~20-25 N*s at the chest topple the body: correct without stepping (a later phase).
+
+---
+
+## 2026-11-13 — Bridge task 3.7: live tap + SA live tools (founder-driven session)
+**Changed** (local, NOT committed; full multi-preset tests NOT run — founder: no heavy builds/tests unless asked)
+* **Live tap** (`core/src/live_tap.*`, dev builds): `dragdoll_world_start/stop_live_tap(port)`; JSON lines over TCP on 127.0.0.1; `scene` (colliders with shapes, characters with rig, names, world id) + `frame` after every host frame (<= 60 Hz: colliders, per character root + joints, state, tension, balance, visible; host camera); frames dropped, never queued. Viewer -> host commands: `show`, `tension`, `balance` (simulation changes go through the C API, so they are recorded).
+* **Library additions:** `dragdoll_character_set_name / set_debug_draw`, `dragdoll_character_set_kinematic` (host-animated bodies: no gravity/muscles/balance, not pushed, push ragdolls; dynamic again keeps momentum — the Phase 4 handover; recorded, type 15; guards skip speed/stretch for kinematic), `dragdoll_world_set_host_camera` (tools only). Tests added: live tap (3), kinematic (3) — run individually, all green.
+* **Viewer attach mode** (`--attach 47830`, `watch.ps1 -Attach`): mirror world from scene/frames (x64 viewer watches the x86 game), quick reconnect, in-place scene updates, Live characters panel (show in game, tension, balance per character), camera modes free / game camera / follow CJ (C), grid on the floor proxy, two-sided drawing, smooth characters (frames buffered by host time, shown 100 ms behind, blended; host camera blended too), **capture for Claude** (Start/Stop + note -> `build/captures/live_*.jsonl` incl. per-redraw `view` samples).
+* **dragdoll-sa:** split into a permanent **loader** (`dragdoll_sa.asi`: hooks, mouse fix) + hot-reloadable **logic** (`dragdoll_sa_logic.dll`) and `dragdoll.dll` run from shadow copies — rebuilds swap in ~1 s without restarting the game (`deploy.ps1` hot-copies while the game runs; loader built with /Brepro). Live tap per world; CJ as a **kinematic puppet** (live skeleton -> sa_ped map -> activate each frame, read in the render callback where bones are current; created at logic start); nearby cars as kinematic collision parts (SA mesh, flipped outward + spheres; no SA car has boxes) with spinning wheel cylinders; host camera.
+* **Founder-found defects, all via live view / captures:** grid at height 0 (SA sits at ~23 m); camera Y-up hid the doll as "below the floor"; F7 froze the view (1 s reconnect); car faces inverted / sides missing (SA winds inward; sides are spheres); puppet bobbing (dynamic puppet vs gravity/floor -> kinematic); choppy walk (bones read one frame late: alternating 10-19 vs 2-4 m/s -> now 5.0-5.5 m/s; viewer buffer margin and camera smoothing).
+
+**Next**
+* Item 3: pedestrians as kinematic puppets with true bind poses from skin data. Then item 4: real terrain + incremental live updates.
+* Before committing: founder-chosen full test run (all presets).
+
+**Open questions**
+* Wheel spin is derived from rotation between frames: correct up to ~half a turn per frame (~120 km/h at 30 fps).
+* Smooth car hull (Phase 4): SA car collision is 13-25 spheres + 4-12 triangles, bumpy for a sliding body.
+
+---
+
+## 2026-11-14 — Bridge task 3.7 continued: SA live tools complete (founder-driven, captures as the feedback loop)
+**Changed** (local, NOT committed in either repo; full multi-preset tests NOT run — founder chooses when)
+* **Library:** debug-draw level of detail (`DD_DRAW_CAMERA_LOD`, `DdDebugDrawCallbacks.camera_position`: Jolt was never told the camera, so every sphere drew at full detail); live tap sends the scene once, then `delta` messages (needed for streamed level meshes); viewer -> host messages (`dragdoll_world_poll_live_message`). Tests: live tap 5 (host messages, deltas), run alone, green.
+* **Viewer:** smooth playback from one clock (characters, cars, game camera; 120 ms behind; rate-tracking clock — the old "pull 10 % per redraw" clock made speed swing ~22 %, measured by replaying captures); cars blended with the characters (the bike no longer leaves CJ behind); mirror characters kinematic (a pose jump "failed" them: CJ vanished after F7 / on a bike); remote control of CJ (click / Esc, sensitivity, invert Y); settings persist; no grid / no floor hiding when the game streams its own level.
+* **dragdoll-sa:** level collision streaming (buildings within 60 m, queued, ~2500 triangles per frame); peds with hysteresis (30/40 m, <= 20, also in vehicles); CJ kept in vehicles; failed puppets rebuilt, non-finite frames skipped; pad hook (loader: `processScriptsEvent` -> `dd_logic_pad`) for remote input; F7 drops into the running world (no per-drop world / `.ddrec`).
+* **Measured from the founder's captures:** viewer 19-59 -> ~144 redraws/s; ped flicker 2 short-lived of 41; game frames > 100 ms 0.4-1.6 % (the game's own hitches, up to ~290 ms).
+
+**Next**
+* Commit both repos after a founder-approved full test run (all presets).
+* Then, in order of reasoning load (see the workplan): capture = session recording with bit-exact replay; Phase 3 retrospective; Phase 4 design (perception + behaviour chain ADR).
+
+**Open questions**
+* Remote F7/F8 can retrigger if held across a reconnect (rare now that F7 keeps the world).
+* Dynamic map objects (fences, lamp posts) are not level collision yet.

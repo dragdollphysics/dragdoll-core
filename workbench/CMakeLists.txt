@@ -40,7 +40,7 @@ if(MSVC)
     target_compile_options(dragdoll_imgui PRIVATE /W0 /utf-8)
 endif()
 
-add_executable(dragdoll_view main.cpp hot_reload.cpp command_server.cpp)
+add_executable(dragdoll_view main.cpp hot_reload.cpp command_server.cpp live_client.cpp)
 # Hot reload (task 2.4): dragdoll.dll is delay-loaded from a shadow copy and can be unloaded and swapped at run time.
 target_link_options(dragdoll_view PRIVATE /DELAYLOAD:dragdoll.dll /DELAY:UNLOAD)
 target_link_libraries(dragdoll_view PRIVATE delayimp ws2_32)

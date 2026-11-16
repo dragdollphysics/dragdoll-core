@@ -72,6 +72,10 @@ DD_API DdResult DD_CALL dragdoll_character_create(DdWorld* world, const DdCharac
         {
             world->recorder->characterCreate((*out_character)->id, *desc);
         }
+        if (world->tap)
+        {
+            world->tap->characterCreated((*out_character)->id, *desc);
+        }
     }
     catch (const std::invalid_argument& e)
     {
@@ -90,6 +94,10 @@ DD_API void DD_CALL dragdoll_character_destroy(DdCharacter* character)
             if (dragdoll::rec::Recorder* recorder = recorderOf(character))
             {
                 recorder->characterDestroy(character->id);
+            }
+            if (auto* handle = static_cast<DdWorld*>(character->world->owner()); handle != nullptr && handle->tap)
+            {
+                handle->tap->characterDestroyed(character->id);
             }
             character->world->destroyCharacter(character);
         }
@@ -177,6 +185,42 @@ DD_API DdResult DD_CALL dragdoll_character_apply_impulse(DdCharacter* character,
     }
     return DD_OK;
     DD_GUARD_END(DD_ERROR_INTERNAL)
+}
+
+DD_API DdResult DD_CALL dragdoll_character_set_name(DdCharacter* character, const char* name)
+{
+    DD_GUARD_BEGIN
+    if (character == nullptr)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_set_name: character is required");
+    }
+    character->name = name != nullptr ? name : "";
+    if (auto* handle = static_cast<DdWorld*>(character->world->owner()); handle != nullptr && handle->tap)
+    {
+        handle->tap->characterRenamed(character->id, character->name);
+    }
+    return DD_OK;
+    DD_GUARD_END(DD_ERROR_INTERNAL)
+}
+
+DD_API const char* DD_CALL dragdoll_character_get_name(const DdCharacter* character)
+{
+    return character != nullptr ? character->name.c_str() : "";
+}
+
+DD_API DdResult DD_CALL dragdoll_character_set_debug_draw(DdCharacter* character, int visible)
+{
+    if (character == nullptr)
+    {
+        return DD_ERROR_INVALID_ARGUMENT;
+    }
+    character->debugVisible = visible != 0;
+    return DD_OK;
+}
+
+DD_API int DD_CALL dragdoll_character_get_debug_draw(const DdCharacter* character)
+{
+    return character != nullptr && character->debugVisible ? 1 : 0;
 }
 
 DD_API float DD_CALL dragdoll_character_get_body_mass(const DdCharacter* character, uint32_t body)
@@ -311,6 +355,31 @@ DD_API DdResult DD_CALL dragdoll_character_get_pose(const DdCharacter* character
     }
     return DD_OK;
     DD_GUARD_END(DD_ERROR_INTERNAL)
+}
+
+DD_API DdResult DD_CALL dragdoll_character_set_kinematic(DdCharacter* character, int kinematic)
+{
+    DD_GUARD_BEGIN
+    if (character == nullptr)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_set_kinematic: character is required");
+    }
+    if (character->state == DD_STATE_FAILED)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_set_kinematic: the character has FAILED (destroy it and use the host animation)");
+    }
+    character->world->setCharacterKinematic(*character, kinematic != 0);
+    if (dragdoll::rec::Recorder* recorder = recorderOf(character))
+    {
+        recorder->kinematic(character->id, kinematic != 0);
+    }
+    return DD_OK;
+    DD_GUARD_END(DD_ERROR_INTERNAL)
+}
+
+DD_API int DD_CALL dragdoll_character_get_kinematic(const DdCharacter* character)
+{
+    return character != nullptr && character->kinematic ? 1 : 0;
 }
 
 DD_API DdResult DD_CALL dragdoll_character_activate(DdCharacter* character, const DdTransform* previous_root,

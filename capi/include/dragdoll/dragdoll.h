@@ -279,6 +279,14 @@ DD_API DdResult DD_CALL dragdoll_character_get_body_transforms(const DdCharacter
 DD_API DdResult DD_CALL dragdoll_character_apply_impulse(DdCharacter* character, uint32_t body, DdVec3 impulse,
                                                          const DdVec3* world_point);
 
+/* A display name for tools (live view, inspect), e.g. "CJ (puppet)". Copied; NULL clears it. */
+DD_API DdResult DD_CALL dragdoll_character_set_name(DdCharacter* character, const char* name);
+DD_API const char* DD_CALL dragdoll_character_get_name(const DdCharacter* character); /* "" if unnamed */
+
+/* Whether dragdoll_world_debug_draw draws this character (default 1). A live-tap viewer can switch it remotely. */
+DD_API DdResult DD_CALL dragdoll_character_set_debug_draw(DdCharacter* character, int visible);
+DD_API int DD_CALL dragdoll_character_get_debug_draw(const DdCharacter* character);
+
 /* Mass of one body in kg as simulated (0 for an invalid index). */
 DD_API float DD_CALL dragdoll_character_get_body_mass(const DdCharacter* character, uint32_t body);
 
@@ -332,6 +340,13 @@ DD_API DdResult DD_CALL dragdoll_character_get_pose(const DdCharacter* character
  * pose over `dt` seconds, so a walking or falling character keeps its momentum when physics takes over. Pass NULL as
  * previous_root to start at rest; NULL joint arrays mean the rest pose. `count` = body count (when arrays are given).
  * Also sets the target pose to the current pose, so muscles hold the handed-over pose until the host sets another. */
+/* Kinematic mode: the host animates the character (e.g. the player, or a pedestrian before it is hit). Its bodies
+ * then move only through dragdoll_character_activate (pose + velocity), ignore gravity, muscles and balance, cannot be
+ * pushed, do not collide with static or other kinematic shapes, but push dynamic bodies (ragdolls) with their full
+ * motion. Switching back to dynamic keeps the current velocities: the handover when the character gets hit. */
+DD_API DdResult DD_CALL dragdoll_character_set_kinematic(DdCharacter* character, int kinematic);
+DD_API int DD_CALL dragdoll_character_get_kinematic(const DdCharacter* character);
+
 DD_API DdResult DD_CALL dragdoll_character_activate(DdCharacter* character, const DdTransform* previous_root,
                                                     const DdQuat* previous_joints, const DdTransform* current_root,
                                                     const DdQuat* current_joints, uint32_t count, float dt);
@@ -426,6 +441,22 @@ DD_API DdResult DD_CALL dragdoll_world_record_note(DdWorld* world, const char* t
 /* 1 if this world is being recorded. */
 DD_API int DD_CALL dragdoll_world_is_recording(const DdWorld* world);
 
+/* Live tap (dev builds, Windows; DD_ERROR_UNSUPPORTED otherwise): streams this world — DragDoll's proxy colliders and
+ * characters, nothing else — to a viewer on 127.0.0.1:port as JSON lines (`dragdoll_view --attach port`). Start it
+ * right after creating the world, so it sees every collider and character. Frames are dropped, never queued, when the
+ * viewer lags: the host never waits. */
+DD_API DdResult DD_CALL dragdoll_world_start_live_tap(DdWorld* world, uint16_t port);
+DD_API void DD_CALL dragdoll_world_stop_live_tap(DdWorld* world);
+
+/* Messages the viewer addresses to the host itself (e.g. input forwarded from the viewer), oldest first. Copies the next
+ * one into buffer (NUL-terminated, cut to capacity - 1) and returns its full length; returns 0 when there is none (or no
+ * tap). Not simulated, not recorded: the host decides what a message means. */
+DD_API uint32_t DD_CALL dragdoll_world_poll_live_message(DdWorld* world, char* buffer, uint32_t capacity);
+
+/* For tools only (not simulated, not recorded): the host's camera — world position, view direction, up and VERTICAL
+ * field of view in degrees. Sent with every live-tap frame so a viewer can show the host's own view. */
+DD_API void DD_CALL dragdoll_world_set_host_camera(DdWorld* world, DdVec3 position, DdVec3 forward, DdVec3 up, float fov_degrees);
+
 typedef struct DdReplay DdReplay;
 
 typedef struct DdReplayInfo
@@ -474,6 +505,7 @@ DD_API void DD_CALL dragdoll_replay_close(DdReplay* replay);
 #define DD_DRAW_CONSTRAINTS 0x2u       /* Joint frames. */
 #define DD_DRAW_CONSTRAINT_LIMITS 0x4u /* Joint limits: where each joint may bend. */
 #define DD_DRAW_SKIP_STATIC 0x8u       /* Leave out static bodies (proxy level geometry the host already renders). */
+#define DD_DRAW_CAMERA_LOD 0x10u       /* Coarser detail for distant shapes, from camera_position (much faster). */
 
 typedef struct DdDebugDrawCallbacks
 {
@@ -482,6 +514,7 @@ typedef struct DdDebugDrawCallbacks
     void(DD_CALL* line)(void* user, DdVec3 from, DdVec3 to, uint32_t color);
     void(DD_CALL* triangle)(void* user, DdVec3 a, DdVec3 b, DdVec3 c, uint32_t color);
     uint32_t flags;       /* DD_DRAW_* bits; 0 = DD_DRAW_SHAPES */
+    DdVec3 camera_position; /* With DD_DRAW_CAMERA_LOD: the viewpoint that picks each shape's level of detail. */
 } DdDebugDrawCallbacks;
 
 /* Either callback may be NULL to skip that primitive type. */

@@ -109,6 +109,10 @@ DdFailure checkHealth(const DdCharacter& c, float dt)
             return DD_FAILURE_NOT_FINITE;
         }
     }
+    if (c.kinematic)
+    {
+        return DD_FAILURE_NONE; // Host-animated: teleports (entering a car, a cutscene) are legitimate
+    }
     for (size_t i = 0; i < c.currPosition.size(); ++i)
     {
         if (static_cast<float>((c.currPosition[i] - c.prevPosition[i]).Length()) / dt > kMaxSpeed)

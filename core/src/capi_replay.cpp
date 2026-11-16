@@ -160,6 +160,17 @@ void apply(DdReplay& replay, const RecordView& record)
     case Record::Note:
         replay.note = in.string();
         break;
+    case Record::Kinematic: {
+        const uint32_t id = in.u32();
+        const bool kinematic = in.u8() != 0;
+        auto it = replay.characters.find(id);
+        if (it == replay.characters.end())
+        {
+            throw std::runtime_error("replay: kinematic switch on an unknown character");
+        }
+        world.setCharacterKinematic(*it->second, kinematic);
+        break;
+    }
     case Record::Balance: {
         const uint32_t id = in.u32();
         const bool enabled = in.u8() != 0;

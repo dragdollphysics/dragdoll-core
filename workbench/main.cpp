@@ -13,6 +13,7 @@
 
 #include "command_server.hpp"
 #include "hot_reload.hpp"
+#include "live_client.hpp"
 
 #include <imgui.h>
 #include <nlohmann/json.hpp>
@@ -23,6 +24,9 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <ctime>
+#include <deque>
+#include <map>
 #include <fstream>
 #include <sstream>
 #include <random>
@@ -131,8 +135,13 @@ struct OrbitCamera
     float azimuth = 0.9f;
     float elevation = 0.45f;
 
+    // Live "Game camera" mode: the view comes from the host instead of the orbit.
+    bool hasOverride = false;
+    Camera3D overrideCam{};
+
     Camera3D build() const
     {
+        if (hasOverride) return overrideCam;
         Vector3 e1, e2;
         horizontalBasis(up, e1, e2);
         const Vector3 horizontal = Vector3Add(Vector3Scale(e1, std::cos(azimuth)), Vector3Scale(e2, std::sin(azimuth)));
@@ -169,14 +178,14 @@ struct OrbitCamera
     }
 };
 
-void drawGrid(const OrbitCamera& cam)
+void drawGrid(const OrbitCamera& cam, float height)
 {
     Vector3 e1, e2;
     horizontalBasis(cam.up, e1, e2);
     const float snap = 5.0f;
     const Vector3 centre = Vector3Add(Vector3Scale(e1, std::round(Vector3DotProduct(cam.target, e1) / snap) * snap),
                                       Vector3Scale(e2, std::round(Vector3DotProduct(cam.target, e2) / snap) * snap));
-    const Vector3 lift = Vector3Add(centre, Vector3Scale(cam.up, 0.004f));
+    const Vector3 lift = Vector3Add(centre, Vector3Scale(cam.up, height + 0.004f));
     rlBegin(RL_LINES);
     for (int i = -30; i <= 30; ++i)
     {
@@ -196,9 +205,11 @@ void drawGrid(const OrbitCamera& cam)
 
 // When the camera dips under the floor, everything that lies entirely at or below the floor plane (the ground slab)
 // is hidden so the scene stays visible from below; the grid is still drawn.
+float gFloorHeight = 0.0f; // Height of the floor plane along up (game sessions sit far above 0)
+
 bool belowFloor(const Vector3& v, const Vector3& up)
 {
-    return Vector3DotProduct(v, up) <= 0.001f;
+    return Vector3DotProduct(v, up) <= gFloorHeight + 0.001f;
 }
 
 void drawGeometry(const Geometry& geometry, unsigned char alpha = 255, const Vector3* hideBelowUp = nullptr)
@@ -232,6 +243,7 @@ void drawGeometry(const Geometry& geometry, unsigned char alpha = 255, const Vec
         rlVertex3f(l.b.x, l.b.y, l.b.z);
     }
     rlEnd();
+    rlDrawRenderBatchActive(); // Draw the batch now: culling must still be off when it is flushed (both sides visible)
     rlEnableBackfaceCulling();
 }
 
@@ -308,6 +320,67 @@ struct App
     // Hot reload of dragdoll.dll (task 2.4)
     bool hotEnabled = false;
     std::string commandStatus; // Command channel (task 2.7)
+
+    // Live tap (bridge task 3.7): --attach <port> mirrors a world streamed by a running host (e.g. the SA game).
+    int attachPort = 0;
+    DdWorld* live = nullptr;                       // Mirror world: rebuilt from "scene", posed from "frame"
+    std::map<uint32_t, DdColliderId> liveColliders; // Host collider id -> mirror id
+    std::vector<DdCharacter*> liveCharacters;      // In host id order
+    std::map<uint32_t, DdCharacter*> liveById;     // Host character id -> mirror character
+    struct LiveCharacter
+    {
+        uint32_t id;
+        std::string name;
+        bool visible;
+        int tension = 0;
+        bool balance = false;
+    };
+    std::vector<LiveCharacter> liveList;           // For the panel (from scene + frames)
+    // Smooth live motion: frames are buffered with the host's simulation time and shown ~50 ms in the past,
+    // interpolated, so uneven host frames (e.g. 33/47 ms) do not look choppy.
+    struct LivePose
+    {
+        DdTransform root;
+        std::vector<DdQuat> joints;
+    };
+    struct LiveFrame
+    {
+        double time = 0.0; // Host simulation seconds (step / 120)
+        std::map<uint32_t, LivePose> characters;
+        std::map<uint32_t, DdTransform> colliders; // Moving proxies (cars), by host id
+        bool hasCamera = false;
+        Vector3 cameraPosition{}, cameraForward{}, cameraUp{};
+        float cameraFov = 60.0f;
+    };
+    std::deque<LiveFrame> liveBuffer;
+
+    // Capture (founder -> Claude): everything the host streams, with arrival times, plus a note on what to look at.
+    nlohmann::json sceneWorld;                         // The host's scene, kept current by "scene" + "delta"
+    std::map<uint32_t, nlohmann::json> sceneColliders;  // messages (host id -> description). A capture starts with
+    std::map<uint32_t, nlohmann::json> sceneCharacters; // it, so it stands on its own
+    std::ofstream capture;
+    std::string capturePath, lastCapture;
+    double captureStart = 0.0;
+    uint64_t captureLines = 0;
+    bool askCaptureNote = false;
+    char captureNote[2048] = {};
+    double liveClock = -1.0;
+    int cameraMode = 0;                            // Live view: 0 free, 1 game camera, 2 follow CJ
+    bool controlling = false;                      // Game camera mode: keyboard + mouse go to the game (Esc releases)
+    bool controlSkipLeft = false;                  // The click that took control is not a shot
+    float mouseSensitivity = 0.3f;                 // Remote control: viewer pixels -> game mouse units
+    bool mouseInvertY = true;                      // The game's vertical mouse axis is the opposite of the screen's
+    bool hasHostCamera = false;
+    Camera3D hostCamera{};
+    float liveFloor = 0.0f;                        // Floor height for the grid (top of the floor proxy)
+    bool liveHasFloor = false;
+    float lowestSeen = 1e9f;                       // Replays: lowest body height seen so far
+    uint64_t liveWorldId = 0;
+    bool liveConnected = false;
+    double liveLostAt = -1.0;                     // When the link dropped (-1: connected)
+    bool liveFocusPending = false;
+    uint64_t liveStep = 0, liveFrames = 0;
+    std::vector<std::string> liveStatus;          // Per character, for the HUD
     double hotNextCheck = 0.0;
     std::string hotStatus;
 
@@ -320,10 +393,58 @@ struct App
     std::string rigStatus;
 };
 
-// While a note is being typed, hotkeys are off.
+// While a note is being typed, or the game is being controlled, hotkeys are off.
 bool keyPressed(const App& app, int key)
 {
-    return !app.noteEditing && !ImGui::GetIO().WantCaptureKeyboard && IsKeyPressed(key);
+    return !app.noteEditing && !app.controlling && !ImGui::GetIO().WantCaptureKeyboard && IsKeyPressed(key);
+}
+
+// Remote control (game camera mode): the viewer's keyboard and mouse, sent to the host as
+// "input <dx> <dy> <buttons> <virtual-key codes...>" every frame. Key codes are Windows virtual keys, so the host needs
+// no knowledge of the viewer's window library.
+void sendRemoteInput(App& app, bool release)
+{
+    std::string data = "input 0 0 0";
+    if (!release)
+    {
+        static const std::pair<int, int> kKeys[] = {
+            {KEY_SPACE, 0x20}, {KEY_ENTER, 0x0D}, {KEY_TAB, 0x09}, {KEY_BACKSPACE, 0x08}, {KEY_LEFT_SHIFT, 0xA0},
+            {KEY_RIGHT_SHIFT, 0xA1}, {KEY_LEFT_CONTROL, 0xA2}, {KEY_RIGHT_CONTROL, 0xA3}, {KEY_LEFT_ALT, 0xA4},
+            {KEY_CAPS_LOCK, 0x14}, {KEY_LEFT, 0x25}, {KEY_UP, 0x26}, {KEY_RIGHT, 0x27}, {KEY_DOWN, 0x28}};
+        if (!IsMouseButtonDown(MOUSE_BUTTON_LEFT)) app.controlSkipLeft = false;
+        const Vector2 d = GetMouseDelta();
+        const int buttons = (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && !app.controlSkipLeft ? 1 : 0) |
+                            (IsMouseButtonDown(MOUSE_BUTTON_RIGHT) ? 2 : 0) | (IsMouseButtonDown(MOUSE_BUTTON_MIDDLE) ? 4 : 0);
+        char head[64];
+        const float dy = app.mouseInvertY ? -d.y : d.y;
+        std::snprintf(head, sizeof(head), "input %.2f %.2f %d", d.x * app.mouseSensitivity, dy * app.mouseSensitivity, buttons);
+        data = head;
+        for (int k = KEY_A; k <= KEY_Z; ++k) // Letters and digits share their codes with Windows virtual keys
+            if (IsKeyDown(k)) data += " " + std::to_string(k);
+        for (int k = KEY_ZERO; k <= KEY_NINE; ++k)
+            if (IsKeyDown(k)) data += " " + std::to_string(k);
+        for (int f = 0; f < 12; ++f)
+            if (IsKeyDown(KEY_F1 + f)) data += " " + std::to_string(0x70 + f);
+        for (const auto& [key, vk] : kKeys)
+            if (IsKeyDown(key)) data += " " + std::to_string(vk);
+    }
+    live::send(nlohmann::json{{"t", "host"}, {"data", data}}.dump());
+}
+
+void setControlling(App& app, bool on)
+{
+    if (app.controlling == on) return;
+    app.controlling = on;
+    if (on)
+    {
+        app.controlSkipLeft = true;
+        DisableCursor();
+    }
+    else
+    {
+        sendRemoteInput(app, true);
+        EnableCursor();
+    }
 }
 
 std::string shotPathFor(const std::string& recordPath, uint64_t step)
@@ -402,6 +523,7 @@ void drawNoteBox(const App& app)
 
 DdWorld* activeWorld(App& app)
 {
+    if (app.attachPort > 0) return app.live;
     return app.replay != nullptr ? dragdoll_replay_get_world(app.replay) : app.main.world;
 }
 
@@ -473,6 +595,7 @@ bool openReplay(App& app, bool resetCamera)
     app.replayAccumulator = 0.0;
     app.replayNote.clear();
     app.replayNoteTimer = 0.0;
+    app.lowestSeen = 1e9f;
     if (resetCamera)
     {
         app.camera.up = Vector3Normalize(toRay(app.replayInfo.up));
@@ -486,7 +609,7 @@ bool openReplay(App& app, bool resetCamera)
 // Centres the camera on the first character's root body (e.g. SA recordings sit at map coordinates ~km from 0).
 bool focusCharacter(App& app)
 {
-    DdWorld* world = app.replay != nullptr ? dragdoll_replay_get_world(app.replay) : app.main.world;
+    DdWorld* world = activeWorld(app);
     DdCharacter* c = world != nullptr ? dragdoll_world_get_character(world, 0) : nullptr;
     if (c == nullptr)
     {
@@ -1129,7 +1252,7 @@ std::string handleCommand(App& app, BodyMotion& motion, const std::string& line)
     in >> cmd;
     auto ok = [](json extra = json::object()) { extra["ok"] = true; return extra.dump(); };
     auto bad = [](const std::string& why) { return json{{"ok", false}, {"error", why}}.dump(); };
-    const bool replaying = app.replay != nullptr;
+    const bool replaying = app.replay != nullptr || app.attachPort > 0;
 
     if (cmd == "help" || cmd.empty())
     {
@@ -1196,8 +1319,8 @@ std::string handleCommand(App& app, BodyMotion& motion, const std::string& line)
         uint64_t hash = 0;
         dragdoll_world_compute_state_hash(world, &hash);
         const uint64_t step = dragdoll_world_get_step_count(world);
-        json state = {{"mode", replaying ? "replay" : "scenario"},
-                      {"name", replaying ? app.replayPath : app.names[app.scenarioIndex]},
+        json state = {{"mode", app.attachPort > 0 ? "live" : replaying ? "replay" : "scenario"},
+                      {"name", app.attachPort > 0 ? "127.0.0.1:" + std::to_string(app.attachPort) : replaying ? app.replayPath : app.names[app.scenarioIndex]},
                       {"step", step}, {"time", static_cast<double>(step) / 120.0}, {"paused", app.paused},
                       {"library", hot::generation()}, // Live-reload copy in use: scripts wait for it to change
                       {"hash", [&] { char b[20]; std::snprintf(b, sizeof(b), "%016llx", static_cast<unsigned long long>(hash)); return std::string(b); }()}};
@@ -1303,11 +1426,603 @@ std::string handleCommand(App& app, BodyMotion& motion, const std::string& line)
     return bad("unknown command: " + cmd + " (try help)");
 }
 
+// ------------------------------------------------------------------------------------------------
+// Live tap mirror (bridge task 3.7)
+// ------------------------------------------------------------------------------------------------
+DdVec3 jsonVec(const nlohmann::json& j)
+{
+    return DdVec3{j[0].get<float>(), j[1].get<float>(), j[2].get<float>()};
+}
+DdQuat jsonQuat(const nlohmann::json& j)
+{
+    return DdQuat{j[0].get<float>(), j[1].get<float>(), j[2].get<float>(), j[3].get<float>()};
+}
+
+DdColliderDesc liveColliderDesc(const nlohmann::json& c, std::vector<DdVec3>& vertices, std::vector<uint32_t>& indices)
+{
+    DdColliderDesc d;
+    dragdoll_collider_desc_default(&d);
+    d.shape = static_cast<DdShapeType>(c["shape"].get<int>());
+    d.motion = c["motion"].get<int>() == DD_MOTION_STATIC ? DD_MOTION_STATIC : DD_MOTION_KINEMATIC; // Moved by frames
+    d.transform.position = jsonVec(c["p"]);
+    d.transform.rotation = jsonQuat(c["q"]);
+    d.radius = c["radius"].get<float>();
+    d.half_height = c["half_height"].get<float>();
+    d.half_extents = jsonVec(c["half"]);
+    if (c.contains("vertices"))
+    {
+        const std::vector<float> flat = c["vertices"].get<std::vector<float>>();
+        for (size_t k = 0; k + 2 < flat.size(); k += 3) vertices.push_back(DdVec3{flat[k], flat[k + 1], flat[k + 2]});
+        d.vertices = vertices.data();
+        d.vertex_count = static_cast<uint32_t>(vertices.size());
+        if (c.contains("indices"))
+        {
+            indices = c["indices"].get<std::vector<uint32_t>>();
+            d.indices = indices.data();
+            d.index_count = static_cast<uint32_t>(indices.size());
+        }
+    }
+    return d;
+}
+
+// The host's scene as last received ("scene", then "delta" messages). Captures start with it.
+nlohmann::json composeLiveScene(const App& app)
+{
+    nlohmann::json colliders = nlohmann::json::array(), characters = nlohmann::json::array();
+    for (const auto& [id, c] : app.sceneColliders) colliders.push_back(c);
+    for (const auto& [id, c] : app.sceneCharacters) characters.push_back(c);
+    return nlohmann::json{{"t", "scene"}, {"world", app.sceneWorld}, {"colliders", colliders}, {"characters", characters}};
+}
+
+void addLiveCollider(App& app, const nlohmann::json& c)
+{
+    const uint32_t hostId = c["id"].get<uint32_t>();
+    if (app.liveColliders.count(hostId) != 0) return;
+    std::vector<DdVec3> vertices;
+    std::vector<uint32_t> indices;
+    const DdColliderDesc d = liveColliderDesc(c, vertices, indices);
+    DdColliderId id = DD_INVALID_COLLIDER;
+    if (dragdoll_world_add_colliders(app.live, &d, 1, &id) == DD_OK) app.liveColliders[hostId] = id;
+}
+
+void removeLiveCollider(App& app, uint32_t hostId)
+{
+    auto it = app.liveColliders.find(hostId);
+    if (it == app.liveColliders.end()) return;
+    dragdoll_world_remove_colliders(app.live, &it->second, 1);
+    app.liveColliders.erase(it);
+}
+
+void addLiveCharacter(App& app, const nlohmann::json& c)
+{
+    const uint32_t hostId = c["id"].get<uint32_t>();
+    if (app.liveById.count(hostId) != 0) return;
+    const std::string rig = c["rig"].get<std::string>();
+    DdCharacterDesc d;
+    dragdoll_character_desc_default(&d);
+    d.rig_json = rig.c_str();
+    d.transform.position = jsonVec(c["p"]);
+    d.transform.rotation = jsonQuat(c["q"]);
+    d.mass_scale = c["mass_scale"].get<float>();
+    DdCharacter* ch = nullptr;
+    if (dragdoll_character_create(app.live, &d, &ch) != DD_OK) return;
+    // The mirror only shows the host's poses, which jump (new world, catching up after a hitch, a car at speed): a
+    // simulated copy would read a jump as an explosion and fail (vanish). Kinematic copies accept any jump.
+    dragdoll_character_set_kinematic(ch, 1);
+    app.liveById[hostId] = ch;
+}
+
+void removeLiveCharacter(App& app, uint32_t hostId)
+{
+    auto it = app.liveById.find(hostId);
+    if (it == app.liveById.end()) return;
+    dragdoll_character_destroy(it->second);
+    app.liveById.erase(it);
+}
+
+// After any scene change: the grid height and the characters panel (each entry keeps its "visible" choice).
+void refreshLiveDerived(App& app)
+{
+    // The grid lies on the floor: the top of the largest static box (e.g. the SA mod's floor proxy).
+    const Vector3 up = Vector3Normalize(toRay(jsonVec(app.sceneWorld["up"])));
+    float bestArea = 0.0f;
+    app.liveHasFloor = false;
+    for (const auto& [id, c] : app.sceneColliders)
+    {
+        if (c["motion"].get<int>() != DD_MOTION_STATIC || c["shape"].get<int>() != DD_SHAPE_BOX) continue;
+        const Vector3 half = toRay(jsonVec(c["half"]));
+        const float alongUp = std::fabs(half.x * up.x) + std::fabs(half.y * up.y) + std::fabs(half.z * up.z);
+        const float area = (half.x * half.y * half.z) / std::max(alongUp, 1e-3f);
+        if (area > bestArea)
+        {
+            bestArea = area;
+            app.liveFloor = Vector3DotProduct(toRay(jsonVec(c["p"])), up) + alongUp;
+            app.liveHasFloor = true;
+        }
+    }
+    std::map<uint32_t, bool> visible;
+    for (const App::LiveCharacter& entry : app.liveList) visible[entry.id] = entry.visible;
+    app.liveCharacters.clear();
+    app.liveList.clear();
+    for (const auto& [hostId, c] : app.sceneCharacters)
+    {
+        auto it = app.liveById.find(hostId);
+        if (it == app.liveById.end()) continue;
+        app.liveCharacters.push_back(it->second);
+        const std::string name = c.value("name", std::string());
+        app.liveList.push_back({hostId, name.empty() ? "character " + std::to_string(hostId) : name,
+                                visible.count(hostId) != 0 ? visible[hostId] : true});
+    }
+}
+
+// Applies a whole scene (sent when the viewer connects): a new host world (new id) is rebuilt; the same world is
+// updated in place (only what changed), so reconnecting does not reset the view.
+void rebuildLive(App& app, const nlohmann::json& scene)
+{
+    const uint64_t worldId = scene["world"].value("id", uint64_t{0});
+    const bool sameWorld = app.live != nullptr && worldId == app.liveWorldId;
+    if (!sameWorld)
+    {
+        const DdVec3 previousFocus{app.camera.target.x, app.camera.target.y, app.camera.target.z};
+        const bool hadScene = app.live != nullptr;
+        dragdoll_world_destroy(app.live);
+        app.live = nullptr;
+        app.liveColliders.clear();
+        app.liveById.clear();
+        DdWorldDesc desc;
+        dragdoll_world_desc_default(&desc);
+        desc.up = jsonVec(scene["world"]["up"]);
+        desc.gravity = 0.0f; // The mirror only shows poses; it never simulates on its own
+        if (dragdoll_world_create(&desc, &app.live) != DD_OK)
+        {
+            app.error = std::string("live mirror: ") + dragdoll_last_error_message();
+            return;
+        }
+        app.liveWorldId = worldId;
+        app.liveStep = 0;
+        app.liveBuffer.clear();
+        app.liveClock = -1.0;
+        app.lowestSeen = 1e9f;
+        app.camera.setUp(Vector3Normalize(toRay(desc.up))); // e.g. San Andreas is Z-up
+        // Look at the new scene only if it is somewhere else (a new F7 drop next to the old one keeps the camera).
+        app.liveFocusPending = !hadScene;
+        if (hadScene && !scene["characters"].empty())
+        {
+            const DdVec3 p = jsonVec(scene["characters"][0]["p"]);
+            const float dx = p.x - previousFocus.x, dy = p.y - previousFocus.y, dz = p.z - previousFocus.z;
+            app.liveFocusPending = dx * dx + dy * dy + dz * dz > 15.0f * 15.0f;
+        }
+    }
+    app.sceneWorld = scene["world"];
+    app.sceneColliders.clear();
+    app.sceneCharacters.clear();
+    for (const nlohmann::json& c : scene["colliders"]) app.sceneColliders[c["id"].get<uint32_t>()] = c;
+    for (const nlohmann::json& c : scene["characters"]) app.sceneCharacters[c["id"].get<uint32_t>()] = c;
+    // Remove the gone, add the new.
+    std::vector<uint32_t> gone;
+    for (const auto& [hostId, id] : app.liveColliders)
+        if (app.sceneColliders.count(hostId) == 0) gone.push_back(hostId);
+    for (uint32_t hostId : gone) removeLiveCollider(app, hostId);
+    for (const auto& [hostId, c] : app.sceneColliders) addLiveCollider(app, c);
+    gone.clear();
+    for (const auto& [hostId, ch] : app.liveById)
+        if (app.sceneCharacters.count(hostId) == 0) gone.push_back(hostId);
+    for (uint32_t hostId : gone) removeLiveCharacter(app, hostId);
+    for (const auto& [hostId, c] : app.sceneCharacters) addLiveCharacter(app, c);
+    refreshLiveDerived(app);
+}
+
+// Applies what changed since the last scene or delta: removals first, then additions (adding a known id updates its
+// description, e.g. a renamed character).
+void applyLiveDelta(App& app, const nlohmann::json& delta)
+{
+    if (app.live == nullptr || delta.value("world", uint64_t{0}) != app.liveWorldId) return; // Wait for the scene
+    const nlohmann::json none = nlohmann::json::array();
+    for (const nlohmann::json& id : delta.value("colliders_remove", none))
+    {
+        app.sceneColliders.erase(id.get<uint32_t>());
+        removeLiveCollider(app, id.get<uint32_t>());
+    }
+    for (const nlohmann::json& id : delta.value("characters_remove", none))
+    {
+        app.sceneCharacters.erase(id.get<uint32_t>());
+        removeLiveCharacter(app, id.get<uint32_t>());
+    }
+    for (const nlohmann::json& c : delta.value("colliders_add", none))
+    {
+        app.sceneColliders[c["id"].get<uint32_t>()] = c;
+        addLiveCollider(app, c);
+    }
+    for (const nlohmann::json& c : delta.value("characters_add", none))
+    {
+        app.sceneCharacters[c["id"].get<uint32_t>()] = c;
+        addLiveCharacter(app, c);
+    }
+    refreshLiveDerived(app);
+}
+
+void applyLiveFrame(App& app, const nlohmann::json& frame)
+{
+    if (app.live == nullptr) return;
+    // Characters, moving proxies (cars) and the host camera: buffered and blended every redraw from one clock (see
+    // updateLivePose), so a rider stays on his bike (cars used to move on arrival, ahead of the delayed characters).
+    App::LiveFrame buffered;
+    buffered.time = static_cast<double>(frame["step"].get<uint64_t>()) / 120.0;
+    for (const nlohmann::json& c : frame["colliders"])
+    {
+        buffered.colliders[c["id"].get<uint32_t>()] = DdTransform{jsonVec(c["p"]), jsonQuat(c["q"])};
+    }
+    if (frame.contains("camera"))
+    {
+        const nlohmann::json& c = frame["camera"];
+        buffered.hasCamera = true;
+        buffered.cameraPosition = toRay(jsonVec(c["p"]));
+        buffered.cameraForward = Vector3Normalize(toRay(jsonVec(c["f"])));
+        buffered.cameraUp = Vector3Normalize(toRay(jsonVec(c["u"])));
+        buffered.cameraFov = c["fov"].get<float>();
+    }
+    app.liveStep = frame["step"].get<uint64_t>();
+    ++app.liveFrames;
+    static const char* const kStates[] = {"active", "recovering", "settled", "dead", "FAILED"};
+    static const char* const kTension[] = {"limp", "relaxed", "tense", "stunned"};
+    app.liveStatus.clear();
+    for (const nlohmann::json& c : frame["characters"])
+    {
+        const uint32_t hostId = c.value("id", 0u);
+        auto found = app.liveById.find(hostId);
+        if (found == app.liveById.end()) continue;
+        for (App::LiveCharacter& entry : app.liveList)
+        {
+            if (entry.id != hostId) continue;
+            entry.visible = c.value("visible", 1) != 0;
+            entry.tension = c.value("tension", 0);
+            entry.balance = c.value("balance", 0) != 0;
+        }
+        App::LivePose pose;
+        for (const nlohmann::json& q : c["joints"]) pose.joints.push_back(jsonQuat(q));
+        pose.root = DdTransform{jsonVec(c["p"]), jsonQuat(c["q"])};
+        buffered.characters[hostId] = std::move(pose);
+        std::string label = "character " + std::to_string(hostId);
+        for (const App::LiveCharacter& entry : app.liveList)
+        {
+            if (entry.id == hostId) label = entry.name;
+        }
+        char line[200];
+        std::snprintf(line, sizeof(line), "%s: %s | %s%s | capture point %.1f cm", label.c_str(), kStates[std::min(4, c["state"].get<int>())],
+                      kTension[std::min(3, c["tension"].get<int>())], c["balance"].get<int>() != 0 ? " + balance" : "",
+                      c["balance_error"].get<float>() * 100.0f);
+        app.liveStatus.push_back(line);
+    }
+    if (!app.liveBuffer.empty() && buffered.time < app.liveBuffer.back().time) app.liveBuffer.clear(); // Host restarted
+    app.liveBuffer.push_back(std::move(buffered));
+    while (app.liveBuffer.size() > 32) app.liveBuffer.pop_front();
+}
+
+DdQuat nlerp(DdQuat a, DdQuat b, float t)
+{
+    if (a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w < 0.0f) b = DdQuat{-b.x, -b.y, -b.z, -b.w}; // Shortest way
+    DdQuat q{a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t, a.w + (b.w - a.w) * t};
+    const float n = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+    return DdQuat{q.x / n, q.y / n, q.z / n, q.w / n};
+}
+DdTransform blend(const DdTransform& a, const DdTransform& b, float t)
+{
+    return DdTransform{DdVec3{a.position.x + (b.position.x - a.position.x) * t, a.position.y + (b.position.y - a.position.y) * t,
+                              a.position.z + (b.position.z - a.position.z) * t},
+                       nlerp(a.rotation, b.rotation, t)};
+}
+
+// Every redraw: a smooth clock ~50 ms behind the newest frame picks the two frames around it and blends the
+// characters' poses (host frames arrive unevenly, e.g. 33/47 ms; jumping to each one looks choppy).
+void updateLivePose(App& app, float realDt)
+{
+    if (app.live == nullptr || app.liveBuffer.empty()) return;
+    constexpr double kDelay = 0.12; // ~3 game frames of margin: a late frame must not freeze, then jump
+    const double newest = app.liveBuffer.back().time;
+    if (app.liveClock < 0.0 || std::fabs(app.liveClock - (newest - kDelay)) > 0.5) app.liveClock = newest - kDelay; // (Re)sync
+    // Track the host's pace by running the clock a little faster or slower, never by stepping it: frames arrive in
+    // ~40 ms steps, and pulling the clock towards each new one made playback speed swing ~20% (stutter at driving
+    // speed). Close to the target: at most 5% (invisible); far off (after a game hitch): up to 30% to catch up.
+    const double lag = newest - kDelay - app.liveClock;
+    const double gain = std::fabs(lag) < 0.05 ? 0.5 : 3.0;
+    app.liveClock += static_cast<double>(realDt) * (1.0 + std::clamp(lag * gain, -0.3, 0.3));
+    size_t b = 0;
+    while (b < app.liveBuffer.size() && app.liveBuffer[b].time < app.liveClock) ++b;
+    const App::LiveFrame& next = app.liveBuffer[b < app.liveBuffer.size() ? b : app.liveBuffer.size() - 1];
+    const App::LiveFrame& prev = app.liveBuffer[b == 0 ? 0 : b - 1];
+    const double span = next.time - prev.time;
+    const float t = span > 1e-6 ? static_cast<float>(std::clamp((app.liveClock - prev.time) / span, 0.0, 1.0)) : 1.0f;
+    for (const auto& [hostId, pose] : next.characters)
+    {
+        auto mirror = app.liveById.find(hostId);
+        if (mirror == app.liveById.end()) continue;
+        auto before = prev.characters.find(hostId);
+        DdTransform root = pose.root;
+        std::vector<DdQuat> joints = pose.joints;
+        if (before != prev.characters.end() && before->second.joints.size() == joints.size())
+        {
+            root = blend(before->second.root, pose.root, t);
+            for (size_t n = 0; n < joints.size(); ++n) joints[n] = nlerp(before->second.joints[n], pose.joints[n], t);
+        }
+        dragdoll_character_activate(mirror->second, nullptr, nullptr, &root, joints.data(), static_cast<uint32_t>(joints.size()), 0.0f);
+    }
+    {
+        // Moving proxies: kinematic targets at the same blend, reached exactly by one mirror step (the mirror never
+        // simulates anything else: no gravity, kinematic characters).
+        std::vector<DdColliderId> ids;
+        std::vector<DdTransform> targets;
+        for (const auto& [hostId, pose] : next.colliders)
+        {
+            auto it = app.liveColliders.find(hostId);
+            if (it == app.liveColliders.end()) continue;
+            auto before = prev.colliders.find(hostId);
+            ids.push_back(it->second);
+            targets.push_back(before != prev.colliders.end() ? blend(before->second, pose, t) : pose);
+        }
+        if (!ids.empty()) dragdoll_world_set_kinematic_targets(app.live, ids.data(), targets.data(), static_cast<uint32_t>(ids.size()));
+        dragdoll_world_step_fixed(app.live, 1);
+    }
+    if (next.hasCamera)
+    {
+        const bool both = prev.hasCamera;
+        const Vector3 position = both ? Vector3Lerp(prev.cameraPosition, next.cameraPosition, t) : next.cameraPosition;
+        const Vector3 forward = Vector3Normalize(both ? Vector3Lerp(prev.cameraForward, next.cameraForward, t) : next.cameraForward);
+        app.hostCamera.position = position;
+        app.hostCamera.target = Vector3Add(position, Vector3Scale(forward, 8.0f));
+        app.hostCamera.up = Vector3Normalize(both ? Vector3Lerp(prev.cameraUp, next.cameraUp, t) : next.cameraUp);
+        app.hostCamera.fovy = both ? prev.cameraFov + (next.cameraFov - prev.cameraFov) * t : next.cameraFov;
+        app.hostCamera.projection = CAMERA_PERSPECTIVE;
+        app.hasHostCamera = true;
+    }
+    if (app.capture.is_open())
+    {
+        // What the viewer draws, every redraw: lets a capture show whether a stutter comes from the game or from here.
+        nlohmann::json view = {{"t", "view"}, {"clock", app.liveClock}, {"blend", t}, {"newest", newest}, {"mode", app.cameraMode}};
+        for (const App::LiveCharacter& entry : app.liveList)
+        {
+            if (entry.name.find("CJ") == std::string::npos) continue;
+            auto it = app.liveById.find(entry.id);
+            if (it == app.liveById.end()) break;
+            DdTransform r{};
+            dragdoll_character_get_pose(it->second, 0, nullptr, 0, &r);
+            view["cj"] = {r.position.x, r.position.y, r.position.z};
+        }
+        const Camera3D cam = app.camera.build();
+        view["cam"] = {cam.position.x, cam.position.y, cam.position.z};
+        app.capture << nlohmann::json{{"rx", GetTime() - app.captureStart}, {"m", view}}.dump() << "\n";
+    }
+}
+
+// Live camera modes: the host's own camera, or the orbit centred on CJ's puppet (orbit and zoom still work).
+void updateLiveCamera(App& app)
+{
+    app.camera.hasOverride = app.cameraMode == 1 && app.hasHostCamera;
+    if (app.camera.hasOverride)
+    {
+        app.camera.overrideCam = app.hostCamera;
+        app.camera.target = app.hostCamera.target; // The grid centres on what the game camera looks at
+        return;
+    }
+    if (app.cameraMode == 2)
+    {
+        for (const App::LiveCharacter& entry : app.liveList)
+        {
+            if (entry.name.find("CJ") == std::string::npos) continue;
+            auto it = app.liveById.find(entry.id);
+            if (it == app.liveById.end()) break;
+            DdTransform root{};
+            dragdoll_character_get_pose(it->second, 1, nullptr, 0, &root);
+            app.camera.target = toRay(root.position); // His drawn pose is already smoothed: follow it exactly
+            break;
+        }
+    }
+}
+
+void pollLive(App& app, float realDt)
+{
+    bool connected = false;
+    for (const std::string& line : live::poll(connected))
+    {
+        const nlohmann::json m = nlohmann::json::parse(line, nullptr, false);
+        if (m.is_discarded() || !m.contains("t")) continue;
+        if (app.capture.is_open())
+        {
+            app.capture << nlohmann::json{{"rx", GetTime() - app.captureStart}, {"m", m}}.dump() << "\n";
+            ++app.captureLines;
+        }
+        if (m["t"] == "scene") rebuildLive(app, m);
+        else if (m["t"] == "delta") applyLiveDelta(app, m);
+        else if (m["t"] == "frame") applyLiveFrame(app, m);
+    }
+    if (connected) app.liveLostAt = -1.0;
+    else if (app.liveConnected || app.liveLostAt < 0.0) app.liveLostAt = GetTime();
+    app.liveConnected = connected;
+    updateLivePose(app, realDt);
+    if (app.liveFocusPending && focusCharacter(app)) app.liveFocusPending = false;
+    updateLiveCamera(app);
+}
+
+void drawLiveHud(const App& app)
+{
+    int y = 12;
+    auto text = [&](const std::string& s, Color color, int size = 18) {
+        DrawText(s.c_str(), 14, y, size, color);
+        y += size + 6;
+    };
+    text("LIVE from 127.0.0.1:" + std::to_string(app.attachPort) + (app.liveConnected ? "  - connected" : "  - waiting for a world (start the game / press F7)..."),
+         app.liveConnected ? Color{110, 230, 130, 255} : Color{255, 200, 90, 255}, 20);
+    if (app.live != nullptr)
+    {
+        text("what DragDoll sees: " + std::to_string(app.liveColliders.size()) + " colliders, " + std::to_string(app.liveCharacters.size()) +
+                 " characters | host step " + std::to_string(app.liveStep) + " | frames " + std::to_string(app.liveFrames),
+             Color{160, 220, 255, 255}, 16);
+    }
+    for (const std::string& line : app.liveStatus) text(line, Color{255, 220, 120, 255}, 16);
+    if (app.showHelp)
+    {
+        DrawText("C camera: free / game / follow CJ | F focus ragdoll | left-drag orbit | middle-drag pan | wheel zoom | H hide help", 14, GetScreenHeight() - 28, 16, Color{170, 175, 185, 255});
+    }
+    DrawFPS(GetScreenWidth() - 90, 10);
+}
+
+void startCapture(App& app)
+{
+    std::error_code ec;
+    const std::filesystem::path dir = std::filesystem::path(GetApplicationDirectory()) / ".." / ".." / "captures"; // build/captures
+    std::filesystem::create_directories(dir, ec);
+    const std::time_t now = std::time(nullptr);
+    std::tm local{};
+    localtime_s(&local, &now);
+    char name[64];
+    std::strftime(name, sizeof(name), "live_%Y%m%d_%H%M%S.jsonl", &local);
+    app.capturePath = std::filesystem::weakly_canonical(dir / name, ec).string();
+    app.capture.open(app.capturePath, std::ios::binary);
+    app.captureStart = GetTime();
+    app.captureLines = 0;
+    if (app.capture.is_open() && !app.sceneWorld.is_null())
+    {
+        app.capture << nlohmann::json{{"rx", 0.0}, {"m", composeLiveScene(app)}}.dump() << "\n";
+    }
+}
+
+void finishCapture(App& app)
+{
+    if (!app.capture.is_open()) return;
+    const std::string note = app.captureNote;
+    app.capture << nlohmann::json{{"rx", GetTime() - app.captureStart}, {"m", {{"t", "note"}, {"text", note}}}}.dump() << "\n";
+    app.capture.close();
+    std::ofstream txt(std::filesystem::path(app.capturePath).replace_extension(".txt"), std::ios::binary);
+    txt << note << "\n";
+    app.lastCapture = app.capturePath;
+    app.askCaptureNote = false;
+    app.captureNote[0] = '\0';
+}
+
+void drawCaptureControls(App& app)
+{
+    ImGui::SeparatorText("capture for Claude");
+    if (!app.capture.is_open())
+    {
+        if (ImGui::Button("Start capture")) startCapture(app);
+        if (!app.lastCapture.empty()) ImGui::TextWrapped("saved: %s", std::filesystem::path(app.lastCapture).filename().string().c_str());
+    }
+    else if (!app.askCaptureNote)
+    {
+        ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.3f, 1.0f), "REC %.0f s, %llu messages", GetTime() - app.captureStart,
+                           static_cast<unsigned long long>(app.captureLines));
+        if (ImGui::Button("Stop capture")) app.askCaptureNote = true; // Keeps recording while the note is typed
+    }
+    if (app.askCaptureNote)
+    {
+        ImGui::OpenPopup("What should Claude look at?");
+    }
+    if (ImGui::BeginPopupModal("What should Claude look at?", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        ImGui::TextDisabled("Describe what you saw (e.g. \"CJ's legs jitter when he turns left\").");
+        ImGui::InputTextMultiline("##note", app.captureNote, sizeof(app.captureNote), ImVec2(520.0f, 140.0f));
+        if (ImGui::Button("Save capture"))
+        {
+            finishCapture(app);
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+}
+
+// Viewer settings that survive restarts (next to the executable).
+std::filesystem::path settingsPath()
+{
+    return std::filesystem::path(GetApplicationDirectory()) / "dragdoll_view_settings.json";
+}
+
+void loadSettings(App& app)
+{
+    std::ifstream in(settingsPath());
+    const nlohmann::json j = nlohmann::json::parse(in, nullptr, false);
+    if (!j.is_object()) return;
+    app.cameraMode = std::clamp(j.value("camera_mode", 0), 0, 2);
+    app.mouseSensitivity = std::clamp(j.value("mouse_sensitivity", app.mouseSensitivity), 0.02f, 2.0f);
+    app.mouseInvertY = j.value("mouse_invert_y", app.mouseInvertY);
+}
+
+void saveSettings(const App& app)
+{
+    std::ofstream out(settingsPath());
+    out << nlohmann::json{{"camera_mode", app.cameraMode}, {"mouse_sensitivity", app.mouseSensitivity},
+                          {"mouse_invert_y", app.mouseInvertY}}.dump(2)
+        << "\n";
+}
+
+void drawLivePanel(App& app)
+{
+    if (app.attachPort <= 0 || app.liveList.empty())
+    {
+        return;
+    }
+    ImGui::SetNextWindowPos(ImVec2(10.0f, 200.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(260.0f, 0.0f), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Live characters"))
+    {
+        drawCaptureControls(app);
+        const char* const modes[] = {"free", "game camera", "follow CJ"};
+        ImGui::TextDisabled("camera (C cycles)");
+        for (int m = 0; m < 3; ++m)
+        {
+            if (m > 0) ImGui::SameLine();
+            if (ImGui::RadioButton(modes[m], app.cameraMode == m))
+            {
+                app.cameraMode = m;
+                saveSettings(app);
+            }
+        }
+        if (app.cameraMode == 1)
+        {
+            ImGui::TextDisabled(app.controlling ? "controlling the game - Esc releases" : "click the view to control the game");
+            ImGui::SetNextItemWidth(120.0f);
+            if (ImGui::SliderFloat("mouse", &app.mouseSensitivity, 0.02f, 2.0f, "%.2f", ImGuiSliderFlags_Logarithmic))
+                saveSettings(app);
+            ImGui::SameLine();
+            if (ImGui::Checkbox("invert Y", &app.mouseInvertY)) saveSettings(app);
+        }
+        static const char* const kTensions[] = {"limp", "relaxed", "tense", "stunned"};
+        for (App::LiveCharacter& entry : app.liveList)
+        {
+            ImGui::PushID(static_cast<int>(entry.id));
+            ImGui::SeparatorText(entry.name.c_str());
+            bool visible = entry.visible;
+            if (ImGui::Checkbox("show in game", &visible))
+            {
+                entry.visible = visible; // Confirmed by the next frame
+                live::send(nlohmann::json{{"t", "show"}, {"id", entry.id}, {"visible", visible ? 1 : 0}}.dump());
+            }
+            // Muscles and balance of the game's character (applied and recorded by the game's DragDoll).
+            for (int t = 0; t < 4; ++t)
+            {
+                if (t > 0) ImGui::SameLine();
+                if (ImGui::RadioButton(kTensions[t], entry.tension == t))
+                {
+                    entry.tension = t;
+                    live::send(nlohmann::json{{"t", "tension"}, {"id", entry.id}, {"tension", t}, {"blend", 0.3}}.dump());
+                }
+            }
+            bool balance = entry.balance;
+            if (ImGui::Checkbox("balance (needs muscles)", &balance))
+            {
+                entry.balance = balance;
+                live::send(nlohmann::json{{"t", "balance"}, {"id", entry.id}, {"on", balance ? 1 : 0}}.dump());
+            }
+            ImGui::PopID();
+        }
+    }
+    ImGui::End();
+}
+
 void drawPanels(App& app, BodyMotion& motion)
 {
+    drawLivePanel(app);
     drawRigPanel(app);
     const float w = static_cast<float>(GetScreenWidth());
-    const bool replaying = app.replay != nullptr;
+    const bool replaying = app.replay != nullptr || app.attachPort > 0;
 
     ImGui::SetNextWindowPos(ImVec2(w - 290.0f, 40.0f), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(280.0f, 0.0f), ImGuiCond_FirstUseEver);
@@ -1438,6 +2153,7 @@ int main(int argc, char** argv)
     std::string start = "car_vs_pole_120kmh";
     std::string recordPath, replayPath, rigPath, dllPath;
     int port = commands::kDefaultPort;
+    int attachPort = 0;
     HostMode initialMode = HostMode::Real;
     for (int i = 1; i < argc; ++i)
     {
@@ -1457,6 +2173,10 @@ int main(int argc, char** argv)
         else if (std::strcmp(argv[i], "--record") == 0 && i + 1 < argc)
         {
             recordPath = argv[++i];
+        }
+        else if (std::strcmp(argv[i], "--attach") == 0)
+        {
+            attachPort = (i + 1 < argc && argv[i + 1][0] != '-') ? std::atoi(argv[++i]) : 47830;
         }
         else if (std::strcmp(argv[i], "--port") == 0 && i + 1 < argc)
         {
@@ -1502,6 +2222,8 @@ int main(int argc, char** argv)
     app.replayPath = replayPath;
     app.rigPath = rigPath;
     app.hotEnabled = hotEnabled;
+    app.attachPort = attachPort;
+    loadSettings(app);
     app.hotStatus = hotError;
     size_t index = 0;
     for (size_t i = 0; i < app.names.size(); ++i)
@@ -1529,7 +2251,12 @@ int main(int argc, char** argv)
     {
         loadRigFile(app); // Installs the file's rig for the scenarios (the scenario is (re)loaded below)
     }
-    if (!app.replayPath.empty())
+    if (app.attachPort > 0)
+    {
+        live::start(app.attachPort);
+        app.autoRestart = false;
+    }
+    else if (!app.replayPath.empty())
     {
         openReplay(app, true);
     }
@@ -1542,7 +2269,7 @@ int main(int argc, char** argv)
     Geometry geometry;
     Geometry overlay; // Joint limits, drawn translucent on top
     BodyMotion motion;
-    while (!WindowShouldClose() && !(IsKeyPressed(KEY_ESCAPE) && !app.noteEditing))
+    while (!WindowShouldClose() && !(IsKeyPressed(KEY_ESCAPE) && !app.noteEditing && !app.controlling))
     {
         watchRigFile(app);
         watchLibrary(app);
@@ -1555,7 +2282,7 @@ int main(int argc, char** argv)
         if (keyPressed(app, KEY_R) && app.replay != nullptr) openReplay(app, false);
         else if (keyPressed(app, KEY_R)) loadScenario(app, app.scenarioIndex, false); // restart the animation, keep the camera
         if (keyPressed(app, KEY_TAB) && app.replay == nullptr) loadScenario(app, app.scenarioIndex + (IsKeyDown(KEY_LEFT_SHIFT) ? app.names.size() - 1 : 1), false); // keep the camera
-        if (keyPressed(app, KEY_F) && app.replay != nullptr) focusCharacter(app);
+        if (keyPressed(app, KEY_F) && (app.replay != nullptr || app.attachPort > 0)) focusCharacter(app);
         else if (keyPressed(app, KEY_F)) app.hostMode = static_cast<HostMode>((static_cast<int>(app.hostMode) + 1) % static_cast<int>(HostMode::Count));
         if (keyPressed(app, KEY_UP)) app.timeScale = std::min(app.timeScale * 2.0f, 4.0f);
         if (keyPressed(app, KEY_DOWN)) app.timeScale = std::max(app.timeScale * 0.5f, 0.0625f);
@@ -1577,7 +2304,28 @@ int main(int argc, char** argv)
         {
             editNote(app);
         }
-        if (!ImGui::GetIO().WantCaptureMouse)
+        if (keyPressed(app, KEY_C) && app.attachPort > 0)
+        {
+            app.cameraMode = (app.cameraMode + 1) % 3;
+            saveSettings(app);
+        }
+        // Game camera mode: a click in the view hands keyboard + mouse to the game until Esc (or another mode).
+        // A new host world (F7 in SA) reconnects within a moment: keep control through it, release if the game is gone.
+        const bool gameGone = !app.liveConnected && app.liveLostAt >= 0.0 && GetTime() - app.liveLostAt > 2.0;
+        if (app.controlling && (IsKeyPressed(KEY_ESCAPE) || app.cameraMode != 1 || gameGone))
+        {
+            setControlling(app, false);
+        }
+        else if (app.controlling)
+        {
+            sendRemoteInput(app, false);
+        }
+        else if (app.attachPort > 0 && app.cameraMode == 1 && app.liveConnected && !app.noteEditing &&
+                 !ImGui::GetIO().WantCaptureMouse && IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
+        {
+            setControlling(app, true);
+        }
+        if (!ImGui::GetIO().WantCaptureMouse && !app.camera.hasOverride && !app.controlling)
         {
             app.camera.update();
             if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT) && app.replay == nullptr && !app.noteEditing)
@@ -1587,7 +2335,11 @@ int main(int argc, char** argv)
         }
 
         // --- simulate ---
-        if (app.replay != nullptr)
+        if (app.attachPort > 0)
+        {
+            pollLive(app, GetFrameTime());
+        }
+        else if (app.replay != nullptr)
         {
             updateReplay(app, GetFrameTime());
             if (app.replayFocusPending && focusCharacter(app))
@@ -1610,7 +2362,9 @@ int main(int argc, char** argv)
         {
             DdDebugDrawCallbacks cb = callbacks;
             cb.user = &geometry;
-            cb.flags = DD_DRAW_SHAPES;
+            cb.flags = DD_DRAW_SHAPES | DD_DRAW_CAMERA_LOD;
+            const Camera3D eye = app.camera.build();
+            cb.camera_position = DdVec3{eye.position.x, eye.position.y, eye.position.z};
             drawResult = dragdoll_world_debug_draw(world, &cb);
             if (app.showLimits && drawResult == DD_OK)
             {
@@ -1623,9 +2377,32 @@ int main(int argc, char** argv)
         BeginDrawing();
         ClearBackground(Color{22, 26, 34, 255});
         BeginMode3D(app.camera.build());
-        drawGrid(app.camera);
+        // The grid lies on the ground the character stands on (game sessions are far above height 0): the floor
+        // proxy's top in live view, otherwise the lowest body height seen so far (so it does not slide with a fall).
+        float gridHeight = 0.0f;
+        if (app.attachPort > 0 && app.liveHasFloor)
+        {
+            gridHeight = app.liveFloor;
+        }
+        else if (app.replay != nullptr || app.attachPort > 0)
+        {
+            if (DdCharacter* c = activeWorld(app) != nullptr ? dragdoll_world_get_character(activeWorld(app), 0) : nullptr)
+            {
+                std::vector<DdTransform> t(dragdoll_character_get_body_count(c));
+                dragdoll_character_get_body_transforms(c, 1, t.data(), static_cast<uint32_t>(t.size()));
+                float lowest = 1e9f;
+                for (const DdTransform& b : t) lowest = std::min(lowest, Vector3DotProduct(toRay(b.position), app.camera.up));
+                app.lowestSeen = std::min(app.lowestSeen, lowest - 0.04f); // Body centres sit a few cm above the floor
+                gridHeight = app.lowestSeen;
+            }
+        }
+        // A live game streaming its own level collision has a real floor: no grid, and nothing is hidden below it
+        // (CJ walks downhill, through tunnels, ...). The grid stays for a flat floor proxy and for replays.
+        const bool levelIsFloor = app.attachPort > 0 && !app.liveHasFloor;
+        if (!levelIsFloor) drawGrid(app.camera, gridHeight);
+        gFloorHeight = (app.replay != nullptr || app.attachPort > 0) ? gridHeight + 0.04f : 0.0f;
         const Camera3D view = app.camera.build();
-        const bool cameraBelowFloor = Vector3DotProduct(view.position, app.camera.up) < 0.0f;
+        const bool cameraBelowFloor = !levelIsFloor && Vector3DotProduct(view.position, app.camera.up) < gFloorHeight;
         drawGeometry(geometry, 255, cameraBelowFloor ? &app.camera.up : nullptr);
         if (!overlay.tris.empty() || !overlay.lines.empty())
         {
@@ -1640,7 +2417,11 @@ int main(int argc, char** argv)
         {
             DrawText("This DragDoll build has no debug renderer (use a dev preset).", 14, 300, 20, RED);
         }
-        if (app.replay != nullptr)
+        if (app.attachPort > 0)
+        {
+            drawLiveHud(app);
+        }
+        else if (app.replay != nullptr)
         {
             drawReplayHud(app);
         }
@@ -1674,7 +2455,10 @@ int main(int argc, char** argv)
         EndDrawing();
     }
 
+    finishCapture(app); // Do not lose an open capture
     commands::stop();
+    live::stop();
+    dragdoll_world_destroy(app.live);
     rlImGuiShutdown();
     CloseWindow();
     dragdoll_replay_close(app.replay);

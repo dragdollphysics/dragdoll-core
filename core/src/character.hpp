@@ -33,6 +33,8 @@ struct DdCharacter
     dragdoll::World* world = nullptr;
     uint32_t id = 0;
     uint64_t userData = 0;
+    std::string name;          // Display name for tools
+    bool debugVisible = true;  // Drawn by dragdoll_world_debug_draw
     float totalMass = 0.0f;
 
     JPH::Ref<JPH::RagdollSettings> settings;
@@ -69,6 +71,7 @@ struct DdCharacter
     DdCharacterState state = DD_STATE_ACTIVE;
     DdFailure failure = DD_FAILURE_NONE;
     bool inPhysics = true;          // false once FAILED: removed from the physics system
+    bool kinematic = false;         // Host-animated: moved only by activate
     bool debugCorrupt = false;      // Test hook: inject NaN on the next capture
 
     // Standing balance (ADR-0023)

@@ -282,6 +282,14 @@ void Recorder::balance(uint32_t character, bool enabled)
     write(Record::Balance, mScratch);
 }
 
+void Recorder::kinematic(uint32_t character, bool kinematic)
+{
+    mScratch.clear();
+    mScratch.u32(character);
+    mScratch.u8(kinematic ? 1 : 0);
+    write(Record::Kinematic, mScratch);
+}
+
 void Recorder::note(const char* text)
 {
     mScratch.clear();

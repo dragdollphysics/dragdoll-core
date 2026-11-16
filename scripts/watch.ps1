@@ -19,7 +19,8 @@ param(
     [string]$Record,   # record the run to this .ddrec file (F9 adds a note)
     [string]$Replay,   # play this .ddrec file instead of a scenario
     [string]$Rig,      # rig file to watch and edit live (default: packs/rigs/humanoid16.json)
-    [string]$Dll       # replay with this exact dragdoll.dll (default for SA recordings: the game's scripts\dragdoll.dll)
+    [string]$Dll,      # replay with this exact dragdoll.dll (default for SA recordings: the game's scripts\dragdoll.dll)
+    [int]$Attach = 0   # watch a running host's world live (live tap port, e.g. 47830 for the SA mod)
 )
 
 $ErrorActionPreference = 'Stop'
@@ -62,6 +63,7 @@ $viewerArgs += @('--rig', "`"$rigFile`"")
 if ($Fps -ne 0) { $viewerArgs += @('--fps', $Fps) }
 if ($Record) { $viewerArgs += @('--record', "`"$((Resolve-Path -LiteralPath (Split-Path $Record -Parent)).Path)\$(Split-Path $Record -Leaf)`"") }
 if ($Replay) { $viewerArgs += @('--replay', "`"$((Resolve-Path -LiteralPath $Replay).Path)`"") }
+if ($Attach -gt 0) { $viewerArgs = @('--attach', $Attach) }
 if ($Dll) { $viewerArgs += @('--dll', "`"$((Resolve-Path -LiteralPath $Dll).Path)`"") }
 $p = Start-Process -FilePath $exe -ArgumentList $viewerArgs -WorkingDirectory (Split-Path $exe) -PassThru
 Write-Host "dragdoll_view started (pid $($p.Id)): $Scenario"

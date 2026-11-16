@@ -255,7 +255,7 @@ void World::simulate(uint32_t steps)
         driveKinematics(static_cast<double>(mStepCount + 1) * mFixedDt);
         for (auto& [characterId, character] : mCharacters) // Ordered by id: deterministic
         {
-            if (character->state != DD_STATE_FAILED)
+            if (character->state != DD_STATE_FAILED && !character->kinematic) // Host-animated: no muscles or balance
             {
                 updateBalance(*character, mUp, mGravity, fixedDt);
                 updateMuscles(*character, fixedDt);
@@ -871,6 +871,25 @@ bool World::characterTransforms(const DdCharacter& c, bool interpolated, DdTrans
         out[i].rotation = toDd(rotation);
     }
     return true;
+}
+
+void World::setCharacterKinematic(DdCharacter& c, bool kinematic)
+{
+    if (c.kinematic == kinematic)
+    {
+        return;
+    }
+    JPH::BodyInterface& bodies = mPhysics->GetBodyInterface();
+    for (size_t i = 0; i < c.currPosition.size(); ++i)
+    {
+        const JPH::BodyID id = c.ragdoll->GetBodyID(static_cast<int>(i));
+        const JPH::Vec3 linear = bodies.GetLinearVelocity(id), angular = bodies.GetAngularVelocity(id);
+        bodies.SetMotionType(id, kinematic ? JPH::EMotionType::Kinematic : JPH::EMotionType::Dynamic, JPH::EActivation::Activate);
+        bodies.SetLinearAndAngularVelocity(id, linear, angular); // Keep the motion across the switch
+    }
+    c.kinematic = kinematic;
+    c.musclesDirty = true;
+    c.stillSeconds = 0.0f;
 }
 
 void World::activateCharacter(DdCharacter& c, const DdTransform* previousRoot, const DdQuat* previousJoints,

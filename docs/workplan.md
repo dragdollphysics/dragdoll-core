@@ -181,6 +181,25 @@ Planned by **effort hours, not calendar weeks** (total ≈ **460 h** to v1, ±50
 * [x] **Standing balance:** CoM, support polygon, Capture Point `xCP = x + v/ω`, ankle strategy, hip strategy (internal torques via stance hip). No stepping. (Task 3.6, ADR-0023: + lateral hip load/unload; stance legs sized by carried load.)
 * **Acceptance:** `hold_stance` — upright 60 s under 5 N·s random pokes; joint tracking error < 5° RMS; low-speed `bump_5kmh` absorbed without falling; `walk_then_activate` momentum preserved within 5 %; mock-skeleton mapping round-trip error < 0.5°; forced-NaN test ends in `failed`, never a crash.
 
+### Bridge task 3.7 — Live tap: see the game through DragDoll's eyes (~4 h planned, ~20 h spent with the extensions)
+**Goal:** watch, live in the viewer, exactly what DragDoll receives and simulates inside a running game — no game code, models or textures, only DragDoll's own world (proxies + ragdolls).
+* [x] Core (dev builds only): `dragdoll_world_start_live_tap(world, port)` / `stop`: non-blocking TCP server on 127.0.0.1, JSON lines; the whole `scene` once per viewer connection, then **`delta`** messages (colliders / characters added and removed; a re-sent character = renamed), `frame` messages after every host frame (<= 60 Hz: moving colliders, each character's root + joint rotations, state / tension / balance, host camera); frames dropped, never queued, when the viewer lags. Viewer -> host: `show`, `tension`, `balance`, and **`host`** messages queued for the host (`dragdoll_world_poll_live_message`). Any host gets it (ADR-0018).
+* [x] Viewer `--attach [port]`: mirror world rebuilt from `scene`/`delta`, posed from `frame` (no re-simulation, so the x64 viewer watches the x86 game; mirror characters kinematic so pose jumps never "fail" them); auto-reconnect; Live characters panel.
+* [x] dragdoll-sa: tap per world; founder watches sessions live.
+* [x] dragdoll-sa extras (founder requests, 2026-11-13): CJ as a puppet (live skeleton -> sa_ped skeleton map -> **kinematic** character, `dragdoll_character_set_kinematic`), nearby cars as kinematic collision parts (SA mesh + spheres, spinning wheel cylinders), character names, viewer -> game commands, two-sided drawing.
+* **SA live tools, extension (founder order, 2026-11-13; pulls part of Phase 6 forward):**
+  * [x] **Mod hot reload:** permanent loader ASI (game hooks, mouse fix, pad hook) + logic DLL and `dragdoll.dll` loaded from shadow copies; a rebuild swaps them in ~1 s without restarting the game (`deploy.ps1`).
+  * [x] **Viewer camera modes:** free / game camera / follow CJ (C); the chosen mode and mouse settings persist (`dragdoll_view_settings.json`).
+  * [x] **Pedestrians as kinematic puppets** (<= 20 within 30 m, kept to 40 m; also in vehicles), bind pose from each skin's inverse bind matrices, skin frame fitted per model. Failed puppets (non-finite pose) are rebuilt; non-finite frames skipped.
+  * [x] **Real terrain:** the game's building collision (terrain, roads, walls, placed props) within 60 m of CJ (kept to 80 m) as static meshes (boxes merged in) + spheres, queued nearest first, ~2500 triangles per frame; flat floor proxy only where no collision is loaded. Incremental `delta` live updates.
+  * [x] **Debug-draw level of detail** (`DD_DRAW_CAMERA_LOD` + `camera_position`): distant shapes coarser — viewer redraws 19-59 -> ~144 fps; also used in game.
+  * [x] **Control CJ from the viewer** (game camera mode: click to take keyboard + mouse, Esc releases): viewer sends held keys (virtual-key codes) + mouse deltas as host messages; the mod writes them into the player pad between the scripts and the world update (SA default PC controls), mouse set (not added) because the unfocused game stops refreshing it; sensitivity + invert Y in the panel; survives a brief reconnect.
+  * [x] **Smooth playback:** characters, cars and the game camera blended from one clock 120 ms behind the game; the clock follows the game by running up to 5 % faster/slower (30 % after a hitch), never by stepping (a stepping clock made playback speed swing ~20 %: driving stutter).
+  * [x] **F7 drops into the running world** (replaces the previous ragdoll; no reset, no level reload). Per-drop `.ddrec` recording removed (founder, 2026-11-14): the viewer capture covers day-to-day needs.
+  * [ ] **Capture = session recording** (founder design, 2026-11-14): *Start capture* makes the game start a fresh world **with** a `.ddrec` (one short reset: level reload, puppets rebuilt); *Stop capture* closes the recording and the world carries on. Capture `.jsonl` and `.ddrec` saved under matching names. Needs `dragdoll_world_stop_recording`, a viewer -> game "capture" host message, and a test that a whole streaming session (level meshes, cars, puppets, remote input) replays **bit-identically**. ~2-3 h.
+  * [ ] Small: remote F7/F8 must trigger once per key press (holding a key across a short reconnect can retrigger); capture analysis scripts read `delta` messages.
+* Later: WebSocket transport for a browser viewer (three.js phase). Dynamic map objects (breakable fences, lamp posts) as level collision. Collision geometry derived from game files stays local (captures, `.ddrec`).
+
 ### Phase 4 — Car-Hit Vertical Slice (~70 h)
 **Goal:** the core experience, end to end, in the workbench.
 * [ ] **Perception:** vehicle time-to-collision, contact classification (bumper / hood / windshield / roof / ground), airborne detection, ground probe, settle detection.
@@ -198,7 +217,7 @@ Planned by **effort hours, not calendar weeks** (total ≈ **460 h** to v1, ±50
 **Goal:** the mod.
 * [ ] **Triggers:** the game's vehicle-hits-pedestrian path + animation-name table (data file, e.g. `KD_left/right`, `KO_skid_front/back`, `KO_spin_L/R`) with handoff delay.
 * [ ] **Rig mapping JSON** for the SA 32-bone skeleton (IDs from research notes).
-* [ ] **Collider streaming:** nearby COL meshes → static proxies; vehicles → kinematic proxies from their COL data with velocity.
+* [~] **Collider streaming:** nearby COL meshes → static proxies; vehicles → kinematic proxies from their COL data with velocity. (Done live in 3.7: buildings + cars; left: dynamic map objects, smooth car hull for sliding bodies.)
 * [ ] **Pose override:** write local bone rotations into the RpHAnim hierarchy after the game's animation update; per-bone weights.
 * [ ] **Root sync:** ped position follows DragDoll root; game physics for that ped suspended while active.
 * [ ] **Handback:** choose game get-up/death animation by face-up/down + heading; blend out.
@@ -210,7 +229,7 @@ Planned by **effort hours, not calendar weeks** (total ≈ **460 h** to v1, ±50
   * Measure first (limp vs active vs reduced iterations); acceptance: crowd scenario (15 victims at once) costs < 1 ms per frame at 60 fps on the reference machine.
 * [ ] **Compatibility:** exclusions (missions, cutscenes, player opt-in), SA-MP auto-disable, Hoodlum/Compact exes, `dragdoll-sa.ini` with keys familiar to existing-mod users.
 * [ ] **Frame rates:** feed DragDoll the game's real frame time (never assume 30 fps); test vanilla 25/30 fps limiter, SilentPatch 60 fps, and unlocked.
-* [ ] **[SA] Dev mode:** reload `dragdoll.dll` on a key press inside the running game; capture in-game sessions as `.ddrec` for workbench replay.
+* [~] **[SA] Dev mode:** reload `dragdoll.dll` inside the running game (done in 3.7: automatic hot reload); in-game sessions as `.ddrec` (3.7 "Capture = session recording").
 * [ ] **[SA] Fallback:** on `failed`, hand the ped back to the game's own animation.
 * [ ] Packaging: single static-CRT ASI + ini + data. Never touches `main.scm`, `ped.ifp`, or game scripts.
 * [ ] **Integration Workflow v1** (`docs/integration/`, ADR-0018): the 8 steps (trigger → skeleton → world → pose → root → handback → compatibility → verify), each with the SA implementation as worked example, plus templates (trigger table, rig mapping JSON, ini skeleton, verification checklist).

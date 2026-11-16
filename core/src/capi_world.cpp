@@ -4,6 +4,8 @@
 #include "capi_guard.hpp"
 #include "capi_world_handle.hpp"
 
+#include <algorithm>
+#include <cstring>
 #include <stdexcept>
 
 using namespace dragdoll::detail;
@@ -96,6 +98,10 @@ DD_API DdResult DD_CALL dragdoll_world_step(DdWorld* world, float dt, uint32_t* 
         {
             world->recorder->step(dt, steps, world->world.stateHash());
         }
+        if (world->tap)
+        {
+            world->tap->afterStep(world);
+        }
     });
     DD_GUARD_END(DD_ERROR_INTERNAL)
 }
@@ -112,6 +118,10 @@ DD_API DdResult DD_CALL dragdoll_world_step_fixed(DdWorld* world, uint32_t steps
         if (world->recorder)
         {
             world->recorder->stepFixed(steps, world->world.stateHash());
+        }
+        if (world->tap)
+        {
+            world->tap->afterStep(world);
         }
     });
     DD_GUARD_END(DD_ERROR_INTERNAL)
@@ -171,6 +181,10 @@ DD_API DdResult DD_CALL dragdoll_world_add_colliders(DdWorld* world, const DdCol
         {
             world->recorder->addColliders(descs, count, out_ids);
         }
+        if (world->tap)
+        {
+            world->tap->collidersAdded(descs, count, out_ids);
+        }
     });
     DD_GUARD_END(DD_ERROR_INTERNAL)
 }
@@ -187,6 +201,10 @@ DD_API DdResult DD_CALL dragdoll_world_remove_colliders(DdWorld* world, const Dd
         if (world->recorder)
         {
             world->recorder->removeColliders(ids, count);
+        }
+        if (world->tap)
+        {
+            world->tap->collidersRemoved(ids, count);
         }
     });
     DD_GUARD_END(DD_ERROR_INTERNAL)
@@ -241,6 +259,59 @@ DD_API DdResult DD_CALL dragdoll_world_record_note(DdWorld* world, const char* t
     }
     return DD_OK;
     DD_GUARD_END(DD_ERROR_INTERNAL)
+}
+
+DD_API DdResult DD_CALL dragdoll_world_start_live_tap(DdWorld* world, uint16_t port)
+{
+    DD_GUARD_BEGIN
+    if (world == nullptr || port == 0)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_world_start_live_tap: world and a port are required");
+    }
+#if defined(JPH_DEBUG_RENDERER) && defined(_WIN32) // Dev builds only (follows DRAGDOLL_DEV_TOOLS)
+    try
+    {
+        world->tap.reset(); // Frees the port first if a tap was already running
+        world->tap = std::make_unique<dragdoll::LiveTap>(port, world->desc);
+    }
+    catch (const std::invalid_argument& e)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, e.what());
+    }
+    return DD_OK;
+#else
+    return fail(DD_ERROR_UNSUPPORTED, "dragdoll_world_start_live_tap: not available in this build (dev builds, Windows)");
+#endif
+    DD_GUARD_END(DD_ERROR_INTERNAL)
+}
+
+DD_API void DD_CALL dragdoll_world_set_host_camera(DdWorld* world, DdVec3 position, DdVec3 forward, DdVec3 up, float fov_degrees)
+{
+    if (world != nullptr)
+    {
+        world->hostCamera = DdWorld::HostCamera{true, position, forward, up, fov_degrees};
+    }
+}
+
+DD_API uint32_t DD_CALL dragdoll_world_poll_live_message(DdWorld* world, char* buffer, uint32_t capacity)
+{
+    std::string message;
+    if (world == nullptr || world->tap == nullptr || !world->tap->popHostMessage(message)) return 0;
+    if (buffer != nullptr && capacity > 0)
+    {
+        const size_t n = std::min<size_t>(message.size(), capacity - 1);
+        std::memcpy(buffer, message.data(), n);
+        buffer[n] = '\0';
+    }
+    return static_cast<uint32_t>(message.size());
+}
+
+DD_API void DD_CALL dragdoll_world_stop_live_tap(DdWorld* world)
+{
+    if (world != nullptr)
+    {
+        world->tap.reset();
+    }
 }
 
 DD_API int DD_CALL dragdoll_world_is_recording(const DdWorld* world)

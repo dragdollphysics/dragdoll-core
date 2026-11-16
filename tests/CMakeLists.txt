@@ -35,10 +35,15 @@ add_executable(dragdoll_tests
     unit/test_skeleton_map.cpp
     unit/test_failed.cpp
     unit/test_balance.cpp
+    unit/test_live_tap.cpp
+    unit/test_kinematic.cpp
     unit/test_memory.cpp
     unit/test_recording.cpp
 )
 target_link_libraries(dragdoll_tests PRIVATE DragDoll::dragdoll dragdoll_scenarios doctest::doctest)
+if(WIN32)
+    target_link_libraries(dragdoll_tests PRIVATE ws2_32) # Live tap test client
+endif()
 dragdoll_set_compile_options(dragdoll_tests)
 
 add_test(NAME unit COMMAND dragdoll_tests)

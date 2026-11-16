@@ -2,9 +2,11 @@
 // C ABI: debug drawing (dev builds only, ADR-0012: JPH_DEBUG_RENDERER follows DRAGDOLL_DEV_TOOLS).
 
 #include "capi_guard.hpp"
+#include "character.hpp"
 #include "capi_world_handle.hpp"
 
 #ifdef JPH_DEBUG_RENDERER
+#include <unordered_set>
     #include <Jolt/Physics/Body/Body.h>
     #include <Jolt/Physics/Body/BodyFilter.h>
     #include <Jolt/Physics/Body/BodyManager.h>
@@ -48,10 +50,16 @@ private:
     const DdDebugDrawCallbacks& mCallbacks;
 };
 
-class SkipStaticFilter final : public JPH::BodyDrawFilter
+// Skips static bodies (DD_DRAW_SKIP_STATIC) and the bodies of characters hidden with set_debug_draw(0).
+class DrawFilter final : public JPH::BodyDrawFilter
 {
 public:
-    bool ShouldDraw(const JPH::Body& body) const override { return !body.IsStatic(); }
+    bool skipStatic = false;
+    std::unordered_set<uint32_t> hidden; // Body id values
+    bool ShouldDraw(const JPH::Body& body) const override
+    {
+        return !(skipStatic && body.IsStatic()) && hidden.count(body.GetID().GetIndexAndSequenceNumber()) == 0;
+    }
 };
 } // namespace
 #endif
@@ -68,14 +76,30 @@ DD_API DdResult DD_CALL dragdoll_world_debug_draw(DdWorld* world, const DdDebugD
     }
 #ifdef JPH_DEBUG_RENDERER
     CallbackRenderer renderer(*callbacks);
+    if ((callbacks->flags & DD_DRAW_CAMERA_LOD) != 0)
+    {
+        // Without a camera position Jolt draws every shape at full detail (e.g. 25 collision spheres per SA car).
+        const DdVec3& c = callbacks->camera_position;
+        renderer.SetCameraPos(JPH::RVec3(c.x, c.y, c.z));
+    }
     const uint32_t flags = callbacks->flags == 0 ? DD_DRAW_SHAPES : callbacks->flags;
     if ((flags & DD_DRAW_SHAPES) != 0)
     {
         JPH::BodyManager::DrawSettings settings;
         settings.mDrawShape = true;
         settings.mDrawShapeWireframe = false;
-        SkipStaticFilter skipStatic;
-        world->world.physics().DrawBodies(settings, &renderer, (flags & DD_DRAW_SKIP_STATIC) != 0 ? &skipStatic : nullptr);
+        DrawFilter filter;
+        filter.skipStatic = (flags & DD_DRAW_SKIP_STATIC) != 0;
+        for (uint32_t i = 0; i < world->world.characterCount(); ++i)
+        {
+            const DdCharacter* c = world->world.characterAt(i);
+            if (c->debugVisible) continue;
+            for (int b = 0; b < static_cast<int>(c->currPosition.size()); ++b)
+            {
+                filter.hidden.insert(c->ragdoll->GetBodyID(b).GetIndexAndSequenceNumber());
+            }
+        }
+        world->world.physics().DrawBodies(settings, &renderer, filter.skipStatic || !filter.hidden.empty() ? &filter : nullptr);
     }
     if ((flags & DD_DRAW_CONSTRAINTS) != 0)
     {

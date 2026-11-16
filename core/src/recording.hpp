@@ -37,6 +37,7 @@ enum class Record : uint8_t
     Tension = 11,         // u32 character id | u32 profile | f32 blend seconds
     TargetPose = 12,      // u32 character id | u32 count (0 = reset to rest) | count x quat
     Balance = 14,         // u32 character id | u8 enabled
+    Kinematic = 15,       // u32 character id | u8 kinematic
     Activate = 13,        // u32 id | f32 dt | u8 flags (1 prev root, 2 prev joints, 4 joints) | [prev root] | [count x prev quat] | root | [count x quat]
 };
 
@@ -177,6 +178,7 @@ public:
     void tension(uint32_t character, uint32_t profile, float blendSeconds);
     void targetPose(uint32_t character, const DdQuat* rotations, uint32_t count);
     void balance(uint32_t character, bool enabled);
+    void kinematic(uint32_t character, bool kinematic);
     void activate(uint32_t character, const DdTransform* previousRoot, const DdQuat* previousJoints, const DdTransform& root,
                   const DdQuat* joints, uint32_t count, float dt);
     bool failed() const { return mFailed; }

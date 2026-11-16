@@ -42,6 +42,7 @@ add_library(dragdoll SHARED
     src/balance.cpp
     src/skeleton_map.cpp
     src/capi_skeleton.cpp
+    src/live_tap.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/generated/builtin_rigs.cpp
 )
 add_library(DragDoll::dragdoll ALIAS dragdoll)
@@ -55,5 +56,8 @@ target_compile_definitions(dragdoll PRIVATE DRAGDOLL_BUILDING)
 
 # Jolt and nlohmann/json are implementation details: consumers only see the C header.
 target_link_libraries(dragdoll PRIVATE dragdoll_jolt_config nlohmann_json::nlohmann_json)
+if(WIN32)
+    target_link_libraries(dragdoll PRIVATE ws2_32) # Live tap (dev builds)
+endif()
 
 dragdoll_set_compile_options(dragdoll)
