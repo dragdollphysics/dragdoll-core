@@ -381,6 +381,13 @@ DD_API DdResult DD_CALL dragdoll_character_get_pose(const DdCharacter* character
  * motion. Switching back to dynamic keeps the current velocities: the handover when the character gets hit. */
 DD_API DdResult DD_CALL dragdoll_character_set_kinematic(DdCharacter* character, int kinematic);
 DD_API int DD_CALL dragdoll_character_get_kinematic(const DdCharacter* character);
+/* Handover on impact (ADR-0025, Impact stage): while kinematic, the character turns dynamic by itself - keeping the
+ * velocities of its animated motion - as soon as its threat (dragdoll_character_get_threat) is due within
+ * `lead_seconds`, so the vehicle meets a physical body instead of passing through a host-animated one. Check
+ * dragdoll_character_get_kinematic each frame and stop animating once it reads 0. 0 = off (default); about one fixed
+ * step (1/120 s) plus a margin, e.g. 0.0125, hands over just before contact. */
+DD_API DdResult DD_CALL dragdoll_character_set_auto_handover(DdCharacter* character, float lead_seconds);
+DD_API float DD_CALL dragdoll_character_get_auto_handover(const DdCharacter* character);
 
 DD_API DdResult DD_CALL dragdoll_character_activate(DdCharacter* character, const DdTransform* previous_root,
                                                     const DdQuat* previous_joints, const DdTransform* current_root,

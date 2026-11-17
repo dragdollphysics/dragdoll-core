@@ -76,6 +76,7 @@ struct DdCharacter
     };
     std::array<RegionMuscles, DD_REGION_COUNT> regionMuscles;
     std::vector<uint8_t> region; // Per body: the region of its joint (DdRegion)
+    std::vector<DdTransform> perceptBodies; // Scratch for the behaviour percept (body transforms)
     bool musclesDirty = false;
 
     // Host contract (D17)
@@ -84,6 +85,7 @@ struct DdCharacter
     DdFailure failure = DD_FAILURE_NONE;
     bool inPhysics = true;          // false once FAILED: removed from the physics system
     bool kinematic = false;         // Host-animated: moved only by activate
+    float autoHandover = 0.0f;      // s: turn dynamic when the threat is due within this (0 = off)
     bool debugCorrupt = false;      // Test hook: inject NaN on the next capture
 
     // Standing balance (ADR-0023)

@@ -776,14 +776,21 @@ class VehicleHitScenario final : public RagdollScenario
 public:
     // braced: the pedestrian stands with tense muscles and balance on (task 3.6), and the vehicle arrives after 0.5 s.
     // aware: braced, the vehicle arrives after 1.6 s, and the "car_hit" behaviour reacts to it (ADR-0025).
-    VehicleHitScenario(const std::string& vehicle, float kmh, bool braced = false, const char* name = nullptr, bool aware = false)
+    // react: as in a game - the pedestrian stands host-animated (kinematic) and unaware, the "car_hit" behaviour runs,
+    // and the core hands it over to physics at contact (auto handover; task 4.6).
+    VehicleHitScenario(const std::string& vehicle, float kmh, bool braced = false, const char* name = nullptr, bool aware = false,
+                       bool react = false)
         : RagdollScenario(nullptr, nullptr, DdVec3{0.0f, 0.0f, braced ? 0.005f : 0.01f}, DdQuat{0, 0, 0, 1}), mVehicle(vehicle),
-          mBraced(braced), mAware(aware), mContactTime(aware ? 1.6f : braced ? 0.5f : 0.1f)
+          mBraced(braced), mAware(aware), mReact(react), mContactTime(aware ? 1.6f : react ? 1.0f : braced ? 0.5f : 0.1f)
     {
-        mNameText = name != nullptr ? name : "hit_" + vehicle + "_" + std::to_string(static_cast<int>(kmh)) + "kmh";
+        mNameText = name != nullptr ? name : std::string(react ? "react_" : "hit_") + vehicle + "_" + std::to_string(static_cast<int>(kmh)) + "kmh";
         mProfile = parseVehicle(builtinVehicle(vehicle));
         mDescriptionText = "A " + vehicle + " at " + std::to_string(static_cast<int>(kmh)) + " km/h " +
-                           (aware    ? "comes at a standing pedestrian who sees it 1.6 s ahead (behaviour car_hit). Judge: the body "
+                           (react    ? "hits a pedestrian standing host-animated who never sees it; the car_hit reactions run and the "
+                                       "body is handed over to physics at contact. Judge: at contact the struck side gives, ~0.1 s later "
+                                       "the trunk and neck stiffen; lying on the car the chin tucks, the forearms come between head and "
+                                       "car and the body curls a little; once off the car it goes loose (landing comes in task 4.7). "
+                            : aware    ? "comes at a standing pedestrian who sees it 1.6 s ahead (behaviour car_hit). Judge: the body "
                                        "tenses about 0.1 s after the car gets within 1.2 s (startle), and half a second "
                                        "later both hands go up towards the car (shield), before the impact."
                             : braced ? "nudges a standing pedestrian (tense, balance on) side-on and brakes. Judge: absorbed "
@@ -812,6 +819,14 @@ public:
         {
             dragdoll_character_set_tension(mCharacter, DD_TENSION_TENSE, 0.0f);
             dragdoll_character_set_balance(mCharacter, 1);
+        }
+        if (mReact && mCharacter != nullptr)
+        {
+            dragdoll_character_set_kinematic(mCharacter, 1); // Host-animated standing (rest pose) until the handover
+            dragdoll_character_set_tension(mCharacter, DD_TENSION_RELAXED, 0.0f);
+            dragdoll_character_set_behaviour(mCharacter, "car_hit");
+            dragdoll_character_set_awareness(mCharacter, 0.0f); // Never sees it
+            dragdoll_character_set_auto_handover(mCharacter, 0.0125f);
         }
         if (mAware && mCharacter != nullptr)
         {
@@ -851,7 +866,7 @@ public:
     }
 
 private:
-    bool mBraced = false, mAware = false;
+    bool mBraced = false, mAware = false, mReact = false;
     float mContactTime = 0.1f;
     std::string mVehicle, mNameText, mDescriptionText;
     VehicleProfile mProfile;
@@ -926,6 +941,9 @@ const std::vector<std::pair<std::string, Factory>>& registry()
     for (const std::string& vehicle : vehicleNames())
     {
         all.emplace_back("hit_" + vehicle + "_40kmh", [vehicle] { return std::make_unique<VehicleHitScenario>(vehicle, 40.0f); });
+        all.emplace_back("react_" + vehicle + "_40kmh", [vehicle] {
+            return std::make_unique<VehicleHitScenario>(vehicle, 40.0f, false, nullptr, false, true);
+        });
     }
     return all;
     }();

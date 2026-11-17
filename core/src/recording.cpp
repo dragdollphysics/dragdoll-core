@@ -363,6 +363,14 @@ void Recorder::riding(uint32_t character, uint32_t group)
     write(Record::Riding, mScratch);
 }
 
+void Recorder::autoHandover(uint32_t character, float leadSeconds)
+{
+    mScratch.clear();
+    mScratch.u32(character);
+    mScratch.f32(leadSeconds);
+    write(Record::AutoHandover, mScratch);
+}
+
 void Recorder::kinematic(uint32_t character, bool kinematic)
 {
     mScratch.clear();

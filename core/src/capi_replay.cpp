@@ -161,6 +161,17 @@ void apply(DdReplay& replay, const RecordView& record)
     case Record::Note:
         replay.note = in.string();
         break;
+    case Record::AutoHandover: {
+        const uint32_t id = in.u32();
+        const float lead = in.f32();
+        auto it = replay.characters.find(id);
+        if (it == replay.characters.end())
+        {
+            throw std::runtime_error("replay: auto handover set on an unknown character");
+        }
+        it->second->autoHandover = lead;
+        break;
+    }
     case Record::Kinematic: {
         const uint32_t id = in.u32();
         const bool kinematic = in.u8() != 0;

@@ -45,6 +45,11 @@ struct Percept
     DdSenses senses{};
     const DdBodyContact* contacts = nullptr;
     uint32_t bodyCount = 0;
+    // Where each body is after the last step (`bodies[bodyCount]`, world space, rig order; valid during update only),
+    // which region it belongs to, and which body is the head (-1: none).
+    const DdTransform* bodies = nullptr;
+    DdRegion bodyRegion[kMaxBodies] = {};
+    int32_t headBody = -1;
 
     // Threat (ADR-0024). threat.collider == DD_INVALID_COLLIDER: none.
     DdThreat threat{};

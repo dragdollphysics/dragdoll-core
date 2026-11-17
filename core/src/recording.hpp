@@ -20,7 +20,7 @@ namespace dragdoll::rec
 {
 
 inline constexpr char kMagic[8] = {'D', 'D', 'R', 'E', 'C', 0, 0, 0};
-inline constexpr uint32_t kFormatVersion = 4; // 2: collider group (ADR-0024); 3: behaviours, region tension, aim, named poses (ADR-0025); 4: character size_scale
+inline constexpr uint32_t kFormatVersion = 5; // 2: collider group (ADR-0024); 3: behaviours, region tension, aim, named poses (ADR-0025); 4: character size_scale; 5: auto handover
 
 enum class Record : uint8_t
 {
@@ -47,6 +47,7 @@ enum class Record : uint8_t
     NamedPose = 22,       // u32 character id | string behaviour | string pose | u32 region mask
     Riding = 23,          // u32 character id | u32 group (0 = none)
     Label = 24,           // u32 character id | string label
+    AutoHandover = 25,    // u32 character id | f32 lead seconds
     Activate = 13,        // u32 id | f32 dt | u8 flags (1 prev root, 2 prev joints, 4 joints) | [prev root] | [count x prev quat] | root | [count x quat]
 };
 
@@ -188,6 +189,7 @@ public:
     void targetPose(uint32_t character, const DdQuat* rotations, uint32_t count);
     void balance(uint32_t character, bool enabled);
     void kinematic(uint32_t character, bool kinematic);
+    void autoHandover(uint32_t character, float leadSeconds);
     void regionTension(uint32_t character, uint32_t region, uint32_t profile, float blendSeconds);
     void behaviour(uint32_t character, const char* name);
     void awareness(uint32_t character, float value);

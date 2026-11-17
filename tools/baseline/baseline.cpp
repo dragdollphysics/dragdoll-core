@@ -25,7 +25,8 @@ namespace
 {
 using namespace dragdoll::scenarios;
 
-constexpr float kRoadFriction = 0.7f;
+float gRoadFriction = 0.7f;    // --road-friction
+float gRoadRestitution = 0.0f; // --road-restitution (Jolt takes the larger of the two: the body's is 0)
 constexpr float kBrake = 7.0f; // m/s^2, emergency braking on a dry road
 float gCarFriction = 0.6f;     // Vehicle surface (Jolt combines it with the body's 0.8 as the geometric mean)
 float gCarRestitution = 0.0f; // --car-restitution: spring-back of the vehicle surface (Jolt takes the larger of the two)
@@ -33,6 +34,8 @@ DdTension gTension = DD_TENSION_LIMP;
 std::string gRig; // --rig file: a rig JSON instead of the built-in humanoid16
 bool gTrace = false;
 bool gMomentum = false; // --momentum: centre-of-mass and rotation trace for the first 0.8 s
+std::string gBehaviour; // --behaviour car_hit: the reaction chain runs (relaxed standing, core auto handover)
+bool gAware = false;     // --aware: the character knows about the car (awareness 1), else 0
 bool gGait = false; // --gait: walking posture (as the literature's cadavers): arms swung, elbows and knees a little bent
 float gSize = 1.0f;
 bool gArmsForward = false; // --arms-forward: both arms raised forward (out of a side-on car's path)
@@ -45,6 +48,7 @@ struct Run
     float kmh = 0, heading = 0, offset = 0;
     DdImpactReport r{};
     bool failed = false, handedOver = false;
+    float groundTurn = 0.0f; // deg the pelvis turned from the first ground contact to rest
     float lead = -1.0f, setback = -1.0f, bonnet = -1.0f, com = -1.0f; // Probed front; centre of mass above the ground
     std::string firstBody, groundBody;
 };
@@ -104,7 +108,8 @@ Run simulate(const std::string& vehicle, float kmh, float headingDegrees, float 
     ground.shape = DD_SHAPE_BOX;
     ground.half_extents = DdVec3{150, 40, 0.5f};
     ground.transform.position = DdVec3{60, 0, -0.5f};
-    ground.friction = kRoadFriction;
+    ground.friction = gRoadFriction;
+    ground.restitution = gRoadRestitution;
     DdColliderId groundId;
     dragdoll_world_add_colliders(world, &ground, 1, &groundId);
 
@@ -118,6 +123,13 @@ Run simulate(const std::string& vehicle, float kmh, float headingDegrees, float 
     DdCharacter* human = nullptr;
     if (dragdoll_character_create(world, &cd, &human) != DD_OK) std::abort();
     dragdoll_character_set_kinematic(human, 1); // Standing (host-animated) until the handover
+    if (!gBehaviour.empty())
+    {
+        if (dragdoll_character_set_behaviour(human, gBehaviour.c_str()) != DD_OK) std::abort();
+        dragdoll_character_set_tension(human, gTension != DD_TENSION_LIMP ? gTension : DD_TENSION_RELAXED, 0.0f); // Standing at ease
+        dragdoll_character_set_awareness(human, gAware ? 1.0f : 0.0f);
+        dragdoll_character_set_auto_handover(human, 1.5f / 120.0f); // The core hands over (same lead as below)
+    }
     if (gGait || gArmsForward)
     {
         // Mid-stance of a walk: right leg forward, left back; left arm forward, right back (arms swing against the
@@ -185,6 +197,7 @@ Run simulate(const std::string& vehicle, float kmh, float headingDegrees, float 
         // Handover one step before the front reaches the body (the host would do it on its own hit detection).
         if (!run.handedOver && threat.collider == carId && threat.time_to_collision <= 1.5f / 120.0f)
         {
+            // With a behaviour the core hands over by itself inside the next step (auto handover).
             run.lead = threat.profile.leading_edge_height;
             run.setback = threat.profile.leading_edge_setback;
             run.bonnet = threat.profile.bonnet_length;
@@ -192,8 +205,11 @@ Run simulate(const std::string& vehicle, float kmh, float headingDegrees, float 
             senses.struct_size = sizeof(DdSenses);
             dragdoll_character_get_senses(human, &senses);
             run.com = senses.ground_height;
-            dragdoll_character_set_kinematic(human, 0);
-            if (gTension != DD_TENSION_LIMP) dragdoll_character_set_tension(human, gTension, 0.0f);
+            if (gBehaviour.empty())
+            {
+                dragdoll_character_set_kinematic(human, 0);
+                if (gTension != DD_TENSION_LIMP) dragdoll_character_set_tension(human, gTension, 0.0f);
+            }
             run.handedOver = true;
         }
         if (brakeAtContact && r.valid != 0) v = std::max(0.0f, v - kBrake / 120.0f);
@@ -202,6 +218,22 @@ Run simulate(const std::string& vehicle, float kmh, float headingDegrees, float 
         const DdTransform target{{x, 0, 0}, {0, 0, 0, 1}};
         dragdoll_world_set_kinematic_targets(world, &carId, &target, 1);
         if (dragdoll_world_step_fixed(world, 1) != DD_OK) break;
+        {
+            static DdQuat lastPelvis{0, 0, 0, 1};
+            std::vector<DdTransform> all(dragdoll_character_get_body_count(human));
+            if (dragdoll_character_get_body_transforms(human, 0, all.data(), static_cast<uint32_t>(all.size())) != DD_OK) std::abort();
+            const DdTransform pelvis = all[0];
+            DdImpactReport now{};
+            now.struct_size = sizeof(DdImpactReport);
+            dragdoll_character_get_impact_report(human, &now);
+            if (now.ground_time >= 0.0f)
+            {
+                const DdQuat &a = lastPelvis, &b = pelvis.rotation;
+                const float dot = std::fabs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w);
+                run.groundTurn += 2.0f * std::acos(std::fmin(1.0f, dot)) * 57.29578f;
+            }
+            lastPelvis = pelvis.rotation;
+        }
         static int traced = 0;
         if (!run.handedOver) traced = 0;
         static DdVec3 lastCom{0, 0, 0};
@@ -367,6 +399,8 @@ int main(int argc, char** argv)
         else if (a == "--trace") gTrace = true;
         else if (a == "--momentum") gMomentum = true;
         else if (a == "--gait") gGait = true;
+        else if (a == "--behaviour") gBehaviour = next();
+        else if (a == "--aware") gAware = true;
         else if (a == "--kick") {}
         else if (a == "--arms-forward") gArmsForward = true;
         else if (a == "--size") gSize = std::strtof(next().c_str(), nullptr);
@@ -379,6 +413,8 @@ int main(int argc, char** argv)
             std::fclose(f);
         }
         else if (a == "--car-friction") gCarFriction = std::strtof(next().c_str(), nullptr);
+        else if (a == "--road-friction") gRoadFriction = std::strtof(next().c_str(), nullptr);
+        else if (a == "--road-restitution") gRoadRestitution = std::strtof(next().c_str(), nullptr);
         else if (a == "--car-restitution") gCarRestitution = std::strtof(next().c_str(), nullptr);
         else if (a == "--tension")
         {
@@ -405,7 +441,7 @@ int main(int argc, char** argv)
     if (fopen_s(&csv, out.c_str(), "w") != 0 || csv == nullptr) return 1;
     std::fprintf(csv, "vehicle,kmh,heading,offset,handed_over,failed,finished,class,first_body,first_zone,first_height,head_time_ms,head_zone,"
                       "wad,head_speed_ratio,separation_s,launch_ratio,launch_angle,launch_height,apex,ground_s,ground_body,rest_s,carry,"
-                      "flight_slide,throw,corridor_min,corridor_max,in_corridor,pitch,peak_head_dv,com_over_front,contact_s,lead_height,com_height,lead_setback,bonnet_length\n");
+                      "flight_slide,throw,corridor_min,corridor_max,in_corridor,pitch,peak_head_dv,com_over_front,contact_s,lead_height,com_height,lead_setback,bonnet_length,ground_turn\n");
     const auto start = std::chrono::steady_clock::now();
     std::vector<Run> runs;
     for (const std::string& vehicle : vehicles)
@@ -416,13 +452,13 @@ int main(int argc, char** argv)
                     const Run run = simulate(vehicle, kmh, heading, offset, brakeAtContact);
                     const DdImpactReport& r = run.r;
                     const float v = kmh / 3.6f;
-                    std::fprintf(csv, "%s,%.0f,%.0f,%.2f,%d,%d,%d,%s,%s,%s,%.3f,%.0f,%s,%.3f,%.3f,%.3f,%.3f,%.1f,%.3f,%.3f,%.3f,%s,%.3f,%.2f,%.2f,%.2f,%.2f,%.2f,%d,%.0f,%.2f,%.2f,%.3f,%.2f,%.2f,%.2f,%.2f\n",
+                    std::fprintf(csv, "%s,%.0f,%.0f,%.2f,%d,%d,%d,%s,%s,%s,%.3f,%.0f,%s,%.3f,%.3f,%.3f,%.3f,%.1f,%.3f,%.3f,%.3f,%s,%.3f,%.2f,%.2f,%.2f,%.2f,%.2f,%d,%.0f,%.2f,%.2f,%.3f,%.2f,%.2f,%.2f,%.2f,%.0f\n",
                                  vehicle.c_str(), kmh, heading, offset, run.handedOver ? 1 : 0, run.failed ? 1 : 0, r.finished, className(r.measured),
                                  run.firstBody.c_str(), zoneName(r.first_zone), r.first_height, r.head_strike_time >= 0 ? r.head_strike_time * 1000.0f : -1.0f,
                                  zoneName(r.head_strike_zone), r.wrap_around_distance, r.head_strike_time >= 0 ? r.head_strike_speed / v : -1.0f,
                                  r.separation_time, r.launch_speed / v, r.launch_angle, r.launch_height, r.apex_height, r.ground_time,
                                  run.groundBody.c_str(), r.rest_time, r.carry_distance, r.flight_slide_distance, r.throw_distance, r.corridor_min,
-                                 r.corridor_max, r.in_corridor, r.pitch_degrees, r.peak_head_delta_v, r.com_over_front, r.contact_seconds, run.lead, run.com, run.setback, run.bonnet);
+                                 r.corridor_max, r.in_corridor, r.pitch_degrees, r.peak_head_delta_v, r.com_over_front, r.contact_seconds, run.lead, run.com, run.setback, run.bonnet, run.groundTurn);
                     runs.push_back(run);
                 }
     std::fclose(csv);

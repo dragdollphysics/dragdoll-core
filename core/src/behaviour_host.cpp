@@ -236,6 +236,18 @@ void updateBehaviour(DdCharacter& c, World& world, float dt)
     percept.senses = c.senses;
     percept.contacts = c.contacts.data();
     percept.bodyCount = static_cast<uint32_t>(c.contacts.size());
+    c.perceptBodies.resize(c.currPosition.size());
+    for (size_t i = 0; i < c.currPosition.size(); ++i)
+    {
+        c.perceptBodies[i] = DdTransform{toDd(JPH::Vec3(c.currPosition[i])),
+                                         DdQuat{c.currRotation[i].GetX(), c.currRotation[i].GetY(), c.currRotation[i].GetZ(), c.currRotation[i].GetW()}};
+        if (i < sdk::kMaxBodies && i < c.region.size())
+        {
+            percept.bodyRegion[i] = static_cast<DdRegion>(c.region[i]);
+        }
+    }
+    percept.bodies = c.perceptBodies.data();
+    percept.headBody = c.headBody;
 
     // Threat, how long it has been one, and whether the character knows: told by the host, or seen — the object lies
     // within the head's field of view (about 100 degrees to each side of where the head faces).

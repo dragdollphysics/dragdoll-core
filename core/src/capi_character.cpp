@@ -541,6 +541,27 @@ DD_API DdResult DD_CALL dragdoll_character_set_kinematic(DdCharacter* character,
     DD_GUARD_END(DD_ERROR_INTERNAL)
 }
 
+DD_API DdResult DD_CALL dragdoll_character_set_auto_handover(DdCharacter* character, float lead_seconds)
+{
+    DD_GUARD_BEGIN
+    if (character == nullptr || !std::isfinite(lead_seconds) || lead_seconds < 0.0f)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_set_auto_handover: character and lead_seconds >= 0 are required");
+    }
+    character->autoHandover = lead_seconds;
+    if (dragdoll::rec::Recorder* recorder = recorderOf(character))
+    {
+        recorder->autoHandover(character->id, lead_seconds);
+    }
+    return DD_OK;
+    DD_GUARD_END(DD_ERROR_INTERNAL)
+}
+
+DD_API float DD_CALL dragdoll_character_get_auto_handover(const DdCharacter* character)
+{
+    return character != nullptr ? character->autoHandover : 0.0f;
+}
+
 DD_API int DD_CALL dragdoll_character_get_kinematic(const DdCharacter* character)
 {
     return character != nullptr && character->kinematic ? 1 : 0;

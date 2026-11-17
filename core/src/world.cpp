@@ -257,6 +257,15 @@ void World::simulate(uint32_t steps)
     {
         const float farthest = driveKinematics(static_cast<double>(mStepCount + 1) * mFixedDt);
         updatePerception(); // Senses first: what the muscles (and later the behaviours) react to
+        for (auto& [characterId, character] : mCharacters) // Handover on impact: the vehicle meets a physical body
+        {
+            DdCharacter& c = *character;
+            if (c.kinematic && c.autoHandover > 0.0f && c.state != DD_STATE_FAILED && c.threat.collider != DD_INVALID_COLLIDER &&
+                c.threat.time_to_collision <= c.autoHandover)
+            {
+                setCharacterKinematic(c, false); // Deterministic from the simulation: not recorded
+            }
+        }
         for (auto& [characterId, character] : mCharacters) // Ordered by id: deterministic
         {
             if (character->state != DD_STATE_FAILED)

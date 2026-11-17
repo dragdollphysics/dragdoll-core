@@ -962,3 +962,27 @@ Crowd question (car through the pier) → cost is linear in awake ragdolls (~70 
 
 **Open questions**
 * Sedans at 50 km/h now all count as somersaults (pitch -317 to -535 deg): the rule counts rotation from first contact to first ground contact, including the slow roll while riding the bonnet. Ravani's somersault is a rotation in the air - count pitch only after separation?
+
+---
+
+## 2026-11-17 — Task 4.6 started: handover on impact, Impact / Carried stages (awaiting founder review)
+**Changed** (local, not committed)
+* **Core:** `dragdoll_character_set_auto_handover(character, lead_seconds)` / `get_auto_handover`: a kinematic (host-animated) character turns dynamic by itself, keeping its animated velocities, when its threat is due within `lead_seconds` (0 = off). Recorded (format 5, record AutoHandover). The baseline runner's handover logic, now in the library for every host.
+* **SDK:** the percept carries body transforms, each body's region and the head index.
+* **car_hit** (ADR-0025 stages): **Impact** at first vehicle contact - a tensed struck leg yields at once; trunk and neck co-contract after the reflex latency. **Carried** (on the vehicle, not the ground, reflexes available) - Guard (chin tucked via pose "guard", forearms aimed between the head and the nearest vehicle contact) and Curl (pose "curl": spine 10-15 deg, hips 35, knees 40); trunk eases to relaxed over 0.5 s. **After** (off the vehicle 0.1 s) - relaxed with Guard, placeholder until 4.7. **Limp** at vitality 0 (the limp tier, ADR-0025 §2; one test updated to that meaning). Numbers and poses in `packs/behaviours/car_hit.json`.
+* **Scenarios:** `react_<vehicle>_40kmh` (6): kinematic standing, unaware, car_hit, auto handover. Tests: impact chain (handover just before contact, brace 0.08-0.11 s after contact when unaware, carried, after; struck leg yields when startled), no auto handover -> stays kinematic. Behaviour / recording / replay / determinism / aim / scenarios green (x64-release).
+* **Metric** (runner `--behaviour car_hit [--aware]`; 30/40/50 km/h x 4 headings x 3 offsets): unaware reflexes leave the head strike about as passive (sedan median per-step head delta-v 7.5 -> 8.4 m/s, max 17.9 -> 15.6; head speed at the strike 0.87 -> 1.01 x v: the braced neck carries the head with the trunk) - expected, the brace lands just before the head strike (ADR-0025 §3b). Aware (startle + shield): slower head strike (sedan 0.71 x v, motorbike 0.82 vs 0.99) and some strikes move to the bonnet, as with the cadaver whose arm propped the trunk. No failures.
+
+* **Founder review 1:** "the doll covers its face, looks very cool"; an unaware pedestrian should react accordingly. Changed: Guard + Curl now wait for the reflex latency only when the character was startled before the contact (it saw the car); taken by surprise it waits `guard.unaware_latency` (0.25 s, placeholder - to be sourced). Unaware sedan 40 km/h: guard 0.24 s after contact; aware: as soon as it lies on the car (0.15 s). Test extended.
+* **Founder review 2:** worse - "liked it more before"; when airborne after the hit the arms change pose, the guard comes too quick and too stiff. Cause: with the later guard the unaware body was already leaving the car, so the arms snapped into the guard in the air, at full tension within 0.05 s. Changed: a guard starts only while lying on the car (kept, never started, in the air); arms reach full tension over `guard.blend` 0.3 s; `guard.unaware_latency` back to 0.1 s (the setting stays). Guard now 0.1 s after contact (unaware) / 0.15 s (aware).
+
+* **Founder request:** more rotation when hitting the floor - "looks slippery, asphalt is abrasive". Measured (runner: new `ground_turn` column = degrees the pelvis turns from first ground contact to rest; `--road-friction`, `--road-restitution`; 20-60 km/h, car_hit): combined body-road friction 0.69 / 0.75 / 0.89 / 1.02 -> median turn 275 / 282 / 316 / 324 deg; bounce 0.2 changes nothing; limp / relaxed / car_hit 316 / 257 / 282 deg; throws stay in Wood's bands throughout. Slide deceleration (~7.4 m/s²) already matches dummy slides (7.2-8.2). Trunk edge rounding (Jolt box convex radius up to 95 % of the thinnest half extent) gives identical results - Jolt collides the boxes as sharp boxes - so that option was removed again. **Conclusion:** not friction; most likely the trunk's flat box faces (a box on its back slides, an oval torso rolls). Candidate fix: trunk shapes rounder in cross-section (capsules or convex hulls) - a rig change that touches every validated number, so it needs the founder's go and a full re-validation.
+
+**Next**
+* Founder: judge `react_sedan_40kmh` (and the other react_*): struck side gives, ~0.1 s brace, chin tuck / forearms / curl on the car, loose after.
+* Then close 4.6 (x86 build, commit on the founder's word), start 4.7.
+
+**Open questions**
+* Should the neck co-contract at all when unaware? It raises head speed at the strike in our model; real neck tone is said to reduce cervical injuries (Forman 2015). Phase 5 can tune it against the cadaver head-velocity corridors.
+* **Founder:** keep the rig as it is (no trunk shape change). The "different" feel came from testing react_bus / react_suv / react_van: forward projections never lie on the vehicle, so they have no Carried stage and no Guard - by design (ADR-0025: a forward projection has no Carried); the airborne Guard / Reach come with 4.7. Workplan: 4.6 done.
+* Next (replaces the Next above): commit 4.6 on the founder's word; then **4.7 Airborne + Landing + Tumble**.

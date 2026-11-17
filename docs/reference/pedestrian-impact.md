@@ -170,6 +170,8 @@ angles, and a measured friction between body and bonnet (only modelling choices 
   face the vehicle with the hands raised toward it. Li Q. et al. 2021 [read].
 * Startle: a stereotyped response recruited from the neck downward, of brainstem origin. Brown et al. 1991
   [abstract]. **Not yet sourced:** latencies for the trunk and limbs.
+* **Not yet sourced:** how soon the arms start a protective movement after an *unexpected* hit or push (car_hit's
+  `guard.unaware_latency`, now 0.1 s like the reflex latency: a later guard began in the air and looked worse).
 
 ## 5. Protective responses in falls and landings
 

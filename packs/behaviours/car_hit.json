@@ -23,6 +23,65 @@
     "recover": {
       "delay": 0.6,
       "blend": 0.5
+    },
+    "impact": {
+      "yield_blend": 0.02,
+      "brace_blend": 0.05
+    },
+    "carried": {
+      "relax": 0.5,
+      "release": 0.1
+    },
+    "guard": {
+      "offset": 0.12,
+      "extension": 0.5,
+      "unaware_latency": 0.1,
+      "blend": 0.3
+    },
+    "after": {
+      "blend": 0.3
     }
-  }
+  },
+  "poses": {
+    "guard": {
+      "head": [
+        25,
+        0,
+        0
+      ]
+    },
+    "curl": {
+      "lower_spine": [
+        15,
+        0,
+        0
+      ],
+      "upper_spine": [
+        10,
+        0,
+        0
+      ],
+      "thigh_l": [
+        -35,
+        0,
+        0
+      ],
+      "thigh_r": [
+        -35,
+        0,
+        0
+      ],
+      "shin_l": [
+        40,
+        0,
+        0
+      ],
+      "shin_r": [
+        40,
+        0,
+        0
+      ]
+    }
+  },
+  "poses_note": "Joint offsets from the rest pose in rig axes, degrees about [x, y, z]; x = the character's left axis: + bends a spine / neck forward, + bends a knee, - flexes a hip."
 }
