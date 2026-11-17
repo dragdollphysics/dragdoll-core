@@ -124,7 +124,7 @@ TEST_CASE("impact report: a limp pedestrian hit at 40 km/h by each vehicle pack 
                         << " deg from " << r.launch_height << " m, apex " << r.apex_height << " m | ground " << r.ground_time << " s on "
                         << hit.groundBody << " | rest " << r.rest_time << " s | carry " << r.carry_distance << " + flight/slide "
                         << r.flight_slide_distance << " -> throw " << r.throw_distance << " m (corridor " << r.corridor_min << "-"
-                        << r.corridor_max << (r.in_corridor ? ", inside" : ", OUTSIDE") << ") | pitch " << r.pitch_degrees
+                        << r.corridor_max << (r.in_corridor == 1 ? ", inside" : r.in_corridor == 0 ? ", OUTSIDE" : ", no flight") << ") | pitch " << r.pitch_degrees
                         << " deg | peak head " << r.peak_head_delta_v << " m/s");
         REQUIRE(r.valid == 1);
         CHECK(r.finished == 1);
@@ -154,10 +154,25 @@ TEST_CASE("impact report: a limp pedestrian hit at 40 km/h by each vehicle pack 
         // Distances agree with each other (horizontal, so the triangle inequality holds).
         CHECK(r.throw_distance <= r.carry_distance + r.flight_slide_distance + 0.01f);
         CHECK(r.throw_distance > 1.0f);
-        // The corridor is the throw equation for this launch.
-        const float mu = 0.7f, g = 9.81f, h = std::max(r.launch_height, 0.0f), u = r.launch_speed;
-        CHECK(r.corridor_min == doctest::Approx(mu * h + u * u / (2 * mu * g)).epsilon(0.001));
-        CHECK(r.corridor_max == doctest::Approx(mu * h + u * u * (1 + mu * mu) / (2 * mu * g)).epsilon(0.001));
+        // The corridor is the throw equation for this launch (measured angle), over body-on-road friction 0.66-0.84;
+        // only for a real flight.
+        if (r.ground_time - r.separation_time > 0.5f / 120.0f)
+        {
+            const float g = 9.81f, h = std::max(r.launch_height, 0.0f), u = r.launch_speed, a = r.launch_angle / 57.29578f;
+            const auto equation = [&](float mu) {
+                const float k = std::max(0.0f, std::cos(a) + mu * std::sin(a));
+                return mu * h + u * u * k * k / (2 * mu * g);
+            };
+            CHECK(r.corridor_min <= std::min(equation(0.66f), equation(0.84f)) + 0.001f);
+            CHECK(r.corridor_max >= std::max(equation(0.66f), equation(0.84f)) - 0.001f);
+            CHECK(r.corridor_min > 0.0f);
+            CHECK(r.in_corridor >= 0);
+        }
+        else
+        {
+            CHECK(r.in_corridor == -1);
+            CHECK(r.corridor_min == -1.0f);
+        }
         CHECK(r.measured != DD_TRAJECTORY_NONE);
     }
 }

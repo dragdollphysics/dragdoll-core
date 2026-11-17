@@ -155,11 +155,23 @@ JPH::Ref<JPH::RagdollSettings> buildRagdollSettings(const Rig& rig, JPH::Mat44Ar
         table->EnableCollision(static_cast<JPH::CollisionGroup::SubGroupID>(i),
                                static_cast<JPH::CollisionGroup::SubGroupID>(rig.bodies[i].parent));
     }
-    settings->Stabilize();
+    for (size_t i = 0; i < rig.bodies.size(); ++i) // Soft tissue between them: never collide
+    {
+        auto* table = static_cast<JPH::GroupFilterTable*>(
+            const_cast<JPH::GroupFilter*>(settings->mParts[i].mCollisionGroup.GetGroupFilter()));
+        for (int other : rig.bodies[i].noCollision)
+        {
+            table->DisableCollision(static_cast<JPH::CollisionGroup::SubGroupID>(i), static_cast<JPH::CollisionGroup::SubGroupID>(other));
+        }
+    }
+    // No RagdollSettings::Stabilize(): it evens out masses along chains for the solver's sake, and on humanoid16 it
+    // turned a 0.46 kg hand into 3 kg and a 12 kg trunk segment into 6 kg (total unchanged) - a different body. The
+    // rig's own mass ratios (at most ~3:1 between neighbours) are well within what Jolt solves at 120 Hz.
+    // (Found 2026-11-17 in task 4.3: the late head strike in side-on car hits.)
     settings->CalculateBodyIndexToConstraintIndex();
     settings->CalculateConstraintIndexToBodyIdxPair();
 
-    // Stabilize may redistribute mass along chains: report what Jolt actually uses.
+    // Report the mass Jolt actually uses.
     outTotalMass = 0.0f;
     for (const JPH::RagdollSettings::Part& part : settings->mParts)
     {

@@ -255,7 +255,7 @@ void World::simulate(uint32_t steps)
     const float fixedDt = static_cast<float>(mFixedDt);
     for (uint32_t i = 0; i < steps; ++i)
     {
-        driveKinematics(static_cast<double>(mStepCount + 1) * mFixedDt);
+        const float farthest = driveKinematics(static_cast<double>(mStepCount + 1) * mFixedDt);
         updatePerception(); // Senses first: what the muscles (and later the behaviours) react to
         for (auto& [characterId, character] : mCharacters) // Ordered by id: deterministic
         {
@@ -270,7 +270,14 @@ void World::simulate(uint32_t steps)
             }
         }
         beforePhysics();
-        const JPH::EPhysicsUpdateError error = mPhysics->Update(fixedDt, 1, mTempAllocator.get(), mJobSystem.get());
+        // Collision sub-steps for fast host-driven colliders: their surfaces are hollow triangle meshes, and a car face
+        // moving 0.21 m in one step (90 km/h) can end up past a 0.1 m limb, which is then pushed out the wrong way
+        // (through the underside). Keep every collider's motion per collision check under kMaxSweep. Only fast
+        // vehicles pay for it. (Found 2026-11-17, task 4.3: bus at 90 km/h passing over the body.)
+        constexpr float kMaxSweep = 0.05f;
+        constexpr int kMaxCollisionSteps = 4;
+        const int collisionSteps = std::clamp(static_cast<int>(std::ceil(farthest / kMaxSweep)), 1, kMaxCollisionSteps);
+        const JPH::EPhysicsUpdateError error = mPhysics->Update(fixedDt, collisionSteps, mTempAllocator.get(), mJobSystem.get());
         if (error != JPH::EPhysicsUpdateError::None)
         {
             throw std::runtime_error("physics update error (body pair / contact capacity exceeded)");
@@ -281,10 +288,11 @@ void World::simulate(uint32_t steps)
     }
 }
 
-void World::driveKinematics(double stepEndTime)
+float World::driveKinematics(double stepEndTime)
 {
     JPH::BodyInterface& bodies = mPhysics->GetBodyInterfaceNoLock();
     const float fixedDt = static_cast<float>(mFixedDt);
+    float farthest = 0.0f;
     for (auto& [id, collider] : mColliders)
     {
         if (collider.motion != DD_MOTION_KINEMATIC)
@@ -312,7 +320,12 @@ void World::driveKinematics(double stepEndTime)
         }
         // MoveKinematic derives the velocity from the displacement; no displacement = standing still.
         bodies.MoveKinematic(collider.body, position, rotation, fixedDt);
+        // How far its surface moves this step: translation plus turning at its outermost point.
+        const float reach = bodies.GetShape(collider.body)->GetLocalBounds().GetExtent().Length();
+        const float sweep = (bodies.GetLinearVelocity(collider.body).Length() + bodies.GetAngularVelocity(collider.body).Length() * reach) * fixedDt;
+        farthest = std::max(farthest, sweep);
     }
+    return farthest;
 }
 
 void World::captureTransforms()

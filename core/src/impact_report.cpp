@@ -22,7 +22,8 @@ namespace
 {
 constexpr uint32_t kApartSteps = 3;        // No contact with the object for 25 ms = separated
 constexpr float kRestSeconds = 0.5f;       // Still this long after landing = at rest (as DD_STATE_SETTLED)
-constexpr float kRoadFriction = 0.7f;      // Body on road (Searle: 0.66-0.79; reference file §3)
+constexpr float kRoadFrictionMin = 0.66f;  // Body on road: reconstruction values 0.66-0.79 (Searle), dummy slides
+constexpr float kRoadFrictionMax = 0.84f;  // 0.73-0.84 (reference file §3)
 constexpr float kEdgeBand = 0.15f;         // m behind the leading edge that still counts as "leading edge"
 constexpr float kCornerBand = 0.15f;       // m from a front corner: a fender-vault candidate
 constexpr float kRoofOvershoot = 0.5f;     // m beyond the bonnet's end at separation: over the roof
@@ -157,6 +158,7 @@ void World::updateImpactReport(DdCharacter& c)
         r.head_strike_time = r.separation_time = r.ground_time = r.rest_time = -1.0f;
         r.wrap_around_distance = r.launch_height = r.apex_height = r.corridor_min = r.corridor_max = -1.0f;
         r.ground_body = -1;
+        r.in_corridor = -1; // Not judged until the body rests after a flight
         r.first_body = first;
         r.contact_order[r.contact_count++] = static_cast<uint32_t>(first); // The order starts with the first contact
 
@@ -253,6 +255,24 @@ void World::updateImpactReport(DdCharacter& c)
         r.pitch_degrees += bodies.GetAngularVelocity(c.ragdoll->GetBodyID(0)).Dot(t.left) * dt * kRadToDeg;
     }
 
+    // --- How far the centre of mass got over the object (behind its foremost point) while in contact.
+    if (!t.separated && anchorAlive && !t.direction.IsNearZero())
+    {
+        const float frontNow = t.frontStart + JPH::Vec3(bodies.GetPosition(anchor->second.body) - t.anchorStart).Dot(t.direction);
+        t.deepestBehindFront = std::max(t.deepestBehindFront, frontNow - JPH::Vec3(com).Dot(t.direction));
+    }
+
+    // --- Back on the object before reaching the ground (a bounce on the bonnet): that was not the separation. The
+    // separation is the last time the body leaves the object before its first ground contact.
+    if (t.separated && !t.grounded && touching)
+    {
+        t.separated = false;
+        t.stepsApart = 0;
+        r.separation_time = r.launch_height = r.apex_height = -1.0f; // As before the first separation
+        r.launch_speed = r.launch_angle = r.carry_distance = 0.0f;
+        r.launch_velocity = DdVec3{0, 0, 0};
+    }
+
     // --- Separation and launch.
     if (!t.separated)
     {
@@ -269,6 +289,8 @@ void World::updateImpactReport(DdCharacter& c)
             r.launch_height = s.ground_height;
             r.apex_height = s.ground_height;
             r.carry_distance = horizontalDistance(t.impactCom, com, mUp);
+            r.contact_seconds = elapsed;
+            r.com_over_front = t.deepestBehindFront;
             if (anchorAlive && !t.direction.IsNearZero())
             {
                 const float frontNow = t.frontStart + JPH::Vec3(bodies.GetPosition(anchor->second.body) - t.anchorStart).Dot(t.direction);
@@ -297,22 +319,46 @@ void World::updateImpactReport(DdCharacter& c)
         r.rest_time = elapsed;
         r.flight_slide_distance = horizontalDistance(t.separationCom, com, mUp);
         r.throw_distance = horizontalDistance(t.impactCom, com, mUp);
-        if (r.launch_speed > 0.0f && mGravity > 0.0f)
+        r.corridor_min = r.corridor_max = -1.0f;
+        r.in_corridor = -1;
+        const bool flew = r.ground_time - r.separation_time > 0.5f * dt; // Feet left the road: a real flight
+        if (flew && r.launch_speed > 0.0f && mGravity > 0.0f)
         {
-            // Flight + slide for a launch speed u from height h, at launch angles of 0 to 45 degrees: the general
-            // throw equation's least (horizontal launch) and greatest (tan angle = friction) values.
-            const float u = r.launch_speed, mu = kRoadFriction, h = std::max(r.launch_height, 0.0f);
-            r.corridor_min = mu * h + u * u / (2.0f * mu * mGravity);
-            r.corridor_max = mu * h + u * u * (1.0f + mu * mu) / (2.0f * mu * mGravity);
-            r.in_corridor = r.flight_slide_distance >= r.corridor_min && r.flight_slide_distance <= r.corridor_max ? 1 : 0;
+            // The general throw equation (Searle; reference file §3) for the measured launch speed u, angle and
+            // height h, over the published body-on-road friction range: flight + slide from the separation point.
+            // At the measured angle, not over 0-45 deg: bodies leaving a car often head slightly downward (-4 to -8
+            // deg median on SUVs, vans), which the equation itself shortens by up to 20 %.
+            const float u = r.launch_speed, h = std::max(r.launch_height, 0.0f), angle = r.launch_angle / kRadToDeg;
+            float lo = 1e9f, hi = 0.0f;
+            for (int i = 0; i <= 6; ++i)
+            {
+                const float mu = kRoadFrictionMin + (kRoadFrictionMax - kRoadFrictionMin) * static_cast<float>(i) / 6.0f;
+                const float k = std::max(0.0f, std::cos(angle) + mu * std::sin(angle));
+                const float sDistance = mu * h + u * u * k * k / (2.0f * mu * mGravity);
+                lo = std::min(lo, sDistance);
+                hi = std::max(hi, sDistance);
+            }
+            r.corridor_min = lo;
+            r.corridor_max = hi;
+            r.in_corridor = r.flight_slide_distance >= lo && r.flight_slide_distance <= hi ? 1 : 0;
         }
     }
 
     // --- The class the motion fits (ADR-0024 §5), once it has left the object.
     if (t.separated)
     {
-        DdTrajectory measured = t.upperOnTop ? DD_TRAJECTORY_WRAP : DD_TRAJECTORY_FORWARD_PROJECTION;
-        if (t.upperOnTop && t.front.valid != 0 && t.behindFrontAtSeparation > t.front.leading_edge_setback + t.front.bonnet_length + kRoofOvershoot)
+        // Wrap = the body rotated over the leading edge onto the object: upper body on its top AND the centre of mass
+        // carried past the edge. On high fronts (leading edge near the centre of mass: SUVs, vans) the head and chest
+        // fold onto the bonnet but the body is pushed ahead - forward projection (centre of gravity in the primary
+        // impact zone, Simms 2013). Found in the 4.3 baseline: SUV/van CoM got 0.09 m behind the front (median) vs
+        // 0.34-1.35 m on sedans. Without a probed front, the contacts alone decide.
+        bool overEdge = true;
+        if (t.front.valid != 0)
+        {
+            overEdge = t.deepestBehindFront > t.front.leading_edge_setback;
+        }
+        DdTrajectory measured = t.upperOnTop && overEdge ? DD_TRAJECTORY_WRAP : DD_TRAJECTORY_FORWARD_PROJECTION;
+        if (measured == DD_TRAJECTORY_WRAP && t.behindFrontAtSeparation > t.front.leading_edge_setback + t.front.bonnet_length + kRoofOvershoot)
         {
             measured = DD_TRAJECTORY_ROOF_VAULT;
         }

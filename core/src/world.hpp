@@ -172,7 +172,8 @@ private:
     JPH::Ref<JPH::Shape> createShape(const DdColliderDesc& desc) const;
     void stampPendingTargets(double hostTime);
     void simulate(uint32_t steps);
-    void driveKinematics(double stepEndTime);
+    // Moves host-driven colliders to their pose at stepEndTime; returns the farthest any of them moves in this step (m).
+    float driveKinematics(double stepEndTime);
     void captureTransforms();
     double simTime() const { return static_cast<double>(mStepCount) * mFixedDt; }
 

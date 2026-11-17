@@ -66,7 +66,9 @@ Events with times: first contact (body, zone, vehicle speed, lateral offset), co
 * **Measured class** (rules ours, after the Ravani et al. categories; thresholds reviewed against the full texts in
   task 4.2):
   * *forward projection* — no trunk or head contact above the leading edge; body ahead of the vehicle at separation;
-  * *wrap* — trunk or head contact on bonnet or windscreen; body leaves forward of the vehicle;
+  * *wrap* — trunk or head contact on bonnet or windscreen **and** the centre of mass carried past the leading edge
+    while in contact; body leaves forward of the vehicle (amended 2026-11-17: on high fronts the head and chest fold
+    onto the bonnet while the body is pushed ahead - forward projection with a head strike, Simms 2013);
   * *roof vault* — centre of mass passes over the roof line; lands behind the vehicle's front;
   * *fender vault* — first contact within about 0.15 m of a front corner; body leaves sideways;
   * *somersault* — wrap with more than 270 deg of pitch rotation before ground contact.
@@ -76,6 +78,14 @@ Events with times: first contact (body, zone, vehicle speed, lateral offset), co
   `mu h + u^2 / (2 mu g) <= s <= mu h + u^2 (1 + mu^2) / (2 mu g)` (the general throw equation at its extreme launch
   angles), with body-on-road friction `mu` 0.66-0.84. The ratio `u / vehicle speed` is reported per class; its
   literature ranges are still to be read (reference file §7).
+  *Amended 2026-11-17 (task 4.3):* the corridor is the general equation at the **measured** launch angle
+  `mu h + u^2 (cos theta + mu sin theta)^2 / (2 mu g)` over `mu` 0.66-0.84 (bodies leaving a car often head slightly
+  downward, which the 0-45 deg form wrongly called short); it applies only to a **real flight** (the feet off the road
+  at separation; otherwise `in_corridor = -1`); and the separation is the **last** time the body leaves the object
+  before its first ground contact (a bounce on the bonnet does not count).
+  *Amended 2026-11-17 (literature read):* the **total throw distance** (impact to rest) is also checked against the
+  real-world speed-distance bands of Wood, Simms & Walsh 2005 (185 wrap / 21 forward-projection accidents, 0.1-99.9
+  percentile; reference file §3); this is the primary throw check, the corridor the per-launch one.
 * **Further checks from the literature** (reference file §6): head strike 50-140 ms after first contact, wrap-around
   distance 1.5-2.3 m for a 1.6-1.75 m adult, head speed at the strike 0.6-1.06 of the vehicle's speed, flight
   0.45-0.7 s at 33-49 km/h, slide deceleration 6.5-8.3 m/s².

@@ -779,3 +779,186 @@ Crowd question (car through the pier) → cost is linear in awake ragdolls (~70 
 * Mass follows size cubed (97 kg at 1.09); SA has no masses for peds to compare with.
 
 * **Labels carry the animation's time** (founder): "name (group) time/total", the game's own current time and total length in seconds, unconverted (SA keeps time, not frame numbers), e.g. `IDLE_STANCE (player) 0.607/1.500`, `walk_civi (man) 0.750/1.133`. Founder confirmed: names appear, hookers look right.
+
+---
+
+## 2026-11-17 — Task 4.3: reference cadaver data; the head arrives too slowly
+**Changed** (local, not committed)
+* Reference (read in full, open access): Paas, Östh & Davidsson 2015 (IRCOBI) + Paas 2015 thesis - 5 cadavers, small hatchback, 40 km/h, side-on, walking posture: WAD 1.70-2.25 m, head impact speed 8.7-14.5 m/s (one < 1 m/s: arm support), head contact ~138 ms, pelvis slides 30-45 cm over the bonnet before head contact, elbow contact 37-58 ms before the head. Added to `docs/reference/pedestrian-impact.md` §2.
+* Runner switches `--gait` (walking posture: arms swung, elbows / forward knee bent) and `--size` (size_scale).
+* **Our side-on sedan at 40 km/h vs the cadavers:** head contact 325 ms vs ~138; WAD 1.89 m (inside); head speed 0.2-0.3 x vehicle speed vs ~1.0; pelvis sliding ~10 cm vs 30-45. Facing the car the head contact is 125 ms (inside), side-on it is 300-500 ms.
+* **Ruled out since the last entry:** walking posture (head contact later, not earlier), mass distribution (de Leva 1996 shares). Earlier: braking, car friction, pelvis size, hip stiffness.
+* The clearest signal: the head is carried forward early (about 6 m/s within 100 ms) instead of staying put until the windscreen reaches it - something couples head and upper trunk to the pelvis too strongly or loads them too early in a side-on hit.
+
+**Next**
+* Systematic comparison with time histories: our head / T1 / pelvis paths relative to the car against the cadaver kinematics (the thesis' appendices; Kerrigan et al. corridors if obtainable), one variable at a time: lateral spine and neck stiffness / limits (side bending is what a side-on hit loads), shoulder girdle (no clavicle: the arm hangs from the upper spine), contact between the near arm and the trunk, solver stiffness of the joint limits. (Opus: Fable is no longer available.)
+
+**Open questions**
+* Whether the near arm should collide with the trunk at all in the rig (in the body it does, through soft tissue).
+
+---
+
+## 2026-11-17 — Task 4.3 continued (Opus; Fable no longer available): narrowing the late head strike
+**Changed** (local, not committed)
+* Rig format: `"no_collision_with": [body names]` (soft tissue between bodies, e.g. arms vs trunk); rig.cpp + character.cpp. Runner: `--gait`, `--size`, `--arms-forward`, `--kick` (floating limp body, only the pelvis given 11 m/s).
+* **Experiments (sedan / sports / SUV, side-on, 30-50 km/h):**
+  * Arms raised forward: the trunk turns much faster (head from 1.64 to 1.05 m in 150 ms, ~1.1 m back over the bonnet - close to the cadavers' timing) but the arms then land on the bonnet and hold the head off it. Arms are props, not the main cause.
+  * Arms passing through the trunk (no collision with pelvis / spine), with and without walking posture: no improvement (head speed at contact 0.16-0.35 x vehicle speed).
+  * Hip side-swing limit 20 / 10 deg (from 40): pelvis motion identical.
+  * Freer spine and neck side bending (35 / 30 / 60 deg, low friction): the spine still bends at most ~24 deg in the first 50 ms and then straightens.
+  * Pelvis sliding over the bonnet is ~57 cm before 150 ms vs 30-45 cm in the cadavers: not far off.
+  * Kick test: the pelvis keeps only ~2 m/s of an 11 m/s kick (the hip joints share it with the thighs at once, correct for ball joints); head 0.07 m/s after 25 ms, 0.38 after 200 ms. The solver does not over-transmit.
+* **Reframed:** the cadavers' ~11 m/s head speed at contact combines the head's motion relative to the car and its fall onto it. Our head's forward motion is not wildly off; the fall is missing (~3 m/s): the trunk rotates too slowly (6-9 rad/s; a rigid trunk whose base is yanked to 11 m/s would turn at ~22 rad/s).
+* **New suspect:** Jolt's `RagdollSettings::Stabilize()` (called in `buildRagdollSettings`) redistributes mass along chains: the pelvis simulates at 5.1 kg instead of the rig's 8.4 kg (11.17 % of 75). The simulated body is not the designed one.
+
+**Next**
+* Print every segment's simulated mass and inertia against the rig; run the baseline with Stabilize off (or with its mass changes undone) and compare trunk rotation and head strike.
+* If it is not that: trace the angular velocity of pelvis and upper trunk separately in the car hit, and the contact force at the bonnet edge vs time.
+
+**Open questions**
+* Whether `Stabilize()` is needed at all with 120 Hz steps and LinearCast (it was added for solver stability in Phase 1).
+
+---
+
+## 2026-11-17 — Task 4.3: the cause of the late head strike - Jolt's Stabilize() changed the body's masses
+**Changed** (local, not committed)
+* **Found:** `RagdollSettings::Stabilize()` (called since Phase 1) redistributes mass along chains for solver stability. On humanoid16 it gave every segment 3-6 kg: hand 0.46 -> 3.05 kg, forearm 1.22 -> 3.82, upper arm 2.03 -> 4.77, foot 1.03 -> 3.91; trunk segments 12.25 / 11.97 -> 6.10 / 5.97, thigh 10.62 -> 6.10, pelvis 8.38 -> 5.09 (total unchanged). Each arm weighed 11.6 kg instead of 3.7, the trunk 17 kg instead of 33: heavy arms propped and carried the trunk. This affected every simulation since Phase 1.
+* **Removed** (`character.cpp`): the rig's own mass ratios (at most ~3:1 between neighbours) solve fine at 120 Hz. Dynamics tests (balance acceptance: quiet standing, hold_stance 60 s, bump_5kmh at 30-200 fps; scenarios; determinism; recordings; activation; behaviours; senses; impact report): 77 cases green after widening one pose round-trip tolerance from 5 mm to 1 cm (joint stretch mid-crumple now reaches ~9 mm). Benchmark 77.4 us per character per step (82-84 before).
+* **Baseline v1** (all headings, `build/baseline/baseline_v1.csv`): sedan 40 km/h head contact 183 ms median (was 325; cadavers ~138), head speed at contact 0.94 x vehicle speed (was 0.2-0.3; cadavers ~0.8-1.3), WAD 2.18 m (cadavers 1.70-2.25); sedan 50 km/h 133 ms. SUV 83 ms and van 125 ms at 40 km/h (earlier than the sedan, as Li et al. 2021 report for SUV / MPV). Bus: forward projection at every speed. SUVs and vans now mostly wrap with the head on the bonnet (WAD 1.6-1.8 m).
+* Still off: low cars at 10-30 km/h carry the body until they stop; 112 of 152 finished runs land short of the throw corridor - mostly runs where the body rides the bonnet 7-9 m, then slides off the front low and downward with the legs on the road (the corridor assumes a real flight). Car-surface friction 0.3 / 0.12 does not change this. Runs with a real flight (e.g. SUV side-on 40 km/h) land inside.
+* Rig format `no_collision_with` kept (unused by humanoid16). Runner switches kept.
+
+**Next**
+* Founder: judge `hit_sedan_40kmh` (and the other hit_* scenarios) in the viewer, and an F7 ragdoll in the game: they now move with the designed masses.
+* Then: why bodies stay on low bonnets (braking model at contact vs the cadaver tests' 10 ms; leg-road contact while carried); revisit the ADR-0024 acceptance "SUV / van -> forward projection" against the literature for adults (Simms 2013: forward projection when the pedestrian is short relative to the bonnet edge).
+
+**Open questions**
+* Should the throw corridor be checked only for runs with a real flight (no ground contact at separation)?
+
+---
+
+## 2026-11-17 — Task 4.3: SUVs and vans are forward projection with a head strike (class rule fixed)
+**Changed** (local, not committed)
+* Founder verdict: `hit_sedan_40kmh` and the other hit_* scenarios look right; in game, ragdolls now match the models' height (alignment not exact, accepted).
+* Impact report: `contact_seconds` (first contact -> separation) and `com_over_front` = the most the centre of mass got behind the object's foremost point while in contact (-100 unknown). Runner CSV gains `com_over_front, contact_s, lead_height, com_height, lead_setback, bonnet_length`.
+* **Finding:** on SUVs (leading edge 1.00 m) and vans (1.06 m), with the body's centre of mass at 0.97 m, the head and chest fold onto the bonnet / windscreen (head 75-83 ms, so the old rule said "wrap") but the centre of mass gets only 0.09-0.10 m behind the front (median; leading edge sits 0.15 / 0.25 m back): the body is pushed ahead, not carried. Sedans 0.34-1.35 m, sports cars up to 2.5 m, motorbikes 0.10-0.65 m.
+* **Measured class rule** (`impact_report.cpp`, ADR-0024 amended): wrap now also needs the centre of mass carried past the leading edge; roof vault is checked only for wraps. Baseline v4 (`build/baseline/v4.csv`, 20-80 km/h): bus 24/24 forward; van 24/24 forward; SUV 19 forward / 5 wrap (side-on from one side at 40-60 km/h and 80 km/h front/back-on: borderline, leading edge level with the centre of mass); sedan 20 wrap / 2 somersault / 1 roof vault; sports 13 wrap / 3 somersault. The ADR-0024 §6 pattern holds. Impact-report tests green (3 cases).
+* Gravity: the baseline uses 9.81 m/s² in both the simulation and the corridor, so it does not explain short throws; those are bodies riding low bonnets and sliding off with the legs on the road. SA's own gravity goes to ideas (measure in game), with vehicles bumping over bodies.
+
+**Next**
+* Why bodies stay on low bonnets at 10-30 km/h and slide off low (braking at contact vs the cadaver tests; leg-road contact while carried); check the throw corridor only for runs with a real flight.
+
+**Open questions**
+* Is the 5/24 SUV wrap share realistic for adults? (Literature: borderline when the leading edge is level with the centre of gravity.)
+
+---
+
+## 2026-11-17 — Task 4.3: the throw corridor was the wrong check, not the throws
+**Changed** (local, not committed)
+* **Bodies riding the bonnet** (trace of sedan 40 km/h side-on): after the head strike the body lies still on the bonnet while the car brakes at 7 m/s²; body-on-car friction (0.6 x 0.8 combined, ~6.8 m/s² at most) holds it until the car nearly stops. With car friction 0.2 it slides off ~0.4 s sooner. That is the physics of the carry phase; the total throw (10.9 m at 40 km/h, 22 m at 60) was never short. Body-on-bonnet friction stays unsourced (no open copy of Wood 2005 / Bhalla 2002 / the throw regressions could be fetched).
+* **Corridor** (`impact_report.cpp`, header, ADR-0024 amended): (1) the general throw equation at the *measured* launch angle over body-on-road friction 0.66-0.84 - bodies leave SUVs / vans heading 4-8 deg downward, which the 0-45 deg form called 20 % short; (2) only for a real flight (feet off the road at separation), else `in_corridor = -1` and corridor -1 - buses push the body with the feet on the road; (3) separation = the last departure before the first ground contact: bounces on the bonnet had marked "separations" at 0.09 s followed by 2 s "flights". Viewer report text and the runner summary follow ("in corridor (of flights)").
+* Baseline v6 (`build/baseline/v6.csv`), flights at 30-80 km/h inside the corridor: sedan 6 of 8, SUV 13 of 15, van 16 of 16, motorbike 15 of 16; sports cars almost never give a flight (the body slides off the low bonnet), 80 km/h -> roof vault 4/4. Classes unchanged by the corridor work. Impact-report tests green; `--trace` now runs 1.7 s and shows road contacts.
+
+**Next**
+* Founder: review a sample live (sedan / SUV / van at 40 km/h in the viewer) for the 4.3 gate; then the full four-preset test run (needs the founder's go) and commit.
+* Then: instability sweep 5-120 km/h (gate), and the low-speed bodies left on low bonnets (sedan 10, sports 10-30 km/h never separate).
+
+**Open questions**
+* Body-on-bonnet friction (clothing on paint): needs a source; it sets how long bodies ride a braking car.
+* Do bodies really stay on a sports car's bonnet at 10-30 km/h with immediate hard braking?
+
+---
+
+## 2026-11-17 — Task 4.3: literature read; throws match real-world accidents
+**Changed** (local, not committed)
+* Founder downloaded the papers automated fetching could not reach (sites block robots; ask the founder from now on). Read: Wood, Simms & Walsh 2005 (validated wrap / forward-projection models, Table 1 speed-distance bands from 185 + 21 real accidents, retardation coefficient 0.561 +- 0.101, restitution, impact times, separation mechanism); Batista 2008 (throw model; PC-Crash set-up with car-pedestrian friction 0.2; staged braking tests); Neale et al. 2021 (side-swipe throws much shorter than frontal formulas). The SafetyNet D3.1 report is road-safety statistics, nothing for us. All in `docs/reference/pedestrian-impact.md` §3 with sources.
+* **Result:** baseline throw distances sit on Wood's mean curves (sedan 40 km/h 10.5-11.0 m vs mean 10.4; 60 km/h 21.4-22.5 vs 22.4; bus 40 km/h 9.9-11.0 vs forward mean 11.6) - 152 of 154 finished runs at 20-80 km/h inside the 0.1-99.9 percentile band for their class; the two outside are sports-car roof vaults at 80 km/h (outside the wrap model).
+* Runner: new summary column "in real-world band (Wood 2005)" (`woodBand()` in `tools/baseline/baseline.cpp`); ADR-0024 amended: this band is the primary throw check.
+* Fixed: `in_corridor` now starts at -1 (runs that never finish no longer read as "outside").
+* Effective retardation of our body in real flights ~0.76 (SUV / van / motorbike / sedan), vs Wood's 0.56 +- 0.10 and dummy slides 0.73-0.84: at the sticky end. Not tuned: total throws already match. Wood also confirms two things seen here: forward-projection bodies keep their feet on the ground (no flight), and below ~6 m/s the body drops back onto the bonnet (low-speed riding is real).
+
+**Next**
+* Founder: review a sample live (sedan / SUV / van at 40 km/h) for the 4.3 gate; then the full four-preset test run (founder's go) and commit.
+* Then the instability sweep 5-120 km/h (gate).
+
+**Open questions**
+* Body slide retardation 0.76 vs Wood's 0.56: lower the rig's body friction later (lengthens slides, shortens nothing else)? Only if the in-game look calls for it.
+* Body-on-bonnet friction still has no measurement (0.2 in a PC-Crash set-up is a choice); Bhalla et al. 2002 not read (IRCOBI host refused).
+
+---
+
+## 2026-11-17 — Task 4.3: Bhalla 2002 and Untaroiu 2008 read; the wrap body is never thrown up
+**Changed** (local, not committed)
+* Read (founder downloads): Bhalla et al. 2002 (IRCOBI; MADYMO multi-body reference runs, Happer 2000 empirical fits, sensitivities) and Untaroiu et al. 2008 (reconstruction set-up, gait data). Saulić 2020 was already read. Reference file §3 updated, sources added.
+* **Finding:** in Bhalla's MADYMO wrap (adult, small car, 0.7 g braking from 40 km/h, car friction 0.5) the car contact lasts ~270-300 ms and the lower torso follows an upward parabola; adults rise > 50 % on an SUV at higher speeds. Ours (side-on, 20-60 km/h): pelvis rises 0-15 %, sedan contact 0.9-1.6 s, launch 15-22 deg downward; Wood's model gives ~0.12 x combined speed upward after the head strike (~1.4 m/s at 40 km/h).
+* Car friction 0.6 / 0.31 / 0.2 (combined 0.69 / 0.50 / 0.40) changes contact time and throws only a little: not the cause. Published set-ups use 0.5, 0.4 or 0.2 (choices, not measurements); kept at 0.6 for now.
+* Total throws still match Wood's and Happer's real-world curves.
+
+**Next**
+* Find where the wrap body's rotation goes: trace angular momentum of the whole body and per segment from first contact to 400 ms (sedan, 40 km/h, side-on); suspects: zero restitution on body parts, joint friction, the head / chest strike absorbing it, the legs being held by the bumper. Compare with Bhalla's lower-torso trajectory.
+
+**Open questions**
+* Contact in our report counts any touch (a dragging hand); MADYMO's "vehicle contact" may count only load-bearing contact - compare like with like before judging the 0.3 s.
+
+---
+
+## 2026-11-17 — Task 4.3: why the wrap body is not thrown up - narrowed, not solved
+**Changed** (local, not committed)
+* Runner: `--momentum` (centre-of-mass height and speed relative to the car, angular momentum about the car's left axis, bodies touching the car with their delta-v, every 25 ms for 0.8 s) and `--car-restitution`.
+* **What happens** (sedan 40 km/h, side-on): the bumper / leading-edge strike gives the centre of mass ~5 of 11 m/s by 50 ms; rotation about the left axis peaks at -125 kg m²/s and drops to -40 at 150 ms when the arms (125 ms) and head (150 ms) land; the trunk then slides **up the windscreen slope** with the car pushing only through friction (centre of mass 3.9 m/s slower than the car at 150 ms, level only at ~450 ms). The upward motion we have (+1.2 m/s at 200 ms, +0.19 m by 450 ms) is that ramp, not a throw. The legs swing up around the hips (shins to 1.6 m) while the trunk stays down.
+* **Ruled out, one at a time** (contact time, launch angle, apex at 30 / 40 / 50 km/h, front- and side-on): pelvis reaching lower + thicker thighs; joint friction x0 and x3; car friction 0.2-0.6; car restitution 0.3; hip flexion limited to ~90 deg (straight-leg); all leave bodies leaving 15-57 deg downward with contact > 1.2 s. Very high car friction (2.0-5.0) brings the body to car speed by ~200 ms (closer to MADYMO's ~300 ms separation) - consistent with Wood's model treating the head / shoulder strike as sticking (real windscreens and bonnets dent and grip) - but then the body sticks to the bonnet and never leaves.
+* **Conclusion:** two things are missing at once - grip at the secondary (head / shoulder) strike, and an upward / forward throw afterwards - and no parameter of the current contact model gives both. The comparison target so far is a multi-body model (MADYMO), not measurements; total throws already match real accidents. Not tuning blind.
+
+**Next**
+* Get measured cadaver trajectories (pelvis, T1, head relative to the car, 0-300 ms, full-scale PMHS tests: e.g. Kerrigan et al. 2005/2008, Subit et al. 2008) - founder to download - then compare like with like; if the gap is real, design the secondary-strike contact (local grip / deformation zone on bonnet and windscreen) as an ADR.
+* Meanwhile 4.3 can close on what is validated: classes, head-strike timing, WAD, total throws (Wood 2005 bands) - founder's call.
+
+**Open questions**
+* Is a bonnet "deformation grip" the right model, or does the real body leave because the car pitches nose-down under braking and the body rotates over it? Both need the cadaver trajectories to decide.
+
+---
+
+## 2026-11-17 — Task 4.3: cadaver tests read; what they can and cannot settle
+**Changed** (local, not committed)
+* Founder downloaded IRCOBI papers through web.archive.org (ircobi.org is down; the site's archive index is in the workspace `research/ircobi.json`) plus Forman et al. 2015 (Stapp). Read: Paas et al. 2012 (IRC-12-79), Song et al. 2017 (IRC-17-25), Kerrigan et al. 2012 (IRC-12-75), Forman et al. 2015. Reference file §2 and sources updated.
+* **Up to the head strike we match the cadavers:** real braking small sedan at 40 km/h (FSR02): pelvis on the leading edge 19 ms, elbow 74, shoulder 114, head 120 ms (WAD 2.00 m); other tests head 135-161 ms, WAD 2.0-2.2 m. Ours (sedan 40): head 133-192 ms, WAD 2.16-2.22 m. Our near arm lands at ~125 ms (cadaver elbow 74-117: we are a little late). The cadavers' "pelvis" contact is the hip / greater trochanter, which is the top of our thigh capsule (touching from ~25 ms), not our pelvis box.
+* **After the head strike there is no cadaver trajectory:** every test catches the body (net, belts, sled stop) after ~120-250 ms. The one measured outcome with a real braking car is FSR02's throw: **11.2 m** forward (ours sedan 40 km/h: 10.5-11.0 m). So the "contact ~0.3 s, thrown upward" picture is MADYMO's, not a measurement.
+* Forman 2015 confirms one mechanism from the previous entry: the shoulder **pockets into the windscreen** and pins, the head rotates about it, the lower body keeps moving (spine buckling). Our rigid windscreen lets the trunk slide up instead. Head angular velocity before the strike > 40 rad/s in real tests: worth measuring in ours.
+
+**Next**
+* Founder: close 4.3 on the validated measures (classes; head strike timing and WAD vs cadavers; total throw vs Wood 2005 bands and the FSR02 throw), with "secondary-strike grip / pocketing" as a later design item (ideas.md, ADR when needed) - or keep it open.
+* Then: full four-preset test run (founder's go) and commit.
+
+**Open questions**
+* Do players see the long ride on the bonnet as wrong in game? That, not MADYMO, should decide whether pocketing gets built.
+
+---
+
+## 2026-11-17 — Task 4.3: founder accepted the validated measures; the high-speed gate fails
+**Changed** (local, not committed)
+* Founder accepted closing 4.3 on the validated measures (classes, head strike vs cadavers, throws vs Wood 2005 and FSR02). Before marking it done, ran the remaining gate check, "no instability 5-120 km/h": `dragdoll_baseline --speeds 5,15,25,35,45,70,90,100,110,120 --offsets 0,-0.3,0.3` (720 runs, `build/baseline/sweep.csv`).
+* **Fails:** 14 runs end in DD_STATE_FAILED (instability detector): side-on sedan at 70 (offset 0.3), 110, 120 km/h; sports side-on at 90, 100, 110 km/h (all offsets); van front-on at 100 km/h. And bus side-on at 90 km/h (all 6 runs): the centre of mass ends 5-10 m behind the bus's front at 0.1-0.26 m height, launch 0.18-0.28 x speed - the body passed under or through the bus (clearance or tunnelling), and the class rule calls it a roof vault. Largest head delta-v per step ~31 m/s at 120 km/h (bus, SUV).
+* Workplan: 4.3 stays open with the validated part ticked and this as its last item; the "thrown upward" item is parked under ideas.md "pocketing".
+
+**Next**
+* Reproduce one failure with `--trace` (sports 100 km/h side-on; bus 90 km/h side-on), find the first bad step (joint separation, tunnelling through the vehicle, body under the bus), fix, rerun the sweep.
+
+**Open questions**
+* Is the bus case tunnelling (fast thin contact) or a real gap under the bus in the pack geometry (clearance vs a lying body)?
+
+---
+
+## 2026-11-17 — Task 4.3 closed: fast vehicles tunnelled through the body
+**Changed** (local, not committed)
+* **Cause:** one collision check per 120 Hz step. A bus at 90 km/h moves 0.21 m per step - more than a limb's thickness - and its surface is a hollow triangle mesh, so body parts ended up behind the front face and were pushed out through the underside (centre of mass dropping at -5.5 m/s within 25 ms, the bus passing over the body). The same at 70-120 km/h for side-on low cars ended in DD_STATE_FAILED.
+* **Fix** (`core/src/world.cpp`): `driveKinematics` returns how far any host-driven collider's surface moves this step (translation + rotation at its outermost point); the physics update uses `ceil(that / 0.05 m)` collision sub-steps, 1-4. Slow scenes are unchanged (1 sub-step); only fast vehicles pay.
+* **Sweep** 5-120 km/h, 6 vehicles x 4 headings x 3 offsets (`build/baseline/sweep2.csv`): 720 runs, **0 failures** (was 14), bus 120/120 forward projection (6 false roof vaults before). Baseline 20-80 km/h (`v8.csv`): every finished run inside Wood's real-world band; side-on sedan 40 km/h now head strike 125 ms, WAD 2.07 m, head 1.15 x vehicle speed (cadavers 120-161 ms, 2.0-2.2 m, above impact speed) - closer than before. Tests: impact report, determinism, scenarios, hits, vehicles, kinematics, senses - 39 cases green (x64-release; x86 not built this session: founder rule on builds).
+* Workplan: 4.3 done.
+* Full four-preset run (founder's go): x64-debug, x64-release, x86-debug, x86-release - smoke, unit (all doctest cases) and bench_budget all pass.
+
+**Next**
+* Commit the 4.3 work (founder's word).
+* Then 4.6 Impact + Carried + Guard (4.2 and 4.3 now done; 4.4 and 4.5 were already).
+
+**Open questions**
+* Sedans at 50 km/h now all count as somersaults (pitch -317 to -535 deg): the rule counts rotation from first contact to first ground contact, including the slow roll while riding the bonnet. Ravani's somersault is a rotation in the air - count pitch only after separation?

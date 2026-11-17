@@ -279,6 +279,31 @@ Rig Rig::parse(std::string_view text)
         rig.bodies.push_back(std::move(body));
     }
 
+    // Collision exceptions, by name (bodies may refer to ones defined after them).
+    for (size_t i = 0; i < bodies.size(); ++i)
+    {
+        const Json& b = bodies[i];
+        if (!b.contains("no_collision_with"))
+        {
+            continue;
+        }
+        const std::string where = "body \"" + rig.bodies[i].name + "\"";
+        const Json& list = b["no_collision_with"];
+        if (!list.is_array())
+        {
+            error(where, "\"no_collision_with\" must be a list of body names");
+        }
+        for (const Json& other : list)
+        {
+            const auto it = other.is_string() ? indexByName.find(other.get<std::string>()) : indexByName.end();
+            if (it == indexByName.end() || it->second == static_cast<int>(i))
+            {
+                error(where, "\"no_collision_with\" names an unknown body (or itself)");
+            }
+            rig.bodies[i].noCollision.push_back(it->second);
+        }
+    }
+
     if (std::fabs(massPercentTotal - 100.0f) > 1.0f)
     {
         error("rig", "\"mass_percent\" values must add up to 100 (got " + std::to_string(massPercentTotal) + ")");

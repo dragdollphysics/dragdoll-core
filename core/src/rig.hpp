@@ -58,6 +58,7 @@ struct RigBody
     int parent = -1;
     float massPercent = 0.0f;
     bool collideWithParent = false; // Normally a body never collides with the body it hangs from.
+    std::vector<int> noCollision;   // Other bodies it never collides with ("no_collision_with": soft tissue between them)
     RigShape shape;
     RigJoint joint; // Unused for the root
 };

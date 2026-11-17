@@ -632,15 +632,20 @@ typedef struct DdImpactReport
     float launch_angle;       /* Degrees above horizontal. */
     float launch_height;      /* m, centre of mass above the ground at separation. */
     float apex_height;        /* m, highest centre of mass above the ground during the flight. */
+    float com_over_front;     /* m, the most the centre of mass got behind the object's foremost point while in
+                               * contact (< leading-edge setback: never over the bonnet; -100 if unknown). */
+    float contact_seconds;    /* First contact -> separation. */
     float ground_time;        /* First ground contact after separation, and the body that made it. */
     int32_t ground_body;
     float rest_time;          /* Still for 0.5 s (settled). */
     float carry_distance;     /* First contact -> separation (centre of mass). */
     float flight_slide_distance; /* Separation -> rest. */
     float throw_distance;     /* First contact -> rest. */
-    float corridor_min;       /* Flight + slide expected for this launch (body-on-road friction 0.7): see ADR-0024 §5. */
+    float corridor_min;       /* Flight + slide the throw equation expects for the measured launch (speed, angle,
+                               * height) over body-on-road friction 0.66-0.84: see ADR-0024 §5. -1 without a flight. */
     float corridor_max;
-    int32_t in_corridor;      /* 1 = flight_slide_distance inside [corridor_min, corridor_max]. */
+    int32_t in_corridor;      /* 1 = flight_slide_distance inside [corridor_min, corridor_max]; 0 outside; -1 = no
+                               * flight (the feet were still on the road at separation: pushed, not thrown). */
     float pitch_degrees;      /* Body rotation about the object's left axis from first contact to first ground contact. */
     float peak_head_delta_v;  /* m/s, hardest head hit (one step) from first contact to rest. */
     DdTrajectory measured;    /* The class the motion fits (ADR-0024 §5 rules). */

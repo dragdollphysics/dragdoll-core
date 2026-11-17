@@ -142,6 +142,7 @@ struct DdCharacter
         uint32_t stepsApart = 0;
         bool upperOnTop = false;                    // Head or upper trunk touched the bonnet / windscreen / roof
         float behindFrontAtSeparation = 0.0f;       // Centre of mass behind the object's front at separation (m)
+        float deepestBehindFront = -100.0f;         // ...and the most it reached while in contact (-100 = unknown)
         std::vector<bool> touched;                  // Per body: has touched the object
     } impactTracking;
     int upperTrunkBody = -1; // The trunk body nearest the head (for the class rules)

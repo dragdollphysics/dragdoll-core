@@ -54,6 +54,32 @@ occurs. Expected in Ravani et al. 1981 and Wood et al. 2005 (see §7).
 Caution: Li G. et al. 2021 is internally inconsistent on two secondary points (how head strike time varies with impact
 speed; windscreen vs bonnet contact angle). Those are not used here.
 
+* **Cadaver tests, small hatchback, 40 km/h, side-on, walking posture** (5 subjects, 1.54-1.79 m, 47-88 kg; Renault
+  Mégane 2004; maximum braking 10 ms after first contact): head wrap-around distance 2.00 / 1.70 / 2.25 / 2.02 / 1.92 m;
+  head impact speed relative to the vehicle 11.0 / 8.7 / <1 / 14.5 / 11.8 m/s (the <1 m/s subject's upper arm propped up
+  the trunk and prevented a real head strike); head contact about 138 ms after first contact (the matched body model;
+  the subjects close to it); pelvis slid 30-45 cm over the bonnet before head contact; elbow contact 37-58 ms before
+  head contact; shoulder-to-head 23 ms at most. What governs it: pelvis height relative to the bonnet leading edge
+  (pelvic sliding, which increases WAD and head speed), stature, mass, and how much the near upper arm supports the
+  trunk. Paas, Östh & Davidsson 2015 [read]; Paas 2015 thesis [read].
+* **Contact timeline with a real braking car** (small sedan, 40 km/h, lateral walking stance, braking 10 ms after first
+  contact; FSR02): pelvis on the bonnet leading edge 19 ms (WAD 0.90 m), elbow 74 ms (1.64 m), shoulder 114 ms (1.78 m),
+  head 120 ms (2.00 m; windscreen crush 85 mm). Three earlier tests (30 / 40 / 40 km/h): pelvis 35 / 38 / 25 ms, elbow
+  117 / 104 / 111, shoulder 150 / 134 / 129, head 161 / 142 / 148 ms. Spine and head start moving at 12-16 ms, before
+  the pelvis contact; the thorax stays nearly upright until ~60 ms; the near elbow props the thorax and turns the head
+  toward the car. **Throw: 11.2 m forward, 1.8 m sideways** (centre of gravity) - the only measured throw of a
+  cadaver by a real braking car found so far. Paas et al. 2012 (IRC-12-79) [read].
+* **Generic sedan buck, 40 km/h** (3 cadavers, mid-gait, lateral): head contact 135-141 ms, WAD 2.175-2.200 m; head
+  x-axis angular velocity > 40 rad/s before head contact (45-54 rad/s in earlier sedan tests); peak head velocity
+  relative to the vehicle above the impact speed in all tests; upper bumper takes the first and largest force
+  (5.3-5.5 kN), the leading edge loads later through the pelvis rotating **down onto** it; the chest meets mainly the
+  windscreen; the shoulder **pockets into the windscreen** and the lower body keeps moving, buckling the spine.
+  Forman et al. 2015 (Stapp 59) [read]. A simplified steel-tube buck at 8 m/s (4 cadavers): corridors to 120 ms, plots only.
+  Song et al. 2017 (IRC-17-25) [read].
+* **What cadaver tests cannot show:** in all of them (production-vehicle bucks on sleds, generic bucks) the subject is
+  caught by a net or belts after ~120-250 ms; separation, flight and landing are not measured - except the FSR02 throw
+  above. 17 such cadaver tests (5 vehicles incl. a large SUV, 40 km/h) are summarised for injuries in IRC-12-75 [read].
+
 ## 3. Flight and slide
 
 * **Three parts of the throw distance:** `S = s0 + s1 + s2` — carried on the vehicle, flight, slide. Saulić et al.
@@ -74,9 +100,54 @@ speed; windscreen vs bonnet contact angle). Those are not used here.
 * Simulated dummies that are lighter and slide with less friction than a human body give throw distances that are too
   short (modelled lower than measured in 14 of 19 cases; average error 21 %). Saulić et al. 2020 [read].
 
+* **Real-world speed vs throw distance** (impact point to rest). Wood, Simms & Walsh 2005 [read, Table 1]: Monte
+  Carlo single-segment models validated against 185 real wrap and 21 real forward-projection accidents; bands at the
+  0.1 / mean / 99.9 percentile of predicted speed. Wrap `v = C (S - So)^D` with (So, C, D) = (1.9, 2.3, 0.51) /
+  (1.6, 4.0, 0.47) / (1.2, 5.3, 0.46); forward projection `v = A sqrt(S) + B` with (A, B) = (2.5, -1.2) / (3.7, -1.5)
+  / (4.6, -1.0); `v` in m/s, `S` in m. Mean wrap throw: 3.6 m at 20 km/h, 6.4 at 30, 10.4 at 40, 15.7 at 50, 22.4 at
+  60, 40 at 80; band at 40 km/h 6.2-23.8 m. Cases with a short throw at high speed are fender vaults (no full
+  engagement), not wraps.
+* **Coefficient of retardation** (body on ground, lumping slide, roll and bounce, used in the same equation form as
+  Searle's): normal, **mean 0.561, sd 0.101** (Wood & Simms 2000, via Wood et al. 2005 [read]). Searle's 0.7 makes
+  speeds too high. Higher than this but still published: reconstruction values 0.66-0.79, dummy slides 0.73-0.84
+  (above).
+* **Wrap model details** (Wood et al. 2005 [read]): separation after the head / shoulder strike comes from braking
+  plus the body's vertical and sideways motion; below ~6 m/s combined speed the body drops back onto the bonnet (no
+  vertical launch). Primary-to-secondary impact displacement ~1.3 m at 40 km/h (regression of the single-segment
+  model). Restitution `e = 0.12 - 0.006 v` (dummy tests). Braking in 85 % of real cases. Forward projection: the
+  feet stay mostly on the ground while the body is pushed and falls over (fall-over replaces flight); contact time
+  mean 0.056 s (0.01-0.14, 38 cadaver tests). Adult body: centre of gravity at 0.57 of height, radius of gyration
+  0.23 of height, mass 68 +- 16 kg.
+* **Car-pedestrian friction** in a published full-vehicle simulation set-up: 0.2 (PC-Crash, with body-road 0.6 and
+  restitution 0.1) - a modelling choice, not a measurement. Batista 2008 [read]. Staged braking tests reported
+  there: 32 km/h -> 7.9 m; 48 km/h -> 13.4, 17.4, 20.7 m; 64 km/h without braking -> 61.9 m.
+* **Empirical fits, real and staged cases** (Happer et al. 2000, 202 wrap / 106 forward-projection cases, via Bhalla et
+  al. 2002 [read]): wrap `v = 12.7 sqrt(s) - 2.6`, forward projection `v = 11.4 sqrt(s) - 4.0` (`v` km/h, `s` m):
+  wrap 11.3 m at 40 km/h. Best of the formulas tested against multi-body simulation.
+* **Multi-body reference runs** (Bhalla et al. 2002 [read]; MADYMO 52-body pedestrian validated for the vehicle phase
+  against cadavers; car braking 0.7 g from 40 km/h, standing side-on, pedestrian-vehicle friction 0.5, pedestrian-
+  ground 0.7):
+  * wrap (adult, small car): vehicle contact ~270-300 ms, flight ends ~1.05 s, rest ~2.5 s; the lower torso first
+    dips onto the car, then follows a parabola **upward** and forward;
+  * forward projection (child, SUV): contact ~90-100 ms, ground contact at 150 ms; lower torso barely rises;
+  * an adult struck by an SUV is the closest adult case to forward projection, yet at higher speeds the lower torso
+    still rises by **more than 50 %** of its starting height: "leading edge above the centre of gravity -> forward
+    projection" does not always hold;
+  * struck from behind: contact up to 950 ms, shorter flight, lower peak (joints give way more in that direction);
+  * sensitivities of total throw: vehicle-pedestrian geometry up to 45 %, orientation 28 %, no braking 23 %, ground
+    friction 0.7 -> 0.4 up to +212 % (bouncing turns into sliding); adults at 40 km/h 10.3-15.5 m across conditions;
+  * a dummy with the right size but 32 kg instead of 77 kg flies 17 % higher and throws 20 % shorter.
+  * Searle's projection efficiency (launch / vehicle speed): 0.726 adults, 0.813 children.
+* **Other simulation set-ups** (modelling choices): pedestrian-ground 0.6 / pedestrian-car 0.4 (Untaroiu et al. 2008
+  [read], after Wood & Simms 2000), head-windscreen contact 115 ms at ~57 km/h in their reconstruction. Walking: 55 %
+  of struck pedestrians were walking, 72 % struck on their side (US PCDS); hip height varies 25.6 mm over a gait cycle.
+* **Side-swipe and minimal-overlap impacts** (21 videos, 9-39 mph): throw distances far shorter than frontal-impact
+  formulas predict (a 33 mph impact thrown as if at ~11 mph); frontal formulas do not apply. Neale et al. 2021 [read].
+
+* **Corridor in use** (ADR-0024 amended 2026-11-17): the equation above at the measured launch angle, over `mu` 0.66-0.84, only when the body really flew; bodies leaving a car often head slightly downward (`cos theta + mu sin theta < 1`).
+
 **Not yet sourced:** the ratio of the body's launch speed to the vehicle's impact speed by trajectory type, launch
-angles, and the published speed-versus-distance regressions with their confidence limits (Wood et al. 2005; Simms &
-Wood 2004; Bhalla et al. 2002). Friction between body and bonnet.
+angles, and a measured friction between body and bonnet (only modelling choices so far: 0.2, 0.4, 0.5).
 
 ## 4. Before the impact: what pedestrians do
 
@@ -146,15 +217,20 @@ Wood 2004; Bhalla et al. 2002). Friction between body and bonnet.
   road friction are part of the passive baseline gate (task 4.3).
 
 ## 7. Still to read (full texts not reachable by automated fetch)
-* **Wood, Simms & Walsh 2005** — open access at the Trinity College Dublin repository (TARA), which refuses automated
-  downloads. Needed for: launch speed / vehicle speed ratios, the two projection models' equations and confidence
-  limits, friction and restitution values, conditions for the rarer trajectory types.
-* **Bhalla, Montazemi, Crandall & Yang 2002** (IRCOBI) — comparison of throw formulas.
 * **Ravani, Brougham & Mason 1981**; **Searle & Searle 1983**; **Simms & Wood 2009** (book) — paywalled.
-* Any PDF obtained by the founder goes in `/private/` (git-ignored); this file then gets the numbers and their page
-  references, not the PDFs.
+* PDFs obtained by the founder stay outside the repository (workspace `research/` folder); this file gets the numbers
+  and their references, not the PDFs. Read 2026-11-17: Wood et al. 2005, Batista 2008, Neale et al. 2021, Bhalla et al. 2002, Untaroiu et al. 2008 (the
+  SafetyNet D3.1 report received with them holds safety statistics, nothing on impact mechanics).
 
 ## Sources
+* Forman J. L., Joodaki H., Forghani A., Riley P. O., Bollapragada V., Lessley D. J., Overby B., Heltzel S., Kerrigan
+  J. R., Crandall J. R., Yarboro S., Weiss D. B. "Whole-body Response for Pedestrian Impact with a Generic Sedan Buck."
+  Stapp Car Crash Journal 59, 2015, 401-444.
+* Batista M. "A Simple Throw Model for Frontal Vehicle-Pedestrian Collisions." Promet - Traffic & Transportation
+  20(6), 2008, 357-368.
+* Bhalla K., Montazemi P., Crandall J., Yang J., Liu X., Dokko Y., Takahashi Y., Kikuchi Y., Longhitano D. "Vehicle
+  Impact Velocity Prediction from Pedestrian Throw Distance: Trade-offs between Throw Formulae, Crash Simulators, and
+  Detailed Multi-body Modeling." IRCOBI Conference, Munich, 2002, 263-276.
 * Brown P., Rothwell J. C., Thompson P. D., Britton T. C., Day B. L., Marsden C. D. "New observations on the normal
   auditory startle reflex in man." Brain 114(4), 1991, 1891-1902.
 * DeGoede K. M., Ashton-Miller J. A. "Fall arrest strategy affects peak hand impact force in a forward fall." Journal
@@ -182,5 +258,21 @@ Wood 2004; Bhalla et al. 2002). Friction between body and bonnet.
   2 May 2013.
 * Soni A., Robert T., Rongiéras F., Beillas P. "Observations on Pedestrian Pre-Crash Reactions during Simulated
   Accidents." Stapp Car Crash Journal 57, 2013 (SAE 2013-22-0006).
+* Neale W. T., Danaher D., Donaldson A., Smith T. "Pedestrian Impact Analysis of Side-Swipe and Minor Overlap
+  Conditions." SAE Technical Paper 2021-01-0881, 2021.
+* Paas R., Davidsson J., Masson C., Sander U., Brolin K., Yang J. "Pedestrian Shoulder and Spine Kinematics in
+  Full-Scale PMHS Tests for Human Body Model Evaluation." IRCOBI Conference 2012, IRC-12-79.
+* Song E., Uriot J., Potier P., Dubois D., Petit P., Trosseille X., Douard R. "Reference PMHS Tests to Assess
+  Whole-Body Pedestrian Impact Using a Simplified Generic Vehicle Front-End." IRCOBI Conference 2017, IRC-17-25.
+* Kerrigan J. R., Arregui-Dalmases C., Foster J., Crandall J. R., Rizzo A. "Pedestrian Injury Analysis: Field Data
+  vs. Laboratory Experiments." IRCOBI Conference 2012, IRC-12-75 (injury summary of 17
+  full-scale PMHS tests).
+* Paas R., Östh J., Davidsson J. "Which pragmatic finite element human body model scaling technique can most accurately
+  predict head impact conditions in pedestrian-car crashes?" IRCOBI Conference 2015, IRC-15-64 (open access, Chalmers
+  research repository). Paas R., PhD thesis, Chalmers University of Technology, 2015 (pedestrian shoulder, spine and
+  head kinematics; Papers I-IV).
+* Untaroiu C. D., Meissner M. U., Crandall J. R., Takahashi Y., Okamoto M., Ito O. "Crash reconstruction of
+  pedestrian accidents using optimization techniques." International Journal of Impact Engineering, 2008,
+  doi:10.1016/j.ijimpeng.2008.01.012.
 * Wood D. P., Simms C. K., Walsh D. G. "Vehicle-pedestrian collisions: validated models for pedestrian impact and
   projection." Proc. IMechE Part D 219(2), 2005, 183-195.

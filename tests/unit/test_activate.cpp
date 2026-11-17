@@ -130,9 +130,11 @@ TEST_CASE("activate: a pose read with get_pose places every body exactly back (f
     for (size_t i = 0; i < placed.size(); ++i)
     {
         const DdVec3 &a = placed[i].position, &b = expected[i].position;
-        // 5 mm: a simulated body's joints stretch by a few mm under load (the solver is never perfectly rigid); placing
-        // from a pose rebuilds exact joints, so that stretch is not reproduced. Rotations must match closely.
-        CHECK(std::sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y) + (a.z - b.z) * (a.z - b.z)) < 0.005f);
+        // 1 cm: a simulated body's joints stretch by a few mm under load (the solver is never perfectly rigid); placing
+        // from a pose rebuilds exact joints, so that stretch is not reproduced. With the rig's real mass ratios (no
+        // Jolt Stabilize since 2026-11-17: a 12 kg trunk segment next to a 0.46 kg hand) it reaches ~9 mm mid-crumple.
+        // Rotations must match closely.
+        CHECK(std::sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y) + (a.z - b.z) * (a.z - b.z)) < 0.010f);
         const DdQuat &p = placed[i].rotation, &q = expected[i].rotation;
         CHECK(2.0f * std::acos(std::fmin(1.0f, std::fabs(p.x * q.x + p.y * q.y + p.z * q.z + p.w * q.w))) * 57.29578f < 0.2f);
     }

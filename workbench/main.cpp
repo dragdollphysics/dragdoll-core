@@ -565,11 +565,17 @@ void collectThreats(DdWorld* world, std::vector<Line>& lines, std::vector<std::s
                               r.head_strike_time * 1000.0f, r.wrap_around_distance);
             }
             char report[260];
-            if (r.finished != 0)
+            if (r.finished != 0 && r.in_corridor < 0)
+            {
+                std::snprintf(report, sizeof(report), "impact: %s | %s | launch %.0f km/h | throw %.1f m (carry %.1f + slide %.1f; pushed, no flight)",
+                              kClass[std::clamp(static_cast<int>(r.measured), 0, 5)], head, r.launch_speed * 3.6f, r.throw_distance, r.carry_distance,
+                              r.flight_slide_distance);
+            }
+            else if (r.finished != 0)
             {
                 std::snprintf(report, sizeof(report), "impact: %s | %s | launch %.0f km/h | throw %.1f m (carry %.1f + flight/slide %.1f; expected %.1f-%.1f %s)",
                               kClass[std::clamp(static_cast<int>(r.measured), 0, 5)], head, r.launch_speed * 3.6f, r.throw_distance, r.carry_distance,
-                              r.flight_slide_distance, r.corridor_min, r.corridor_max, r.in_corridor != 0 ? "- inside" : "- OUTSIDE");
+                              r.flight_slide_distance, r.corridor_min, r.corridor_max, r.in_corridor == 1 ? "- inside" : "- OUTSIDE");
             }
             else
             {
