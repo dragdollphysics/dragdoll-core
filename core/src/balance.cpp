@@ -25,7 +25,9 @@ constexpr float kHipSideMax = 15.0f * kDeg;
 
 void updateBalance(DdCharacter& c, JPH::Vec3Arg up, float gravity, float dt)
 {
-    const bool active = c.balance && c.tension != DD_TENSION_LIMP && c.footLeft >= 0 && c.footRight >= 0 && gravity > 0.0f;
+    const bool legsTensed = c.regionMuscles[DD_REGION_LEG_LEFT].tension != DD_TENSION_LIMP &&
+                            c.regionMuscles[DD_REGION_LEG_RIGHT].tension != DD_TENSION_LIMP;
+    const bool active = c.balance && legsTensed && c.footLeft >= 0 && c.footRight >= 0 && gravity > 0.0f;
     auto release = [&] {
         // Not balancing (off, limp, or no longer standing): drop the corrections and the stance stiffness at once,
         // so a fallen body lies still instead of flailing to reach a support it no longer has.

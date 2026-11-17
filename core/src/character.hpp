@@ -5,13 +5,16 @@
 
 #include "rig.hpp"
 
+#include <dragdoll/behaviour_sdk.h>
 #include <dragdoll/dragdoll.h>
 
 #include <Jolt/Jolt.h>
 
 #include <Jolt/Physics/Ragdoll/Ragdoll.h>
 
+#include <array>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -61,9 +64,16 @@ struct DdCharacter
     // and this body's position relative to its joint pivot in its own body frame.
     std::vector<JPH::Vec3> pivotInParent, bodyFromPivot;
     std::vector<JPH::Vec3> pivotRig, centreRig; // Joint pivot / shape centre at rest, rig space (skeleton maps)
-    DdTension tension = DD_TENSION_LIMP;
-    dragdoll::MuscleParams blendFrom, muscles, blendTo; // `muscles` = what the motors use now
-    float blendTime = 0.0f, blendElapsed = 0.0f;
+    DdTension tension = DD_TENSION_LIMP; // Last profile set for the whole body
+    // Muscle drive per body region (ADR-0025): each region blends on its own.
+    struct RegionMuscles
+    {
+        dragdoll::MuscleParams from, now, to; // `now` = what the motors use
+        float time = 0.0f, elapsed = 0.0f;
+        DdTension tension = DD_TENSION_LIMP;
+    };
+    std::array<RegionMuscles, DD_REGION_COUNT> regionMuscles;
+    std::vector<uint8_t> region; // Per body: the region of its joint (DdRegion)
     bool musclesDirty = false;
 
     // Host contract (D17)
@@ -82,6 +92,16 @@ struct DdCharacter
     float standForward = 0.0f, standLeft = 0.0f; // Rest-pose centre of mass relative to the feet centre (m, character axes)
     float standHeight = 0.9f;        // Rest-pose centre of mass height above the feet centres (m)
     bool balanceActive = false;      // Balance on AND actually standing (else the corrections fade out)
+
+    // Behaviour (ADR-0025): commands the muscles from what the character senses.
+    std::unique_ptr<dragdoll::sdk::Behaviour> behaviour;
+    std::string behaviourName, behaviourStatus;
+    uint32_t behaviourParamsRevision = 0;
+    float awarenessOverride = -1.0f; // < 0: awareness comes from what the head can see
+    float vitality = 1.0f;
+    int headBody = -1;               // For the field of view (-1: use the root)
+    DdColliderId threatFrom = DD_INVALID_COLLIDER; // The object the timers below refer to
+    float threatSeconds = 0.0f, threatSeenSeconds = 0.0f;
 
     // Perception (ADR-0024): the most imminent threat and the probed front of that object.
     DdThreat threat{};
@@ -106,8 +126,11 @@ JPH::Ref<JPH::RagdollSettings> buildRagdollSettings(const Rig& rig, JPH::Mat44Ar
 // Muscle drive of a tension profile. Throws std::invalid_argument for an unknown profile.
 MuscleParams tensionProfile(DdTension tension);
 
-// Starts blending the muscles towards `tension` over `blendSeconds` (0 = at once).
+// Starts blending the muscles towards `tension` over `blendSeconds` (0 = at once): the whole body, or one region.
 void setTension(DdCharacter& character, DdTension tension, float blendSeconds);
+void setRegionTension(DdCharacter& character, DdRegion region, DdTension tension, float blendSeconds);
+// Fills character.region from the body names (see DdRegion).
+void assignRegions(DdCharacter& character);
 
 // Advances the blend by one fixed step and pushes the muscle state into the joint motors when it changed.
 void updateMuscles(DdCharacter& character, float dt);

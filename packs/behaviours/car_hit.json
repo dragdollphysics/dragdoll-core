@@ -1,0 +1,23 @@
+{
+  "format": "dragdoll-behaviour",
+  "version": 1,
+  "name": "car_hit",
+  "description": "Reaction chain of a pedestrian struck by a vehicle (ADR-0025). Numbers are tunable live; sources in docs/reference/pedestrian-impact.md.",
+  "params": {
+    "anticipate": {
+      "time": 1.2,
+      "awareness": 0.5
+    },
+    "reaction": {
+      "reflex": 0.1,
+      "voluntary": 0.5
+    },
+    "startle": {
+      "blend": 0.08
+    },
+    "recover": {
+      "delay": 0.6,
+      "blend": 0.5
+    }
+  }
+}

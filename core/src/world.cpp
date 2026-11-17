@@ -256,6 +256,10 @@ void World::simulate(uint32_t steps)
         updatePerception(); // Senses first: what the muscles (and later the behaviours) react to
         for (auto& [characterId, character] : mCharacters) // Ordered by id: deterministic
         {
+            if (character->state != DD_STATE_FAILED)
+            {
+                updateBehaviour(*character, *this, fixedDt); // Senses -> command (also while host-animated: it watches)
+            }
             if (character->state != DD_STATE_FAILED && !character->kinematic) // Host-animated: no muscles or balance
             {
                 updateBalance(*character, mUp, mGravity, fixedDt);
@@ -727,6 +731,14 @@ DdCharacter* World::createCharacter(const DdCharacterDesc& desc)
     for (const RigBody& body : rig.bodies)
     {
         character->names.push_back(body.name);
+    }
+    assignRegions(*character);
+    for (size_t i = 0; i < character->names.size(); ++i)
+    {
+        if (character->region[i] == DD_REGION_HEAD_NECK)
+        {
+            character->headBody = static_cast<int>(i); // The last head / neck body: the head itself
+        }
     }
     character->currPosition.resize(count);
     character->currRotation.resize(count);

@@ -2,6 +2,8 @@
 // dragdoll::World — one Jolt PhysicsSystem plus DragDoll's fixed-step clock and proxy colliders.
 #pragma once
 
+#include "behaviour_host.hpp"
+
 #include <dragdoll/dragdoll.h>
 
 #include <Jolt/Jolt.h>
@@ -114,6 +116,7 @@ public:
     uint32_t threatSilhouette(const DdCharacter& character, DdVec3* out, uint32_t capacity) const;
 
     JPH::PhysicsSystem& physics() { return *mPhysics; }
+    BehaviourParams& behaviourParams() { return mBehaviourParams; }
 
     // The C ABI handle that owns this world (lets characters reach the recorder).
     void setOwner(void* owner) { mOwner = owner; }
@@ -196,6 +199,8 @@ private:
     // Characters, ordered by id (deterministic iteration).
     std::map<uint32_t, std::unique_ptr<DdCharacter>> mCharacters;
     uint32_t mNextCharacterId = 1;
+
+    BehaviourParams mBehaviourParams; // Behaviour numbers of this world (recorded when changed)
 
     void* mOwner = nullptr;
 };

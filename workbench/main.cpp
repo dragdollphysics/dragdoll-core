@@ -543,7 +543,12 @@ void collectThreats(DdWorld* world, std::vector<Line>& lines, std::vector<std::s
                       name[0] != 0 ? name : "", name[0] != 0 ? ": " : "", threat.time_to_collision, threat.closing_speed * 3.6f,
                       kClass[std::min(static_cast<int>(threat.predicted), 5)], threat.profile.front_top_height,
                       threat.profile.leading_edge_height, threat.profile.bonnet_length);
-        text.emplace_back(line);
+        std::string shown = line;
+        if (dragdoll_character_get_behaviour(c)[0] != 0) // What the behaviour makes of it (its stage)
+        {
+            shown += std::string(" | ") + dragdoll_character_get_behaviour(c) + ": " + dragdoll_character_get_behaviour_status(c);
+        }
+        text.emplace_back(shown);
     }
 }
 

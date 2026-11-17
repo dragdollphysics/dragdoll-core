@@ -20,7 +20,7 @@ namespace dragdoll::rec
 {
 
 inline constexpr char kMagic[8] = {'D', 'D', 'R', 'E', 'C', 0, 0, 0};
-inline constexpr uint32_t kFormatVersion = 2; // 2: collider group (ADR-0024)
+inline constexpr uint32_t kFormatVersion = 3; // 2: collider group (ADR-0024); 3: behaviours, region tension (ADR-0025)
 
 enum class Record : uint8_t
 {
@@ -38,6 +38,11 @@ enum class Record : uint8_t
     TargetPose = 12,      // u32 character id | u32 count (0 = reset to rest) | count x quat
     Balance = 14,         // u32 character id | u8 enabled
     Kinematic = 15,       // u32 character id | u8 kinematic
+    RegionTension = 16,   // u32 character id | u32 region | u32 profile | f32 blend seconds
+    Behaviour = 17,       // u32 character id | string name ("" = none)
+    Awareness = 18,       // u32 character id | f32 value (< 0 = automatic)
+    Vitality = 19,        // u32 character id | f32 value
+    BehaviourParams = 20, // string behaviour | string pack JSON
     Activate = 13,        // u32 id | f32 dt | u8 flags (1 prev root, 2 prev joints, 4 joints) | [prev root] | [count x prev quat] | root | [count x quat]
 };
 
@@ -179,6 +184,11 @@ public:
     void targetPose(uint32_t character, const DdQuat* rotations, uint32_t count);
     void balance(uint32_t character, bool enabled);
     void kinematic(uint32_t character, bool kinematic);
+    void regionTension(uint32_t character, uint32_t region, uint32_t profile, float blendSeconds);
+    void behaviour(uint32_t character, const char* name);
+    void awareness(uint32_t character, float value);
+    void vitality(uint32_t character, float value);
+    void behaviourParams(const char* behaviour, const char* json);
     void activate(uint32_t character, const DdTransform* previousRoot, const DdQuat* previousJoints, const DdTransform& root,
                   const DdQuat* joints, uint32_t count, float dt);
     bool failed() const { return mFailed; }

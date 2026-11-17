@@ -265,6 +265,122 @@ DD_API DdResult DD_CALL dragdoll_character_set_tension(DdCharacter* character, D
     DD_GUARD_END(DD_ERROR_INTERNAL)
 }
 
+DD_API DdResult DD_CALL dragdoll_character_set_region_tension(DdCharacter* character, DdRegion region, DdTension tension,
+                                                              float blend_seconds)
+{
+    DD_GUARD_BEGIN
+    if (character == nullptr || character->state == DD_STATE_FAILED)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_set_region_tension: a character that has not FAILED is required");
+    }
+    if (static_cast<int>(region) < 0 || region >= DD_REGION_COUNT || static_cast<int>(tension) < 0 || tension >= DD_TENSION_COUNT)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_set_region_tension: unknown region or tension profile");
+    }
+    if (!std::isfinite(blend_seconds) || blend_seconds < 0.0f)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_set_region_tension: blend_seconds must be finite and >= 0");
+    }
+    dragdoll::setRegionTension(*character, region, tension, blend_seconds);
+    if (dragdoll::rec::Recorder* recorder = recorderOf(character))
+    {
+        recorder->regionTension(character->id, static_cast<uint32_t>(region), static_cast<uint32_t>(tension), blend_seconds);
+    }
+    return DD_OK;
+    DD_GUARD_END(DD_ERROR_INTERNAL)
+}
+
+DD_API DdTension DD_CALL dragdoll_character_get_region_tension(const DdCharacter* character, DdRegion region)
+{
+    if (character == nullptr || static_cast<int>(region) < 0 || region >= DD_REGION_COUNT)
+    {
+        return DD_TENSION_LIMP;
+    }
+    return character->regionMuscles[static_cast<size_t>(region)].tension;
+}
+
+DD_API DdRegion DD_CALL dragdoll_character_get_body_region(const DdCharacter* character, uint32_t body)
+{
+    if (character == nullptr || body >= character->region.size())
+    {
+        return DD_REGION_COUNT;
+    }
+    return static_cast<DdRegion>(character->region[body]);
+}
+
+DD_API DdResult DD_CALL dragdoll_character_set_behaviour(DdCharacter* character, const char* name)
+{
+    DD_GUARD_BEGIN
+    if (character == nullptr || character->state == DD_STATE_FAILED)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_set_behaviour: a character that has not FAILED is required");
+    }
+    const std::string wanted = name != nullptr ? name : "";
+    if (!wanted.empty() && !dragdoll::behaviourExists(wanted))
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_set_behaviour: unknown behaviour name");
+    }
+    dragdoll::attachBehaviour(*character, wanted);
+    if (dragdoll::rec::Recorder* recorder = recorderOf(character))
+    {
+        recorder->behaviour(character->id, wanted.c_str());
+    }
+    return DD_OK;
+    DD_GUARD_END(DD_ERROR_INTERNAL)
+}
+
+DD_API const char* DD_CALL dragdoll_character_get_behaviour(const DdCharacter* character)
+{
+    return character != nullptr ? character->behaviourName.c_str() : "";
+}
+
+DD_API const char* DD_CALL dragdoll_character_get_behaviour_status(const DdCharacter* character)
+{
+    return character != nullptr ? character->behaviourStatus.c_str() : "";
+}
+
+DD_API DdResult DD_CALL dragdoll_character_set_awareness(DdCharacter* character, float awareness)
+{
+    DD_GUARD_BEGIN
+    if (character == nullptr || !std::isfinite(awareness) || awareness > 1.0f)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_set_awareness: character and a value <= 1 (negative = automatic) are required");
+    }
+    character->awarenessOverride = awareness < 0.0f ? -1.0f : awareness;
+    if (dragdoll::rec::Recorder* recorder = recorderOf(character))
+    {
+        recorder->awareness(character->id, character->awarenessOverride);
+    }
+    return DD_OK;
+    DD_GUARD_END(DD_ERROR_INTERNAL)
+}
+
+DD_API float DD_CALL dragdoll_character_get_awareness(const DdCharacter* character)
+{
+    return character != nullptr ? character->awarenessOverride : -1.0f;
+}
+
+DD_API DdResult DD_CALL dragdoll_character_set_vitality(DdCharacter* character, float vitality)
+{
+    DD_GUARD_BEGIN
+    if (character == nullptr || !std::isfinite(vitality) || vitality < 0.0f || vitality > 1.0f)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_set_vitality: character and a value in [0, 1] are required");
+    }
+    character->vitality = vitality;
+    if (dragdoll::rec::Recorder* recorder = recorderOf(character))
+    {
+        recorder->vitality(character->id, vitality);
+    }
+    return DD_OK;
+    DD_GUARD_END(DD_ERROR_INTERNAL)
+}
+
+DD_API float DD_CALL dragdoll_character_get_vitality(const DdCharacter* character)
+{
+    return character != nullptr ? character->vitality : 0.0f;
+}
+
 DD_API DdResult DD_CALL dragdoll_character_set_balance(DdCharacter* character, int enabled)
 {
     DD_GUARD_BEGIN

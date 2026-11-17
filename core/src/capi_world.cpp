@@ -293,6 +293,29 @@ DD_API void DD_CALL dragdoll_world_set_host_camera(DdWorld* world, DdVec3 positi
     }
 }
 
+DD_API DdResult DD_CALL dragdoll_world_set_behaviour_params(DdWorld* world, const char* behaviour, const char* json)
+{
+    DD_GUARD_BEGIN
+    if (world == nullptr || behaviour == nullptr || behaviour[0] == '\0' || json == nullptr)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_world_set_behaviour_params: world, behaviour name and JSON are required");
+    }
+    try
+    {
+        world->world.behaviourParams().set(behaviour, json);
+    }
+    catch (const std::invalid_argument& e)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, e.what());
+    }
+    if (world->recorder != nullptr)
+    {
+        world->recorder->behaviourParams(behaviour, json);
+    }
+    return DD_OK;
+    DD_GUARD_END(DD_ERROR_INTERNAL)
+}
+
 DD_API uint32_t DD_CALL dragdoll_world_poll_live_message(DdWorld* world, char* buffer, uint32_t capacity)
 {
     std::string message;

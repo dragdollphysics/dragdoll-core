@@ -582,3 +582,22 @@ Crowd question (car through the pier) → cost is linear in awake ragdolls (~70 
 * A turning vehicle is extrapolated in a straight line (fine at 2 s; revisit if cornering hits look wrong).
 * In the live mirror the viewer recomputes threats from mirrored motion (speeds about 20 % off at 144 redraws/s); the tap should stream the host's own threat.
 * Forward-projection threshold (leading edge >= 95 % of centre-of-mass height) is ours; the passive baseline (4.3) calibrates it.
+
+---
+
+## 2026-11-16 — Task 4.5a: behaviour SDK, muscles per region, first behaviour
+**Changed** (local, not committed)
+* **Muscles per region** (`muscles.cpp`): six regions (head-neck, trunk, arms, legs) from the rig's body names; each blends on its own; `set_tension` sets all. Balance now needs both legs tensed (not the whole body).
+* **Behaviour SDK** (`behaviours/include/dragdoll/behaviour_sdk.h`): `Percept` (self state, threat, how long it has been seen, awareness, vitality, current tensions), `Command` (tension per region, target pose, balance), `Behaviour`, `ReactionClock`, `Params`. `dragdoll_behaviours` is a static library whose include paths are only the SDK and the public C header (ADR-0013 enforced by the build).
+* **Runner** (`behaviour_host.cpp`): after perception, before balance and muscles; also for kinematic characters (they watch). Awareness: automatic (threat within about 100 degrees of where the head faces) or host-set; vitality host-set. Parameters per world, built-in pack compiled in, replaceable live.
+* **C API:** `set/get_region_tension`, `get_body_region`, `set/get_behaviour`, `get_behaviour_status`, `set/get_awareness`, `set/get_vitality`, `dragdoll_world_set_behaviour_params`. Recording format 3 (records 16-20).
+* **`car_hit` v0** (`behaviours/src/car_hit.cpp`): Watch -> Anticipate when aware and within 1.2 s -> Startle (whole-body tense) after the 0.1 s reflex latency -> Recover (tension back to what it was 0.6 s after the threat is gone).
+* **Tests** (5): regions; a tense arm holds while the limp arm swings; startle exactly 12 steps (0.1 s) after the threat enters the window; unaware / told by the host / vitality 0; live parameters; a session with behaviour + parameters + awareness + region tension replays bit-identically frame by frame. Targeted run on x64-release (everything the muscle change touches): 52 cases green. x86 builds (via dragdoll-sa). The full run was not made (founder's rule); four presets still owed.
+* Viewer: the threat line shows the behaviour and its stage.
+
+**Next**
+* Task 4.5b (pose library + aim helper) — Fable. Then 4.1 (contacts, velocity change, airborne) — Opus — which the Impact stage (4.6) needs.
+
+**Open questions**
+* Regions come from body names; a rig with unusual names needs a `region` field in the rig JSON (not added yet).
+* While a behaviour is attached it and the host can both set tension; the last call wins (documented in the header). Enough for v1?

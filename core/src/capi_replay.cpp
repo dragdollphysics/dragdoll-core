@@ -171,6 +171,48 @@ void apply(DdReplay& replay, const RecordView& record)
         world.setCharacterKinematic(*it->second, kinematic);
         break;
     }
+    case Record::RegionTension: {
+        const uint32_t id = in.u32();
+        const uint32_t region = in.u32();
+        const uint32_t profile = in.u32();
+        const float blend = in.f32();
+        auto it = replay.characters.find(id);
+        if (it == replay.characters.end() || region >= DD_REGION_COUNT || profile >= DD_TENSION_COUNT)
+        {
+            throw std::runtime_error("replay: region tension change on an unknown character, region or profile");
+        }
+        dragdoll::setRegionTension(*it->second, static_cast<DdRegion>(region), static_cast<DdTension>(profile), blend);
+        break;
+    }
+    case Record::Behaviour: {
+        const uint32_t id = in.u32();
+        const std::string name = in.string();
+        auto it = replay.characters.find(id);
+        if (it == replay.characters.end())
+        {
+            throw std::runtime_error("replay: behaviour set on an unknown character");
+        }
+        dragdoll::attachBehaviour(*it->second, name); // Throws if this build lacks the behaviour
+        break;
+    }
+    case Record::Awareness:
+    case Record::Vitality: {
+        const uint32_t id = in.u32();
+        const float value = in.f32();
+        auto it = replay.characters.find(id);
+        if (it == replay.characters.end())
+        {
+            throw std::runtime_error("replay: awareness / vitality set on an unknown character");
+        }
+        (record.type == Record::Awareness ? it->second->awarenessOverride : it->second->vitality) = value;
+        break;
+    }
+    case Record::BehaviourParams: {
+        const std::string name = in.string();
+        const std::string json = in.string();
+        world.behaviourParams().set(name, json);
+        break;
+    }
     case Record::Balance: {
         const uint32_t id = in.u32();
         const bool enabled = in.u8() != 0;

@@ -284,6 +284,48 @@ void Recorder::balance(uint32_t character, bool enabled)
     write(Record::Balance, mScratch);
 }
 
+void Recorder::regionTension(uint32_t character, uint32_t region, uint32_t profile, float blendSeconds)
+{
+    mScratch.clear();
+    mScratch.u32(character);
+    mScratch.u32(region);
+    mScratch.u32(profile);
+    mScratch.f32(blendSeconds);
+    write(Record::RegionTension, mScratch);
+}
+
+void Recorder::behaviour(uint32_t character, const char* name)
+{
+    mScratch.clear();
+    mScratch.u32(character);
+    mScratch.string(name, std::strlen(name));
+    write(Record::Behaviour, mScratch);
+}
+
+void Recorder::awareness(uint32_t character, float value)
+{
+    mScratch.clear();
+    mScratch.u32(character);
+    mScratch.f32(value);
+    write(Record::Awareness, mScratch);
+}
+
+void Recorder::vitality(uint32_t character, float value)
+{
+    mScratch.clear();
+    mScratch.u32(character);
+    mScratch.f32(value);
+    write(Record::Vitality, mScratch);
+}
+
+void Recorder::behaviourParams(const char* behaviour, const char* json)
+{
+    mScratch.clear();
+    mScratch.string(behaviour, std::strlen(behaviour));
+    mScratch.string(json, std::strlen(json));
+    write(Record::BehaviourParams, mScratch);
+}
+
 void Recorder::kinematic(uint32_t character, bool kinematic)
 {
     mScratch.clear();

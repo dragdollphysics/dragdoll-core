@@ -311,8 +311,30 @@ typedef enum DdTension
 
 /* Changes the tension profile, blending from the current muscle state over blend_seconds (0 = at once). */
 DD_API DdResult DD_CALL dragdoll_character_set_tension(DdCharacter* character, DdTension tension, float blend_seconds);
-/* The profile last set (the blend towards it may still be running). */
+/* The profile last set for the whole body (the blend towards it may still be running). */
 DD_API DdTension DD_CALL dragdoll_character_get_tension(const DdCharacter* character);
+
+/* Body regions (ADR-0025): muscles can be tensed per region. A joint belongs to the region of its child body (the
+ * shoulder joint to the arm, the hip joint to the leg). Regions come from the rig's body names (arm / hand, thigh /
+ * shin / foot / leg, head / neck; "_l" / "_r" or "left" / "right" for the side); everything else is the trunk. */
+typedef enum DdRegion
+{
+    DD_REGION_HEAD_NECK = 0,
+    DD_REGION_TRUNK = 1,
+    DD_REGION_ARM_LEFT = 2,
+    DD_REGION_ARM_RIGHT = 3,
+    DD_REGION_LEG_LEFT = 4,
+    DD_REGION_LEG_RIGHT = 5,
+    DD_REGION_COUNT = 6,
+    DD_REGION_FORCE_32BIT = 0x7FFFFFFF
+} DdRegion;
+
+/* Like dragdoll_character_set_tension, for one region; set_tension itself sets every region. */
+DD_API DdResult DD_CALL dragdoll_character_set_region_tension(DdCharacter* character, DdRegion region, DdTension tension,
+                                                              float blend_seconds);
+DD_API DdTension DD_CALL dragdoll_character_get_region_tension(const DdCharacter* character, DdRegion region);
+/* The region of a body's joint (the root body counts as trunk). DD_REGION_COUNT if out of range. */
+DD_API DdRegion DD_CALL dragdoll_character_get_body_region(const DdCharacter* character, uint32_t body);
 
 /* Standing balance (ADR-0023): keeps the capture point over the feet with ankle and hip strategies, by offsetting the
  * muscles' targets (internal torques only). Needs a tension other than LIMP; no stepping yet. Off by default. */
@@ -420,6 +442,31 @@ typedef struct DdCharacterInfo
 } DdCharacterInfo;
 
 DD_API DdResult DD_CALL dragdoll_character_get_info(const DdCharacter* character, DdCharacterInfo* out);
+
+/* ---- Behaviours (ADR-0025) ----------------------------------------------------------------
+ * A behaviour commands the character's muscles from what it senses (threats, its own state): tension per region,
+ * target pose, balance. Nothing else - no forces. It runs every fixed step, also while the character is kinematic
+ * (it watches; its muscle commands take effect once the host makes the character dynamic). While a behaviour is
+ * attached it owns the muscles: host calls to set_tension / set_target_pose still work but may be overridden. */
+
+/* Attaches a built-in behaviour by name ("car_hit"); NULL or "" detaches. Unknown names are an error. */
+DD_API DdResult DD_CALL dragdoll_character_set_behaviour(DdCharacter* character, const char* name);
+DD_API const char* DD_CALL dragdoll_character_get_behaviour(const DdCharacter* character); /* "" if none */
+/* For tools: what the behaviour is doing now (e.g. its stage). Valid until the next step of this world. */
+DD_API const char* DD_CALL dragdoll_character_get_behaviour_status(const DdCharacter* character);
+
+/* Does the character know about its threat? 0..1 from the host (a game knows whether its pedestrian was looking,
+ * fleeing, distracted); a negative value (the default) = automatic: aware when the threat lies within the head's
+ * field of view. */
+DD_API DdResult DD_CALL dragdoll_character_set_awareness(DdCharacter* character, float awareness);
+DD_API float DD_CALL dragdoll_character_get_awareness(const DdCharacter* character);
+/* Alertness and strength, 0..1 (default 1). 0 = nothing left to react with (e.g. the host's outcome is "killed"). */
+DD_API DdResult DD_CALL dragdoll_character_set_vitality(DdCharacter* character, float vitality);
+DD_API float DD_CALL dragdoll_character_get_vitality(const DdCharacter* character);
+
+/* Replaces a behaviour's tunable numbers in this world from pack JSON (packs/behaviours/<name>.json format); every
+ * character using it picks them up on the next step. Recorded, so replays use the same numbers. */
+DD_API DdResult DD_CALL dragdoll_world_set_behaviour_params(DdWorld* world, const char* behaviour, const char* json);
 
 /* ---- Perception: threat (ADR-0024). Read-only senses, updated every fixed step for every character. ---- */
 

@@ -7,8 +7,10 @@
 #include <Jolt/Physics/Constraints/SwingTwistConstraint.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <stdexcept>
+#include <string>
 
 namespace dragdoll
 {
@@ -24,28 +26,63 @@ MuscleParams tensionProfile(DdTension tension)
     }
 }
 
-void setTension(DdCharacter& c, DdTension tension, float blendSeconds)
+void setRegionTension(DdCharacter& c, DdRegion region, DdTension tension, float blendSeconds)
 {
-    c.blendTo = tensionProfile(tension);
-    c.blendFrom = c.muscles;
-    c.blendTime = std::max(0.0f, blendSeconds);
-    c.blendElapsed = 0.0f;
-    c.tension = tension;
+    DdCharacter::RegionMuscles& r = c.regionMuscles.at(static_cast<size_t>(region));
+    r.to = tensionProfile(tension);
+    r.from = r.now;
+    r.time = std::max(0.0f, blendSeconds);
+    r.elapsed = 0.0f;
+    r.tension = tension;
     c.musclesDirty = true;
     c.ragdoll->Activate(); // Sleeping bodies would ignore the new drive
+}
+
+void setTension(DdCharacter& c, DdTension tension, float blendSeconds)
+{
+    tensionProfile(tension); // Validates before anything changes
+    for (int region = 0; region < DD_REGION_COUNT; ++region)
+    {
+        setRegionTension(c, static_cast<DdRegion>(region), tension, blendSeconds);
+    }
+    c.tension = tension;
+}
+
+void assignRegions(DdCharacter& c)
+{
+    c.region.assign(c.names.size(), static_cast<uint8_t>(DD_REGION_TRUNK));
+    for (size_t i = 0; i < c.names.size(); ++i)
+    {
+        std::string name = c.names[i];
+        std::transform(name.begin(), name.end(), name.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+        const auto has = [&](const char* word) { return name.find(word) != std::string::npos; };
+        const bool left = has("left") || (name.size() >= 2 && name.compare(name.size() - 2, 2, "_l") == 0);
+        if (has("arm") || has("hand") || has("shoulder") || has("clavicle"))
+        {
+            c.region[i] = static_cast<uint8_t>(left ? DD_REGION_ARM_LEFT : DD_REGION_ARM_RIGHT);
+        }
+        else if (has("thigh") || has("shin") || has("calf") || has("foot") || has("toe") || has("leg"))
+        {
+            c.region[i] = static_cast<uint8_t>(left ? DD_REGION_LEG_LEFT : DD_REGION_LEG_RIGHT);
+        }
+        else if (has("head") || has("neck"))
+        {
+            c.region[i] = static_cast<uint8_t>(DD_REGION_HEAD_NECK);
+        }
+    }
 }
 
 namespace
 {
 void applyMuscles(DdCharacter& c)
 {
-    const MuscleParams& m = c.muscles;
     for (size_t i = 0; i < c.parent.size(); ++i)
     {
         if (c.parent[i] < 0)
         {
             continue;
         }
+        const MuscleParams& m = c.regionMuscles[c.region[i]].now;
         JPH::TwoBodyConstraint* constraint = c.ragdoll->GetConstraint(c.settings->GetConstraintIndexForBodyIndex(static_cast<int>(i)));
         const float torque = c.strength[i] * m.share;
         const JPH::EMotorState state = torque > 0.0f ? JPH::EMotorState::Position : JPH::EMotorState::Off;
@@ -91,33 +128,41 @@ float lerp(float a, float b, float t)
 
 void updateMuscles(DdCharacter& c, float dt)
 {
-    if (c.blendElapsed < c.blendTime)
+    bool blending = false;
+    for (DdCharacter::RegionMuscles& r : c.regionMuscles)
     {
-        c.blendElapsed = std::min(c.blendTime, c.blendElapsed + dt);
-        c.musclesDirty = true;
+        if (r.elapsed < r.time)
+        {
+            r.elapsed = std::min(r.time, r.elapsed + dt);
+            c.musclesDirty = true;
+        }
+        blending = blending || r.elapsed < r.time;
     }
     if (!c.musclesDirty)
     {
         return;
     }
-    const float t = c.blendTime > 0.0f ? c.blendElapsed / c.blendTime : 1.0f;
-    c.muscles.frequency = lerp(c.blendFrom.frequency, c.blendTo.frequency, t);
-    c.muscles.damping = lerp(c.blendFrom.damping, c.blendTo.damping, t);
-    c.muscles.share = lerp(c.blendFrom.share, c.blendTo.share, t);
-    // Limp has no spring. Blending into or out of it ramps the stiffness through a very soft spring instead (a
-    // frequency of 0 would mean a RIGID joint in Jolt), so the blend is felt even when torques stay below the limit.
-    constexpr float kSoftest = 0.5f; // Hz
-    if (c.blendFrom.share == 0.0f)
+    for (DdCharacter::RegionMuscles& r : c.regionMuscles)
     {
-        c.muscles.frequency = lerp(kSoftest, c.blendTo.frequency, t);
-        c.muscles.damping = c.blendTo.damping;
-    }
-    else if (c.blendTo.share == 0.0f)
-    {
-        c.muscles.frequency = lerp(c.blendFrom.frequency, kSoftest, t);
-        c.muscles.damping = c.blendFrom.damping;
+        const float t = r.time > 0.0f ? r.elapsed / r.time : 1.0f;
+        r.now.frequency = lerp(r.from.frequency, r.to.frequency, t);
+        r.now.damping = lerp(r.from.damping, r.to.damping, t);
+        r.now.share = lerp(r.from.share, r.to.share, t);
+        // Limp has no spring. Blending into or out of it ramps the stiffness through a very soft spring instead (a
+        // frequency of 0 would mean a RIGID joint in Jolt), so the blend is felt even when torques stay below the limit.
+        constexpr float kSoftest = 0.5f; // Hz
+        if (r.from.share == 0.0f)
+        {
+            r.now.frequency = lerp(kSoftest, r.to.frequency, t);
+            r.now.damping = r.to.damping;
+        }
+        else if (r.to.share == 0.0f)
+        {
+            r.now.frequency = lerp(r.from.frequency, kSoftest, t);
+            r.now.damping = r.from.damping;
+        }
     }
     applyMuscles(c);
-    c.musclesDirty = c.blendElapsed < c.blendTime;
+    c.musclesDirty = blending;
 }
 } // namespace dragdoll

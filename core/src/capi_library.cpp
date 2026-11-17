@@ -2,6 +2,7 @@
 // C ABI: library lifetime and error reporting (dragdoll.h). Every exported function is
 // noexcept in practice and catches everything at the boundary (ADR-0020).
 
+#include "behaviour_host.hpp"
 #include "capi_guard.hpp"
 #include "memory_stats.hpp"
 
@@ -130,6 +131,7 @@ DD_API DdResult DD_CALL dragdoll_init(uint32_t api_version)
 #endif
     JPH::Factory::sInstance = new JPH::Factory();
     JPH::RegisterTypes();
+    dragdoll::initBehaviours();
 
     gInitialized = true;
     return DD_OK;
@@ -145,6 +147,7 @@ DD_API void DD_CALL dragdoll_shutdown(void)
             return;
         }
         JPH::UnregisterTypes();
+        dragdoll::shutdownBehaviours();
         delete JPH::Factory::sInstance;
         JPH::Factory::sInstance = nullptr;
         gInitialized = false;
