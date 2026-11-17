@@ -247,9 +247,12 @@ typedef struct DdCharacterDesc
                               with the world up axis, then `rotation` is applied (e.g. a heading about up). */
     float mass_scale;      /* Multiplies the rig mass. <= 0 means 1. */
     uint64_t user_data;    /* Opaque host value. */
+    float size_scale;      /* Uniform size: every length of the rig is multiplied by it (a 1.75 m rig at 1.09 stands 1.91 m
+                            * tall), and its mass by size_scale^3 on top of mass_scale. <= 0 means 1. Lets a host match its
+                            * own characters' proportions with one rig. */
 } DdCharacterDesc;
 
-/* Defaults: no rig, identity transform, mass_scale 1. */
+/* Defaults: no rig, identity transform, mass_scale 1, size_scale 1. */
 DD_API void DD_CALL dragdoll_character_desc_default(DdCharacterDesc* desc);
 
 /* Builds the ragdoll and adds it to the world, limp (no muscles yet). Rig errors are reported in detail by
@@ -286,6 +289,12 @@ DD_API const char* DD_CALL dragdoll_character_get_name(const DdCharacter* charac
 
 /* Whether dragdoll_world_debug_draw draws this character (default 1). A live-tap viewer can switch it remotely. */
 DD_API DdResult DD_CALL dragdoll_character_set_debug_draw(DdCharacter* character, int visible);
+
+/* A short text from the host about what the character is doing in the host (e.g. the animation it plays), at most 63
+ * bytes. Never used by the simulation; recorded when it changes, streamed by the live tap and shown by tools, so a
+ * recording or a capture says what the host was doing at each moment. */
+DD_API DdResult DD_CALL dragdoll_character_set_label(DdCharacter* character, const char* label);
+DD_API const char* DD_CALL dragdoll_character_get_label(const DdCharacter* character); /* "" if none */
 DD_API int DD_CALL dragdoll_character_get_debug_draw(const DdCharacter* character);
 
 /* Mass of one body in kg as simulated (0 for an invalid index). */

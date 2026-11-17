@@ -50,6 +50,7 @@ DD_API void DD_CALL dragdoll_character_desc_default(DdCharacterDesc* desc)
     desc->struct_size = sizeof(DdCharacterDesc);
     desc->transform.rotation = DdQuat{0.0f, 0.0f, 0.0f, 1.0f};
     desc->mass_scale = 1.0f;
+    desc->size_scale = 1.0f;
 }
 
 DD_API DdResult DD_CALL dragdoll_character_create(DdWorld* world, const DdCharacterDesc* desc, DdCharacter** out_character)
@@ -629,6 +630,32 @@ DD_API DdResult DD_CALL dragdoll_character_get_threat(const DdCharacter* charact
     }
     return DD_OK;
     DD_GUARD_END(DD_ERROR_INTERNAL)
+}
+
+DD_API DdResult DD_CALL dragdoll_character_set_label(DdCharacter* character, const char* label)
+{
+    DD_GUARD_BEGIN
+    if (character == nullptr)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_set_label: character is required");
+    }
+    std::string text = label != nullptr ? label : "";
+    if (text.size() > 63) text.resize(63);
+    if (text != character->label)
+    {
+        character->label = text;
+        if (dragdoll::rec::Recorder* recorder = recorderOf(character))
+        {
+            recorder->label(character->id, text.c_str());
+        }
+    }
+    return DD_OK;
+    DD_GUARD_END(DD_ERROR_INTERNAL)
+}
+
+DD_API const char* DD_CALL dragdoll_character_get_label(const DdCharacter* character)
+{
+    return character != nullptr ? character->label.c_str() : "";
 }
 
 DD_API DdResult DD_CALL dragdoll_character_get_senses(const DdCharacter* character, DdSenses* out)

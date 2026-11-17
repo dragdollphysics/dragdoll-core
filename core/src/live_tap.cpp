@@ -114,7 +114,7 @@ void LiveTap::collidersRemoved(const DdColliderId* ids, uint32_t count)
 void LiveTap::characterCreated(uint32_t id, const DdCharacterDesc& desc)
 {
     mCharacters[id] = {{"id", id}, {"name", ""}, {"rig", desc.rig_json != nullptr ? desc.rig_json : ""}, {"p", vec(desc.transform.position)},
-                       {"q", quat(desc.transform.rotation)}, {"mass_scale", desc.mass_scale}};
+                       {"q", quat(desc.transform.rotation)}, {"mass_scale", desc.mass_scale}, {"size_scale", desc.size_scale}};
     mCharacterAdds.insert(id);
 }
 
@@ -277,7 +277,7 @@ void LiveTap::afterStep(DdWorld* world)
                               // What it senses and makes of it (ADR-0024 / 0025); ttc < 0 = no threat.
                               {"ttc", c->threat.collider != DD_INVALID_COLLIDER ? c->threat.time_to_collision : -1.0f},
                               {"expects", static_cast<int>(c->threat.predicted)}, {"behaviour", c->behaviourName},
-                              {"riding", c->ridingGroup},
+                              {"riding", c->ridingGroup}, {"label", c->label},
                               // Impact report (ADR-0024 §5): what a hit did, while it unfolds and once it is over.
                               {"impact", c->impact.valid == 0 ? Json(nullptr)
                                                               : Json{{"class", static_cast<int>(c->impact.measured)}, {"finished", c->impact.finished},

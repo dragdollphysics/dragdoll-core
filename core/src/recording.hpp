@@ -20,7 +20,7 @@ namespace dragdoll::rec
 {
 
 inline constexpr char kMagic[8] = {'D', 'D', 'R', 'E', 'C', 0, 0, 0};
-inline constexpr uint32_t kFormatVersion = 3; // 2: collider group (ADR-0024); 3: behaviours, region tension, aim, named poses (ADR-0025)
+inline constexpr uint32_t kFormatVersion = 4; // 2: collider group (ADR-0024); 3: behaviours, region tension, aim, named poses (ADR-0025); 4: character size_scale
 
 enum class Record : uint8_t
 {
@@ -46,6 +46,7 @@ enum class Record : uint8_t
     Aim = 21,             // u32 character id | u32 region | vec3 target | f32 extension
     NamedPose = 22,       // u32 character id | string behaviour | string pose | u32 region mask
     Riding = 23,          // u32 character id | u32 group (0 = none)
+    Label = 24,           // u32 character id | string label
     Activate = 13,        // u32 id | f32 dt | u8 flags (1 prev root, 2 prev joints, 4 joints) | [prev root] | [count x prev quat] | root | [count x quat]
 };
 
@@ -195,6 +196,7 @@ public:
     void aim(uint32_t character, uint32_t region, const DdVec3& target, float extension);
     void namedPose(uint32_t character, const char* behaviour, const char* pose, uint32_t regionMask);
     void riding(uint32_t character, uint32_t group);
+    void label(uint32_t character, const char* text);
     void activate(uint32_t character, const DdTransform* previousRoot, const DdQuat* previousJoints, const DdTransform& root,
                   const DdQuat* joints, uint32_t count, float dt);
     bool failed() const { return mFailed; }

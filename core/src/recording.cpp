@@ -220,6 +220,7 @@ void Recorder::characterCreate(uint32_t id, const DdCharacterDesc& desc)
     mScratch.transform(desc.transform);
     mScratch.f32(desc.mass_scale);
     mScratch.u64(desc.user_data);
+    mScratch.f32(desc.size_scale);
     write(Record::CharacterCreate, mScratch);
 }
 
@@ -344,6 +345,14 @@ void Recorder::namedPose(uint32_t character, const char* behaviour, const char* 
     mScratch.string(pose, std::strlen(pose));
     mScratch.u32(regionMask);
     write(Record::NamedPose, mScratch);
+}
+
+void Recorder::label(uint32_t character, const char* text)
+{
+    mScratch.clear();
+    mScratch.u32(character);
+    mScratch.string(text, std::strlen(text));
+    write(Record::Label, mScratch);
 }
 
 void Recorder::riding(uint32_t character, uint32_t group)

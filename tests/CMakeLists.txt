@@ -42,6 +42,7 @@ add_executable(dragdoll_tests
     unit/test_aim.cpp
     unit/test_senses.cpp
     unit/test_impact_report.cpp
+    unit/test_size_scale.cpp
     unit/test_memory.cpp
     unit/test_recording.cpp
 )

@@ -313,7 +313,7 @@ TEST_CASE("behaviour: a session with a behaviour, live parameters, awareness and
     frame.struct_size = sizeof(DdReplayFrame);
     int frames = 0;
     bool identical = true;
-    while (dragdoll_replay_advance(replay, &frame) == DD_OK && frames < 100000)
+    while (dragdoll_replay_advance(replay, &frame) == DD_OK && frame.at_end == 0 && frames < 100000)
     {
         ++frames;
         identical = identical && frame.hash_matches != 0;

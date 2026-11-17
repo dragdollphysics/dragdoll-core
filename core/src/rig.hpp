@@ -70,6 +70,8 @@ struct Rig
 
     // Throws std::invalid_argument with a precise message on any problem.
     static Rig parse(std::string_view json);
+    // Multiplies every length (shapes, joint pivots) by `factor`; angles, joint axes and mass fractions are unchanged.
+    void scale(float factor);
 };
 
 // Built-in rigs compiled into the library (packs/rigs/*.json). nullptr if unknown.

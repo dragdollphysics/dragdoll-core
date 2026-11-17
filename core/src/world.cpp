@@ -713,8 +713,13 @@ DdCharacter* World::createCharacter(const DdCharacterDesc& desc)
     {
         throw std::invalid_argument("character position is not finite");
     }
-    const float massScale = desc.mass_scale > 0.0f && std::isfinite(desc.mass_scale) ? desc.mass_scale : 1.0f;
-    const Rig rig = Rig::parse(desc.rig_json);
+    const float sizeScale = desc.size_scale > 0.0f && std::isfinite(desc.size_scale) ? desc.size_scale : 1.0f;
+    const float massScale = (desc.mass_scale > 0.0f && std::isfinite(desc.mass_scale) ? desc.mass_scale : 1.0f) * sizeScale * sizeScale * sizeScale;
+    Rig rig = Rig::parse(desc.rig_json);
+    if (sizeScale != 1.0f)
+    {
+        rig.scale(sizeScale); // Muscle strength and joint friction follow the mass (massScale below)
+    }
 
     // Rig space (+Y up) is first aligned with the world up axis, then turned by the host's rotation.
     const JPH::Quat rotation = normalizedRotation(desc.transform.rotation) * mYToUp;

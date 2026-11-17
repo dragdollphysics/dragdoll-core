@@ -125,6 +125,7 @@ void apply(DdReplay& replay, const RecordView& record)
         desc.transform = in.transform();
         desc.mass_scale = in.f32();
         desc.user_data = in.u64();
+        desc.size_scale = in.f32();
         DdCharacter* character = world.createCharacter(desc);
         if (character->id != id)
         {
@@ -231,6 +232,17 @@ void apply(DdReplay& replay, const RecordView& record)
             throw std::runtime_error("replay: named pose on an unknown character");
         }
         dragdoll::applyNamedPose(*it->second, world.behaviourParams().of(behaviour), pose, mask);
+        break;
+    }
+    case Record::Label: {
+        const uint32_t id = in.u32();
+        const std::string text = in.string();
+        auto it = replay.characters.find(id);
+        if (it == replay.characters.end())
+        {
+            throw std::runtime_error("replay: label set on an unknown character");
+        }
+        it->second->label = text;
         break;
     }
     case Record::Riding: {

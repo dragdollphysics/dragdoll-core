@@ -286,4 +286,17 @@ Rig Rig::parse(std::string_view text)
     return rig;
 }
 
+void Rig::scale(float factor)
+{
+    for (RigBody& body : bodies)
+    {
+        body.shape.center *= factor;
+        body.shape.halfExtents *= factor;
+        body.shape.from *= factor;
+        body.shape.to *= factor;
+        body.shape.radius *= factor;
+        body.joint.pivot *= factor;
+    }
+}
+
 } // namespace dragdoll

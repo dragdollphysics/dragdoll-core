@@ -758,3 +758,24 @@ Crowd question (car through the pier) → cost is linear in awake ragdolls (~70 
 
 **Open questions**
 * Whether 1-step-before-contact handover is fair: a limp body has no time to sag; cadavers are released earlier (they sag a little).
+
+---
+
+## 2026-11-17 — Ragdoll size, skin-frame orientation, animation labels (founder requests from the live view)
+**Changed** (local, not committed)
+* **`DdCharacterDesc.size_scale`** (library): every rig length times it, mass times its cube (on top of `mass_scale`); recorded (format 4), streamed, mirrored by the viewer. Test: at 1.09 the head stands 9 % higher (1.78 vs 1.64 m), mass 97 kg, still balances.
+* **dragdoll-sa sizes each puppet** from its model's skin rest pose: head-to-ankle distance against humanoid16's 1.394 m. Measured: CJ 1.53 m -> 1.094 (matches the earlier centre-of-mass estimate of +9 %), male peds 1.09-1.12, others 1.00-1.02. SA's people are ~1.9 m: next to them SA cars are no longer oversized (relevant to 4.3).
+* **Skin-frame orientation from the rest pose alone** (founder: "hookers have problems in their ragdoll torso geometry"). The old fit chose among 24 axis rotations by comparing with the current pose — and a ped that has just streamed in has all its bone matrices at zero, so the heading was arbitrary (logged fits of 31-41 cm, odd rotations). Now: the skin's up (pelvis -> head bind) must map to +Z and its left (right thigh 51 -> left thigh 41 bind) to -X; the current pose only reports how well it matches. All ped models now get the same rotation; CJ gets his own (0.9 cm on his idle pose). Per-model memory of fits kept as a fallback for skins without those bones; a one-time diagnostic logs the raw bind data of any model that still fails.
+* **Animation labels:** `dragdoll_character_set_label` (library; host text, <= 63 bytes, recorded when it changes, streamed, shown above each head in the viewer). dragdoll-sa labels each puppet with its main animation, read from the game's own tables at run time: e.g. `walk_civi (man)`, `CAR_sit (default)`, `WOMAN_walkpro (pro)`, `IDLE_STANCE (player)`, `CHOPPA_Ride (choppa)`.
+* **Test-harness bug found:** at the end of a recording `dragdoll_replay_advance` stays DD_OK with `at_end` set; a new test looped forever (10 min of CPU), an older one spun 100000 frames under its cap. Both now stop at `at_end`.
+* Tests: size scale (1), label (1). Targeted run: 29 cases green in 1.8 s (x64-release); x86 builds; hot-reloaded into the running game and checked through the live tap and the log.
+
+**Next**
+* Founder: look at the overlap of ragdolls and models in game, and at a hooker's torso; a capture if anything is off.
+* Then back to 4.3 with scaled pedestrians: the baseline runner gets `--size 1.09` to measure SA proportions too.
+
+**Open questions**
+* The scale is uniform; SA models may differ in limb proportions (per-segment fitting would need the skeleton map to carry lengths).
+* Mass follows size cubed (97 kg at 1.09); SA has no masses for peds to compare with.
+
+* **Labels carry the animation's time** (founder): "name (group) time/total", the game's own current time and total length in seconds, unconverted (SA keeps time, not frame numbers), e.g. `IDLE_STANCE (player) 0.607/1.500`, `walk_civi (man) 0.750/1.133`. Founder confirmed: names appear, hookers look right.

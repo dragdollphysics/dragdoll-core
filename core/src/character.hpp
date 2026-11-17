@@ -37,6 +37,7 @@ struct DdCharacter
     uint32_t id = 0;
     uint64_t userData = 0;
     std::string name;          // Display name for tools
+    std::string label;         // Host's note on what it is doing (tools only)
     bool debugVisible = true;  // Drawn by dragdoll_world_debug_draw
     float totalMass = 0.0f;
 

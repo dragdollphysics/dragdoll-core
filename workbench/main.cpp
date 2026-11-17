@@ -1589,6 +1589,7 @@ void addLiveCharacter(App& app, const nlohmann::json& c)
     d.transform.position = jsonVec(c["p"]);
     d.transform.rotation = jsonQuat(c["q"]);
     d.mass_scale = c["mass_scale"].get<float>();
+    d.size_scale = c.value("size_scale", 1.0f); // The host's character proportions
     DdCharacter* ch = nullptr;
     if (dragdoll_character_create(app.live, &d, &ch) != DD_OK) return;
     // The mirror only shows the host's poses, which jump (new world, catching up after a hitch, a car at speed): a
@@ -1764,6 +1765,7 @@ void applyLiveFrame(App& app, const nlohmann::json& frame)
             entry.balance = c.value("balance", 0) != 0;
         }
         dragdoll_character_set_riding(found->second, c.value("riding", 0u)); // Its own vehicle is no threat to it here either
+        dragdoll_character_set_label(found->second, c.value("label", std::string()).c_str());
         App::LivePose pose;
         for (const nlohmann::json& q : c["joints"]) pose.joints.push_back(jsonQuat(q));
         pose.root = DdTransform{jsonVec(c["p"]), jsonQuat(c["q"])};
@@ -2518,6 +2520,28 @@ int main(int argc, char** argv)
         rlDrawRenderBatchActive();
         rlEnableDepthTest();
         EndMode3D();
+        // What each character is doing in its host (dragdoll_character_set_label), above its head.
+        if (DdWorld* labelled = activeWorld(app))
+        {
+            const Camera3D eye = app.camera.build();
+            const Vector3 up = app.camera.up;
+            for (uint32_t i = 0; i < dragdoll_world_get_character_count(labelled); ++i)
+            {
+                DdCharacter* c = dragdoll_world_get_character(labelled, i);
+                const char* label = dragdoll_character_get_label(c);
+                const int head = dragdoll_character_find_body(c, "head");
+                if (label[0] == 0 || head < 0) continue;
+                std::vector<DdTransform> t(dragdoll_character_get_body_count(c));
+                if (dragdoll_character_get_body_transforms(c, 1, t.data(), static_cast<uint32_t>(t.size())) != DD_OK) continue;
+                const Vector3 above = Vector3Add(toRay(t[static_cast<size_t>(head)].position), Vector3Scale(up, 0.35f));
+                const Vector3 toLabel = Vector3Subtract(above, eye.position);
+                if (Vector3DotProduct(toLabel, Vector3Subtract(eye.target, eye.position)) <= 0.0f || Vector3Length(toLabel) > 40.0f) continue;
+                const Vector2 at = GetWorldToScreen(above, eye);
+                const int width = MeasureText(label, 14);
+                DrawRectangle(static_cast<int>(at.x) - width / 2 - 3, static_cast<int>(at.y) - 9, width + 6, 18, Color{0, 0, 0, 140});
+                DrawText(label, static_cast<int>(at.x) - width / 2, static_cast<int>(at.y) - 7, 14, Color{150, 230, 255, 255});
+            }
+        }
         for (size_t i = 0; i < threatText.size(); ++i)
         {
             DrawText(threatText[i].c_str(), 14, GetScreenHeight() - 26 - 22 * static_cast<int>(threatText.size() - 1 - i), 18,
