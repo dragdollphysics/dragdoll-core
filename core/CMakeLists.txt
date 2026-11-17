@@ -56,6 +56,7 @@ add_library(dragdoll SHARED
     src/perception.cpp
     src/behaviour_host.hpp
     src/behaviour_host.cpp
+    src/aim.cpp
     src/skeleton_map.cpp
     src/capi_skeleton.cpp
     src/live_tap.cpp

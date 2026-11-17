@@ -273,7 +273,17 @@ void LiveTap::afterStep(DdWorld* world)
         for (const DdQuat& q : joints) j.push_back(quat(q));
         characters.push_back({{"index", i}, {"id", c->id}, {"visible", c->debugVisible ? 1 : 0}, {"p", vec(root.position)}, {"q", quat(root.rotation)}, {"joints", j},
                               {"state", static_cast<int>(info.state)}, {"tension", static_cast<int>(dragdoll_character_get_tension(c))},
-                              {"balance", dragdoll_character_get_balance(c)}, {"balance_error", info.balance_error}});
+                              {"balance", dragdoll_character_get_balance(c)}, {"balance_error", info.balance_error},
+                              // What it senses and makes of it (ADR-0024 / 0025); ttc < 0 = no threat.
+                              {"ttc", c->threat.collider != DD_INVALID_COLLIDER ? c->threat.time_to_collision : -1.0f},
+                              {"expects", static_cast<int>(c->threat.predicted)}, {"behaviour", c->behaviourName},
+                              // The measurements behind "expects": which object, its leading edge and bumper line, the
+                              // character's centre of mass above the same ground, where across the front it will hit.
+                              {"threat", {{"group", c->threat.group}, {"lead", c->threat.profile.leading_edge_height},
+                                          {"bumper", c->threat.profile.front_top_height}, {"roof", c->threat.profile.roof_height},
+                                          {"bonnet", c->threat.profile.bonnet_length}, {"com", c->sensedComHeight},
+                                          {"lateral", c->threat.lateral_offset}, {"speed", c->threat.closing_speed}}},
+                              {"stage", c->behaviourStatus}});
     }
     Json frame = {{"t", "frame"}, {"step", step}, {"colliders", colliders}, {"characters", characters}};
     if (world->hostCamera.set)

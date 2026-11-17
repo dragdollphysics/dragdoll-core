@@ -50,6 +50,7 @@ struct DdCharacter
     std::vector<bool> hinge;           // Joint type to the parent
     std::vector<JPH::Quat> restRig;    // Body rotation at rest in rig space (+Y up, +Z forward, +X left)
     std::vector<JPH::Vec3> hingeAxisRig; // Hinge joints: the axis in rig space
+    std::vector<float> hingeMin, hingeMax; // Hinge joints: limits (radians about the axis)
     std::vector<JPH::Quat> targetPose; // Joint rotations the muscles pull towards (offsets from rest, rig axes)
     // Effective inertia of each joint (kg*m^2): everything on the child side against everything on the parent side,
     // about the joint, at rest. Turns frequency + damping ratio into real stiffness, so the chain beyond a joint (a
@@ -105,6 +106,9 @@ struct DdCharacter
 
     // Perception (ADR-0024): the most imminent threat and the probed front of that object.
     DdThreat threat{};
+    uint32_t ridingGroup = 0; // The object (group) the character rides: never a threat to it
+    JPH::Vec3 sensedVelocity = JPH::Vec3::sZero(); // Centre-of-mass velocity, smoothed (host-animated bodies move in bursts)
+    float sensedComHeight = 0.0f;                  // Centre of mass above the probed ground (for tools)
     std::vector<DdVec3> threatSilhouette; // Per point: x = distance behind the object's front, z = height above the ground
     float probedGround = 0.0f;            // Ground height (along up) under the object's front when probed
     uint64_t probedKey = 0;               // Which object the profile belongs to (0 = none)
@@ -131,6 +135,10 @@ void setTension(DdCharacter& character, DdTension tension, float blendSeconds);
 void setRegionTension(DdCharacter& character, DdRegion region, DdTension tension, float blendSeconds);
 // Fills character.region from the body names (see DdRegion).
 void assignRegions(DdCharacter& character);
+// Points a limb (arm or leg region) at a world position: sets the targets of its two main joints so that its end
+// (hand / foot centre) lies towards `target`, `extension` (0..1) of the limb's length away at most. False if the
+// region is not a two-joint limb.
+bool aimLimb(DdCharacter& character, DdRegion region, JPH::RVec3Arg target, float extension);
 
 // Advances the blend by one fixed step and pushes the muscle state into the joint motors when it changed.
 void updateMuscles(DdCharacter& character, float dt);

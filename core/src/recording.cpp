@@ -326,6 +326,34 @@ void Recorder::behaviourParams(const char* behaviour, const char* json)
     write(Record::BehaviourParams, mScratch);
 }
 
+void Recorder::aim(uint32_t character, uint32_t region, const DdVec3& target, float extension)
+{
+    mScratch.clear();
+    mScratch.u32(character);
+    mScratch.u32(region);
+    mScratch.vec3(target);
+    mScratch.f32(extension);
+    write(Record::Aim, mScratch);
+}
+
+void Recorder::namedPose(uint32_t character, const char* behaviour, const char* pose, uint32_t regionMask)
+{
+    mScratch.clear();
+    mScratch.u32(character);
+    mScratch.string(behaviour, std::strlen(behaviour));
+    mScratch.string(pose, std::strlen(pose));
+    mScratch.u32(regionMask);
+    write(Record::NamedPose, mScratch);
+}
+
+void Recorder::riding(uint32_t character, uint32_t group)
+{
+    mScratch.clear();
+    mScratch.u32(character);
+    mScratch.u32(group);
+    write(Record::Riding, mScratch);
+}
+
 void Recorder::kinematic(uint32_t character, bool kinematic)
 {
     mScratch.clear();

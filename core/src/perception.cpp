@@ -30,12 +30,20 @@ constexpr float kHorizon = 2.0f;          // s: threats further in the future ar
 constexpr float kBodyHalfDepth = 0.2f;    // m: a standing body, front to back
 constexpr float kBodyHalfWidth = 0.25f;   // m
 constexpr float kMissMargin = 0.3f;       // m: closer than this to the object's side still counts
+constexpr float kVelocitySmoothing = 0.05f; // s
 constexpr float kReprobeLateral = 0.15f;  // m: probe again when the impact line moved this far
 constexpr float kRayStep = 0.1f;          // m between probe rays
 constexpr float kMaxProbeLength = 4.0f;   // m of the object's top that is probed
 constexpr float kMaxProbeHeight = 3.5f;   // m of the object's front that is probed
 constexpr float kFaceTolerance = 0.05f;   // m: this close to the foremost point is still "the front face"
 constexpr float kSurfaceAngle = 20.0f;    // deg: shallower = bonnet / roof, steeper = front or windscreen
+// The bonnet leading edge as vehicle regulations define it (UN GTR 9 / EEVC WG17): the point where a straight edge
+// held 50 deg rearward of vertical first touches the front. That is the point of the top profile lying furthest out
+// along the edge's normal (50 deg above the horizontal, forwards): on a sharp corner the corner itself, on a rounded
+// front (a sphere-built car) a point below the crest. No dependence on the spacing of the probe rays.
+constexpr float kEdgeNormalUp = 0.7660444f;      // sin 50 deg
+constexpr float kEdgeNormalForward = 0.6427876f; // cos 50 deg
+constexpr float kShoulderAngle = 40.0f;          // deg: between the edge and the flat of a rounded bonnet
 constexpr float kForwardProjectionRatio = 0.95f; // Leading edge at >= this share of the centre-of-mass height
 constexpr float kCornerBand = 0.15f;      // m from a front corner: a fender vault is expected
 constexpr float kRadToDeg = 180.0f / 3.14159265f;
@@ -146,17 +154,31 @@ void World::updateThreat(DdCharacter& c)
     }
     com /= mass;
     before /= mass;
-    JPH::Vec3 velocity = (com - before) / static_cast<float>(mFixedDt);
-    velocity -= mUp * velocity.Dot(mUp);
+    // Velocity from the bodies themselves, not from position differences: a host-animated character is re-posed once
+    // per host frame (its recorded positions do not move in between), but its bodies carry the animated velocity
+    // (activation from motion) - so a passenger reads as moving with its vehicle. Lightly smoothed.
+    JPH::Vec3 instant = JPH::Vec3::sZero();
+    if (c.inPhysics)
+    {
+        const JPH::BodyInterface& bodies = mPhysics->GetBodyInterfaceNoLock();
+        for (size_t i = 0; i < c.currPosition.size(); ++i)
+        {
+            instant += bodies.GetLinearVelocity(c.ragdoll->GetBodyID(static_cast<int>(i))) * c.bodyMass[i];
+        }
+        instant /= mass;
+    }
+    instant -= mUp * instant.Dot(mUp);
+    c.sensedVelocity += (instant - c.sensedVelocity) * std::min(1.0f, static_cast<float>(mFixedDt) / kVelocitySmoothing);
+    const JPH::Vec3 velocity = c.sensedVelocity;
 
     const Object* best = nullptr;
     uint64_t bestKey = 0;
     float bestTime = kHorizon, bestMiss = 0.0f, bestLateral = 0.0f, bestClosing = 0.0f;
     for (const auto& [key, object] : mObjects)
     {
-        if (!object.moving)
+        if (!object.moving || (c.ridingGroup != 0 && object.group == c.ridingGroup))
         {
-            continue;
+            continue; // Standing still, or the character's own vehicle
         }
         const float closing = (object.velocity - velocity).Dot(object.direction);
         if (closing < kMinClosingSpeed)
@@ -176,9 +198,9 @@ void World::updateThreat(DdCharacter& c)
         const float centre = 0.5f * (object.leftMost + object.rightMost), half = 0.5f * (object.leftMost - object.rightMost);
         const float lateral = com.Dot(object.left) + velocity.Dot(object.left) * time - centre;
         const float miss = std::max(0.0f, std::fabs(lateral) - half - kBodyHalfWidth);
-        if (miss > kMissMargin || (gap < 0.0f && std::fabs(lateral) > half + kBodyHalfWidth))
+        if (miss > kMissMargin || (gap < 0.0f && std::fabs(lateral) > half))
         {
-            continue; // It passes by (or is passing beside right now)
+            continue; // It passes by, or is passing right beside (only a body within its width is "on" it)
         }
         best = &object;
         bestKey = key;
@@ -219,7 +241,21 @@ void World::updateThreat(DdCharacter& c)
     {
         // Wood, Simms & Walsh 2005: forward projection when the centre of gravity lies within the primary impact zone,
         // wrap when the body is struck below it. A hit at a front corner is expected to vault off the side.
-        const float comHeight = com.Dot(mUp) - c.probedGround;
+        // The character's centre of mass above the ground it stands on (not the ground under the vehicle: on a slope the
+        // two differ), against the leading edge above the vehicle's own ground.
+        float standsOn = c.probedGround;
+        {
+            constexpr float kReach = 3.0f;
+            JPH::RayCastResult hit;
+            if (mPhysics->GetNarrowPhaseQueryNoLock().CastRay(JPH::RRayCast(JPH::RVec3(com), mUp * -kReach), hit,
+                                                             JPH::SpecifiedBroadPhaseLayerFilter(bp_layers::kNonMoving),
+                                                             JPH::SpecifiedObjectLayerFilter(layers::kStatic)))
+            {
+                standsOn = com.Dot(mUp) - hit.mFraction * kReach;
+            }
+        }
+        const float comHeight = com.Dot(mUp) - standsOn;
+        c.sensedComHeight = comHeight;
         c.threat.predicted = std::fabs(bestLateral) > half - kCornerBand ? DD_TRAJECTORY_FENDER_VAULT
                              : profile.leading_edge_height >= kForwardProjectionRatio * comHeight ? DD_TRAJECTORY_FORWARD_PROJECTION
                              : DD_TRAJECTORY_WRAP;
@@ -329,9 +365,22 @@ void World::probeFront(DdCharacter& c, uint64_t key, const Object& object, float
     float roof = 0.0f;
     for (float height : z) roof = std::max(roof, height);
 
-    size_t edge = 0; // Where the front stops rising steeply
-    while (edge + 1 < n && slope(edge) >= kSurfaceAngle) ++edge;
-    size_t bonnetEnd = edge; // Shallow and clearly below the roof
+    size_t edge = 0; // Bonnet leading edge (see kEdgeNormal*)
+    float furthest = -std::numeric_limits<float>::max();
+    for (size_t i = 0; i < n; ++i)
+    {
+        const float out = z[i] * kEdgeNormalUp - top[i].back * kEdgeNormalForward;
+        if (out > furthest + 1e-4f)
+        {
+            furthest = out;
+            edge = i;
+        }
+    }
+    size_t bonnetEnd = edge; // The top surface from there on: shallow and clearly below the roof
+    while (bonnetEnd + 1 < n && slope(bonnetEnd) >= kSurfaceAngle && slope(bonnetEnd) < kShoulderAngle && z[bonnetEnd] < 0.9f * roof)
+    {
+        ++bonnetEnd; // The rounded shoulder between the edge and the flat of the bonnet belongs to the bonnet
+    }
     while (bonnetEnd + 1 < n && slope(bonnetEnd) < kSurfaceAngle && z[bonnetEnd] < 0.9f * roof) ++bonnetEnd;
     if (z[bonnetEnd] >= 0.9f * roof) bonnetEnd = edge; // A flat front: the "top surface" is the roof itself
     size_t screenEnd = bonnetEnd;

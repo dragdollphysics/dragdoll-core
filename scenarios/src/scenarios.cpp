@@ -775,15 +775,19 @@ class VehicleHitScenario final : public RagdollScenario
 {
 public:
     // braced: the pedestrian stands with tense muscles and balance on (task 3.6), and the vehicle arrives after 0.5 s.
-    VehicleHitScenario(const std::string& vehicle, float kmh, bool braced = false, const char* name = nullptr)
+    // aware: braced, the vehicle arrives after 1.6 s, and the "car_hit" behaviour reacts to it (ADR-0025).
+    VehicleHitScenario(const std::string& vehicle, float kmh, bool braced = false, const char* name = nullptr, bool aware = false)
         : RagdollScenario(nullptr, nullptr, DdVec3{0.0f, 0.0f, braced ? 0.005f : 0.01f}, DdQuat{0, 0, 0, 1}), mVehicle(vehicle),
-          mBraced(braced), mContactTime(braced ? 0.5f : 0.1f)
+          mBraced(braced), mAware(aware), mContactTime(aware ? 1.6f : braced ? 0.5f : 0.1f)
     {
         mNameText = name != nullptr ? name : "hit_" + vehicle + "_" + std::to_string(static_cast<int>(kmh)) + "kmh";
         mProfile = parseVehicle(builtinVehicle(vehicle));
         mDescriptionText = "A " + vehicle + " at " + std::to_string(static_cast<int>(kmh)) + " km/h " +
-                           (braced ? "nudges a standing pedestrian (tense, balance on) side-on and brakes. Judge: absorbed "
-                                     "with ankles and hips, no fall."
+                           (aware    ? "comes at a standing pedestrian who sees it 1.6 s ahead (behaviour car_hit). Judge: the body "
+                                       "tenses about 0.1 s after the car gets within 1.2 s (startle), and half a second "
+                                       "later both hands go up towards the car (shield), before the impact."
+                            : braced ? "nudges a standing pedestrian (tense, balance on) side-on and brakes. Judge: absorbed "
+                                       "with ankles and hips, no fall."
                                    : "hits a standing limp pedestrian side-on and brakes hard on contact. ") +
                            (braced ? std::string() : mProfile.description);
         mName = mNameText.c_str();
@@ -808,6 +812,11 @@ public:
         {
             dragdoll_character_set_tension(mCharacter, DD_TENSION_TENSE, 0.0f);
             dragdoll_character_set_balance(mCharacter, 1);
+        }
+        if (mAware && mCharacter != nullptr)
+        {
+            dragdoll_character_set_tension(mCharacter, DD_TENSION_RELAXED, 0.0f); // Standing at ease until it notices
+            dragdoll_character_set_behaviour(mCharacter, "car_hit");
         }
         mMesh = buildVehicleMesh(mProfile, DdVec3{1, 0, 0}, DdVec3{0, 1, 0}, DdVec3{0, 0, 1}); // Z-up, drives along +X
         DdColliderDesc car;
@@ -842,7 +851,7 @@ public:
     }
 
 private:
-    bool mBraced = false;
+    bool mBraced = false, mAware = false;
     float mContactTime = 0.1f;
     std::string mVehicle, mNameText, mDescriptionText;
     VehicleProfile mProfile;
@@ -913,6 +922,7 @@ const std::vector<std::pair<std::string, Factory>>& registry()
     all.emplace_back("stand_balance", [] { return std::make_unique<HoldStanceScenario>("stand_balance", 0.0f, 10.0); });
     all.emplace_back("hold_stance", [] { return std::make_unique<HoldStanceScenario>("hold_stance", 5.0f, 20.0); });
     all.emplace_back("bump_5kmh", [] { return std::make_unique<VehicleHitScenario>("sedan", 5.0f, true, "bump_5kmh"); });
+    all.emplace_back("aware_sedan_40kmh", [] { return std::make_unique<VehicleHitScenario>("sedan", 40.0f, true, "aware_sedan_40kmh", true); });
     for (const std::string& vehicle : vehicleNames())
     {
         all.emplace_back("hit_" + vehicle + "_40kmh", [vehicle] { return std::make_unique<VehicleHitScenario>(vehicle, 40.0f); });

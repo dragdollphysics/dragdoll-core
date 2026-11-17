@@ -601,3 +601,81 @@ Crowd question (car through the pier) → cost is linear in awake ragdolls (~70 
 **Open questions**
 * Regions come from body names; a rig with unusual names needs a `region` field in the rig JSON (not added yet).
 * While a behaviour is attached it and the host can both set tension; the last call wins (documented in the header). Enough for v1?
+
+---
+
+## 2026-11-17 — Task 4.5b: aim, pose library, Shield; live check in the game
+**Changed** (local, not committed)
+* **Aim** (`core/src/aim.cpp`): limb = the region's first body (free joint), second (elbow / knee) and last (hand / foot). In the frame the parent body carries: bend the second joint (bisection on the hinge angle, inside the hinge's limits, flexing towards the side with more range) until the limb's end is `min(distance, extension x length)` from the first joint; then turn the first joint by the shortest arc so the end points at the target. Sets targets only. Measured (zero gravity, tense): hand 1.3 cm and 0.2 cm from reachable targets, foot 0.06 cm; elbow 90.5 deg at extension 0.7 (91 expected).
+* **Pose library:** `"poses"` in behaviour packs; `"rest"` built in; region mask.
+* **Bug found by the tests:** a body at rest is asleep in Jolt and ignored new aim / pose targets (the hands did not move at all). New targets now wake the body, as tension changes already did.
+* **`car_hit` Shield (fend):** from 0.5 s after the stimulus, both arms aim at a point 0.55 m towards the vehicle, 0.15 m above the centre of mass, extension 0.85. Test: hands 36 cm ahead of the pelvis 0.3 s before the impact (facing the car).
+* Scenario `aware_sedan_40kmh` (covered by the scenario-wide replay / stability / rate tests). Live tap frames carry `ttc`, `expects`, `behaviour`, `stage`; the viewer shows them per character; mirror colliders keep their group.
+* **In the game** (hot-reloaded): CJ and 5 pedestrians report `car_hit: watch`; 3 cars arrive as 3 groups. No threat seen yet (the game was idle): needs the founder driving.
+* Tests: aim (3), poses (1), Shield (1). Targeted runs on x64-release: 30 cases (scenarios, recording, replay, live tap, perception, behaviour, aim) green; x86 builds via dragdoll-sa. Full and four-preset runs still owed.
+
+**Next**
+* Task 4.1 (contacts, per-body velocity change, airborne, ground probe, landing prediction) — Opus. It unblocks Impact (4.6) and the impact report (4.2).
+
+**Open questions**
+* Side-on, the far arm cannot reach across the trunk: only the near arm fends. A person would also turn towards the vehicle: for 4.9 (Anticipate), with the "cover" shape.
+* The first joint's swivel (where the elbow points) is whatever the shortest arc gives; no explicit control yet.
+* The shoulder / hip targets are not clamped to the cone limits: the joint itself stops the limb. Fine so far (the unreachable-target test), revisit if arms fight their limits visibly.
+
+**Founder review (2026-11-17), `aware_sedan_40kmh`:** "the arms look interesting, the rest of the body looks a bit stiff". Expected with this first version (whole body held at TENSE from the startle to the impact); recorded as work for task 4.9 in the workplan.
+
+---
+
+## 2026-11-17 — Perception in the game: first live check, three fixes
+**Changed** (local, not committed)
+* Founder attached the viewer to the game (yellow silhouettes on cars approaching pedestrians) and saved a capture; I then read the game's tap directly and drove CJ through the viewer -> game input channel (W held) to collect numbers.
+* **Found and fixed:**
+  * Drivers and passengers (and CJ in his car) were "threatened" by their own vehicle at 0 s, flickering. Position differences of a host-animated character are zero between host frames; perception now takes the centre-of-mass velocity from the bodies' own velocities. And the host says what it knows: `dragdoll_character_set_riding(character, group)` — that object is never a threat (recorded, type 23); dragdoll-sa sets it from the ped's vehicle.
+  * A character within 25 cm of a passing car's side counted as "on" it: now only inside its width.
+* The tap streams the measurements behind each prediction (`threat`: group, leading edge, bumper line, roof, bonnet length, centre-of-mass height, lateral offset, closing speed).
+* **In the game after the fixes** (12 s, CJ walking): six real threat episodes, times to collision counting down (e.g. 1.00 -> 0.53 s at 25 km/h), stages `watch > anticipate > startle > shield` on real pedestrians, standing centre-of-mass heights 0.92-1.06 m, no false threats.
+* Tests: rider test added; targeted run 41 cases green (x64-release); x86 builds.
+
+**Next**
+* Task 4.1 (contacts, per-body velocity change, airborne, ground probe) — Opus.
+
+**Open questions**
+* **Front heights of SA cars read high:** leading edges 0.72-1.12 m and roofs up to 1.77 m, varying with where across the car the line is probed (SA builds cars from fat spheres: about 0.85 m tall bonnet spheres on a floor some 0.3 m above the road). Against a 0.92-1.06 m centre of mass many saloons read as "forward projection". Is the measurement right (SA cars are simply tall blobs to collide with) or is the ground reference low? A log line now prints the player's car geometry once a second while driving (`player car model ...`): needs the founder in a car. If the spheres are the cause, the car needs a better collision shape for DragDoll than the game's own (the "smooth hull" task): SA's own 12-triangle mesh is a clean outline.
+* The wheel cylinders sit about 0.35 m higher than a wheel that touches the road should: check with the same log line.
+* The first frames of a threat report class "?" (profile not valid yet).
+
+---
+
+## 2026-11-17 — SA car fronts: ground truth, leading edge by the regulation's definition
+**Changed** (local, not committed)
+* **Ground truth from the game** (player in a Primo, model 547; log line `player car model`): road 0.74 m below the car's origin; wheel hub 0.39 m below, wheel radius 0.35 m -> the wheels touch the road exactly (ground reference and wheel cylinders are right; the earlier suspicion was wrong); collision spheres span 0.23-1.62 m above the road; collision box bottom 0.10 m below the road. SA cars are about 1.6 m tall against pedestrians whose standing centre of mass is 0.90-0.92 m.
+* **Leading edge redefined** (`perception.cpp`): the first point a straight edge held 50 deg rearward of vertical touches (UN GTR 9 / EEVC WG17 bonnet leading edge reference line; cited from memory, to verify) = the top-profile point furthest out along that edge's normal. Independent of ray spacing; exact on the packs (sedan 0.72 m) and 0.66 m on the test's sphere car (geometry: 0.64). The previous rule (first place the top is flatter than 20 deg) took nearly the crest of a rounded front.
+* **Result in the game:** saloons read leading edge 0.91-0.96 m, bumper line 0.80 m, roof 1.40-1.61 m -> "forward projection" against a 0.91 m centre of mass. This is honest: the game's collision spheres (radius ~0.4 m, centres ~0.63 m above the road) are a high, round front. A ragdoll hit by them would be pushed at pelvis height, not swept at the shins.
+* SA's own low-poly collision mesh for the same cars is a realistic outline (bonnet nose about 0.6-0.7 m above the road, rising to 0.8-0.9 m, windscreen 37 deg, roof): it only lacks a front face and sides.
+* Tests: perception 5 cases; targeted run 41 cases green (x64-release); x86 builds; hot-reloaded and measured in the game (CJ's car driven 107 m through the viewer -> game input channel).
+
+**Next**
+* dragdoll-sa: build each car's DragDoll shape from the game's outline mesh (side profile extruded to a closed mesh, as the workbench vehicles are), keeping the spheres only where there is no mesh. Then re-measure: saloons should read 0.6-0.7 m and "wrap". Needed before any hit is tuned in the game.
+* Task 4.1 (contacts, velocity change, airborne) — Opus.
+
+**Open questions**
+* Characters riding a vehicle still perceive other vehicles as threats (a crash between cars). Out of scope for v1; harmless while they are host-animated.
+
+---
+
+## 2026-11-17 — dragdoll-sa: car bodies from the game's outline mesh; character height from its own ground
+**Changed** (local, not committed)
+* **dragdoll-sa `buildOutlineSolid`:** a car's body is one closed mesh built from the game's low-poly collision mesh: stations at every vertex position along the car, height = highest point of the mesh's cross-section there, extruded across the mesh's width over its flat floor, with flat front and back faces. The game's spheres are no longer used for cars whose mesh is such an outline (all 10+ models seen in traffic: noses 0.63-0.90 m, roofs 1.24-1.56 m above their floors); other vehicles keep mesh + spheres. Wheels unchanged.
+* **Perception:** the character's centre-of-mass height is measured from the ground under the character (a ray), not under the vehicle's front — on slopes and kerbs the two differ (values of -0.01 and 1.30 m had appeared).
+* **Measured in the game** (driving ~1 km through the viewer -> game input channel): saloons read leading edge 0.94-0.96 m, bumper line 0.90 m, roof 1.57-1.59 m, the same at any lateral offset (spheres had given 0.72-1.12 m); standing pedestrians' centre of mass 1.06 m above their own ground (the earlier 0.91 m was against the road, from the kerb); people sitting in vehicles 0.74-0.84 m. Result: **saloons -> wrap (0.95 / 1.06 = 0.90 of the centre-of-mass height), taller vehicles (1.09-1.12 m) -> forward projection.**
+* Ground truth (Primo): floor about 0.22 m above the road, nose 0.72 m above the floor = 0.94 m above the road. SA cars are large next to its pedestrians: a saloon's leading edge sits where a real SUV's does, relative to a person.
+* The per-second car geometry log is no longer called.
+* Tests: targeted run 41 cases green (x64-release); x86 builds; hot-reloaded several times in the running game without a restart.
+
+**Next**
+* Task 4.1 (contacts, per-body velocity change, airborne, ground probe as a sense) — Opus.
+
+**Open questions**
+* The car body spans the outline mesh's full width at every station (the cabin is as wide as the body): fine for frontal hits; revisit for side impacts.
+* Vehicles without an outline mesh (bikes, some specials) still use the game's spheres; at the extreme lateral line they read very low profiles.
+* Passengers of one vehicle still perceive other vehicles (crashes between cars are out of scope for v1).

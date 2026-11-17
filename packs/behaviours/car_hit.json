@@ -15,6 +15,11 @@
     "startle": {
       "blend": 0.08
     },
+    "shield": {
+      "reach": 0.55,
+      "raise": 0.15,
+      "extension": 0.85
+    },
     "recover": {
       "delay": 0.6,
       "blend": 0.5

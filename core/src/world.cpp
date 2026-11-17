@@ -852,6 +852,8 @@ DdCharacter* World::createCharacter(const DdCharacterDesc& desc)
     }
     character->restRig.resize(count);
     character->hingeAxisRig.resize(count, JPH::Vec3::sAxisX());
+    character->hingeMin.assign(count, 0.0f);
+    character->hingeMax.assign(count, 0.0f);
     character->targetPose.assign(count, JPH::Quat::sIdentity());
     for (size_t i = 0; i < count; ++i)
     {
@@ -863,6 +865,8 @@ DdCharacter* World::createCharacter(const DdCharacterDesc& desc)
         if (character->hinge[i])
         {
             character->hingeAxisRig[i] = body.joint.axis;
+            character->hingeMin[i] = body.joint.min;
+            character->hingeMax[i] = body.joint.max;
         }
     }
 

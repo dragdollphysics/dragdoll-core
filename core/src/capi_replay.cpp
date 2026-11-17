@@ -207,6 +207,43 @@ void apply(DdReplay& replay, const RecordView& record)
         (record.type == Record::Awareness ? it->second->awarenessOverride : it->second->vitality) = value;
         break;
     }
+    case Record::Aim: {
+        const uint32_t id = in.u32();
+        const uint32_t region = in.u32();
+        const DdVec3 target = in.vec3();
+        const float extension = in.f32();
+        auto it = replay.characters.find(id);
+        if (it == replay.characters.end() || region >= DD_REGION_COUNT)
+        {
+            throw std::runtime_error("replay: aim on an unknown character or region");
+        }
+        dragdoll::aimLimb(*it->second, static_cast<DdRegion>(region), JPH::RVec3(target.x, target.y, target.z), extension);
+        break;
+    }
+    case Record::NamedPose: {
+        const uint32_t id = in.u32();
+        const std::string behaviour = in.string();
+        const std::string pose = in.string();
+        const uint32_t mask = in.u32();
+        auto it = replay.characters.find(id);
+        if (it == replay.characters.end())
+        {
+            throw std::runtime_error("replay: named pose on an unknown character");
+        }
+        dragdoll::applyNamedPose(*it->second, world.behaviourParams().of(behaviour), pose, mask);
+        break;
+    }
+    case Record::Riding: {
+        const uint32_t id = in.u32();
+        const uint32_t group = in.u32();
+        auto it = replay.characters.find(id);
+        if (it == replay.characters.end())
+        {
+            throw std::runtime_error("replay: riding set on an unknown character");
+        }
+        it->second->ridingGroup = group;
+        break;
+    }
     case Record::BehaviourParams: {
         const std::string name = in.string();
         const std::string json = in.string();

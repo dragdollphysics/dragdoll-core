@@ -49,7 +49,7 @@ void flatten(const nlohmann::json& node, const std::string& prefix, std::map<std
     }
 }
 
-std::map<std::string, float, std::less<>> parse(std::string_view text)
+ParamSet parse(std::string_view text)
 {
     const nlohmann::json doc = nlohmann::json::parse(text, nullptr, false);
     if (doc.is_discarded() || !doc.is_object())
@@ -65,9 +65,39 @@ std::map<std::string, float, std::less<>> parse(std::string_view text)
     {
         throw std::invalid_argument("behaviour params: \"params\" object is missing");
     }
-    std::map<std::string, float, std::less<>> values;
-    flatten(*params, "", values);
-    return values;
+    ParamSet set;
+    flatten(*params, "", set.values);
+    const auto poses = doc.find("poses");
+    if (poses != doc.end())
+    {
+        if (!poses->is_object())
+        {
+            throw std::invalid_argument("behaviour params: \"poses\" must be an object");
+        }
+        for (auto pose = poses->begin(); pose != poses->end(); ++pose)
+        {
+            if (!pose->is_object())
+            {
+                throw std::invalid_argument("behaviour params: pose \"" + pose.key() + "\" must be an object of body: [x, y, z] degrees");
+            }
+            std::map<std::string, std::array<float, 3>>& bodies = set.poses[pose.key()];
+            for (auto body = pose->begin(); body != pose->end(); ++body)
+            {
+                if (!body->is_array() || body->size() != 3 || !(*body)[0].is_number() || !(*body)[1].is_number() || !(*body)[2].is_number())
+                {
+                    throw std::invalid_argument("behaviour params: pose \"" + pose.key() + "\", body \"" + body.key() +
+                                                "\": expected [x, y, z] in degrees");
+                }
+                const std::array<float, 3> degrees{(*body)[0].get<float>(), (*body)[1].get<float>(), (*body)[2].get<float>()};
+                if (!std::isfinite(degrees[0]) || !std::isfinite(degrees[1]) || !std::isfinite(degrees[2]))
+                {
+                    throw std::invalid_argument("behaviour params: pose \"" + pose.key() + "\" has a value that is not finite");
+                }
+                bodies[body.key()] = degrees;
+            }
+        }
+    }
+    return set;
 }
 
 // The horizontal part of v (unit length), or zero.
@@ -98,7 +128,7 @@ const ParamSet& BehaviourParams::of(const std::string& behaviour)
         ParamSet set;
         if (const char* text = builtinBehaviourParams(behaviour))
         {
-            set.values = parse(text); // Built-in packs are validated by the tests
+            set = parse(text); // Built-in packs are validated by the tests
         }
         set.revision = ++mRevisions;
         it = mSets.emplace(behaviour, std::move(set)).first;
@@ -108,8 +138,7 @@ const ParamSet& BehaviourParams::of(const std::string& behaviour)
 
 void BehaviourParams::set(const std::string& behaviour, std::string_view json)
 {
-    ParamSet set;
-    set.values = parse(json); // Throws before anything changes
+    ParamSet set = parse(json); // Throws before anything changes
     set.revision = ++mRevisions;
     mSets[behaviour] = std::move(set);
 }
@@ -246,6 +275,17 @@ void updateBehaviour(DdCharacter& c, World& world, float dt)
             setRegionTension(c, static_cast<DdRegion>(r), wanted, blend);
         }
     }
+    if (command.poseName != nullptr && command.poseRegions != 0)
+    {
+        try
+        {
+            applyNamedPose(c, params, command.poseName, command.poseRegions);
+        }
+        catch (const std::invalid_argument&)
+        {
+            c.behaviourStatus += " (unknown pose)"; // A pack without that pose: visible in tools, harmless otherwise
+        }
+    }
     const uint32_t joints = std::min<uint32_t>(command.poseCount, static_cast<uint32_t>(c.targetPose.size()));
     for (uint32_t i = 0; i < joints && i < sdk::kMaxBodies; ++i)
     {
@@ -255,6 +295,16 @@ void updateBehaviour(DdCharacter& c, World& world, float dt)
         {
             c.targetPose[i] = JPH::Quat(q.x / length, q.y / length, q.z / length, q.w / length);
             c.musclesDirty = true;
+            c.ragdoll->Activate(); // A body at rest is asleep and would ignore the new targets
+        }
+    }
+    for (int r = 0; r < DD_REGION_COUNT; ++r)
+    {
+        const sdk::Command::Aim& aim = command.aim[r];
+        if (aim.active && std::isfinite(aim.target.x) && std::isfinite(aim.target.y) && std::isfinite(aim.target.z) &&
+            std::isfinite(aim.extension))
+        {
+            aimLimb(c, static_cast<DdRegion>(r), JPH::RVec3(aim.target.x, aim.target.y, aim.target.z), aim.extension);
         }
     }
     if (command.balance >= 0)

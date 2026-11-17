@@ -60,7 +60,35 @@ struct Command
     uint32_t poseCount = 0;
     DdQuat pose[kMaxBodies] = {};
 
+    // A named pose from the behaviour's pack ("rest" = the rest pose), applied to the regions in `poseRegions` (bit per
+    // DdRegion). Applied before `pose` and before aims. Targets stay until something else sets them.
+    const char* poseName = nullptr;
+    uint32_t poseRegions = 0;
+
+    // Point a limb at a world position (arm and leg regions): its end goes towards `target`, at most `extension`
+    // (0..1) of the limb's length from its first joint. Solved by the core every step it is requested (the body
+    // moves); when no longer requested the joints keep their last targets.
+    struct Aim
+    {
+        bool active = false;
+        DdVec3 target{};
+        float extension = 1.0f;
+    };
+    Aim aim[DD_REGION_COUNT] = {};
+
     int balance = -1; // -1 = leave as is, 0 = off, 1 = on
+
+    void usePose(const char* name, uint32_t regions = DD_REGIONS_ALL)
+    {
+        poseName = name;
+        poseRegions = regions;
+    }
+    void aimAt(DdRegion region, DdVec3 worldTarget, float extension)
+    {
+        aim[region].active = true;
+        aim[region].target = worldTarget;
+        aim[region].extension = extension;
+    }
 
     void setTension(DdRegion region, DdTension value, float blend)
     {

@@ -329,6 +329,9 @@ typedef enum DdRegion
     DD_REGION_FORCE_32BIT = 0x7FFFFFFF
 } DdRegion;
 
+#define DD_REGION_BIT(region) (1u << (region))
+#define DD_REGIONS_ALL 0x3Fu
+
 /* Like dragdoll_character_set_tension, for one region; set_tension itself sets every region. */
 DD_API DdResult DD_CALL dragdoll_character_set_region_tension(DdCharacter* character, DdRegion region, DdTension tension,
                                                               float blend_seconds);
@@ -464,6 +467,19 @@ DD_API float DD_CALL dragdoll_character_get_awareness(const DdCharacter* charact
 DD_API DdResult DD_CALL dragdoll_character_set_vitality(DdCharacter* character, float vitality);
 DD_API float DD_CALL dragdoll_character_get_vitality(const DdCharacter* character);
 
+/* Points a limb (an arm or leg region) at a world position: sets the target pose of its two main joints (shoulder +
+ * elbow, hip + knee) so that the limb's end - the hand's or foot's centre - lies towards `target`, at most `extension`
+ * (0..1) of the limb's length from its first joint (1 = straight if the target is that far). Only a target: the
+ * muscles have to get there (tension), and the joints' limits still hold. Call it again as the body moves.
+ * DD_ERROR_INVALID_ARGUMENT for regions that are not two-joint limbs. */
+DD_API DdResult DD_CALL dragdoll_character_aim(DdCharacter* character, DdRegion region, DdVec3 target, float extension);
+
+/* Sets the target pose of the bodies in `region_mask` (DD_REGION_BIT, DD_REGIONS_ALL) from a named pose of a
+ * behaviour's pack in this world ("poses" in the pack JSON: per body, degrees about the rig's X, Y, Z axes as offsets
+ * from rest). The pose "rest" always exists. */
+DD_API DdResult DD_CALL dragdoll_character_apply_pose(DdCharacter* character, const char* behaviour, const char* pose,
+                                                      uint32_t region_mask);
+
 /* Replaces a behaviour's tunable numbers in this world from pack JSON (packs/behaviours/<name>.json format); every
  * character using it picks them up on the next step. Recorded, so replays use the same numbers. */
 DD_API DdResult DD_CALL dragdoll_world_set_behaviour_params(DdWorld* world, const char* behaviour, const char* json);
@@ -514,6 +530,11 @@ typedef struct DdThreat
 
 /* The most imminent threat to this character: a moving collider or group (> 1 m/s) on course to reach it within 2 s. */
 DD_API DdResult DD_CALL dragdoll_character_get_threat(const DdCharacter* character, DdThreat* out);
+
+/* The object this character rides in or on (a collider group: its car, its bike), or 0 for none. That object is never
+ * a threat to it. Hosts know this exactly (a game knows who sits in which vehicle); set it when it changes. */
+DD_API DdResult DD_CALL dragdoll_character_set_riding(DdCharacter* character, uint32_t group);
+DD_API uint32_t DD_CALL dragdoll_character_get_riding(const DdCharacter* character);
 
 /* For tools: the probed front silhouette as a world-space polyline (front face bottom to top, then back over the
  * top). Returns the number of points (0 = no profile); copies at most `capacity`. */

@@ -1480,6 +1480,7 @@ DdColliderDesc liveColliderDesc(const nlohmann::json& c, std::vector<DdVec3>& ve
     d.radius = c["radius"].get<float>();
     d.half_height = c["half_height"].get<float>();
     d.half_extents = jsonVec(c["half"]);
+    d.group = c.value("group", 0u); // One object per group: the mirror perceives a car as the host does
     if (c.contains("vertices"))
     {
         const std::vector<float> flat = c["vertices"].get<std::vector<float>>();
@@ -1722,7 +1723,19 @@ void applyLiveFrame(App& app, const nlohmann::json& frame)
         std::snprintf(line, sizeof(line), "%s: %s | %s%s | capture point %.1f cm", label.c_str(), kStates[std::min(4, c["state"].get<int>())],
                       kTension[std::min(3, c["tension"].get<int>())], c["balance"].get<int>() != 0 ? " + balance" : "",
                       c["balance_error"].get<float>() * 100.0f);
-        app.liveStatus.push_back(line);
+        std::string status = line;
+        if (c.value("ttc", -1.0f) >= 0.0f) // The host's own perception and behaviour stage
+        {
+            static const char* const kClass[] = {"?", "wrap", "forward projection", "fender vault", "roof vault", "somersault"};
+            char more[160];
+            std::snprintf(more, sizeof(more), " | threat in %.2f s, expects %s", c.value("ttc", 0.0f), kClass[std::clamp(c.value("expects", 0), 0, 5)]);
+            status += more;
+        }
+        if (!c.value("behaviour", std::string()).empty())
+        {
+            status += " | " + c.value("behaviour", std::string()) + ": " + c.value("stage", std::string());
+        }
+        app.liveStatus.push_back(status);
     }
     if (!app.liveBuffer.empty() && buffered.time < app.liveBuffer.back().time) app.liveBuffer.clear(); // Host restarted
     app.liveBuffer.push_back(std::move(buffered));

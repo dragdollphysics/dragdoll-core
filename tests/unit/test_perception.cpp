@@ -137,6 +137,29 @@ TEST_CASE("perception: a vehicle that passes beside the character is not a threa
     CHECK(scene.threat().collider == DD_INVALID_COLLIDER);
 }
 
+TEST_CASE("perception: the vehicle a character rides is never a threat to it; another one still is")
+{
+    Library lib;
+    Scene scene;
+    const VehicleProfile sedan = parseVehicle(builtinVehicle("sedan"));
+    const VehicleMesh mesh = buildVehicleMesh(sedan, DdVec3{1, 0, 0}, DdVec3{0, 1, 0}, DdVec3{0, 0, 1});
+    float x = -8.0f;
+    const DdColliderId own = addVehicle(scene, sedan, mesh, x, 0.0f, 5);
+    scene.drive({own}, {DdVec3{0, 0, 0}}, x, 0.0f, 10.0f, 0.3f);
+    REQUIRE(scene.threat().collider == own); // Bearing down on the character: a threat...
+    CHECK(dragdoll_character_get_riding(scene.human) == 0);
+    REQUIRE(dragdoll_character_set_riding(scene.human, 5) == DD_OK); // ...unless it is the character's own vehicle
+    scene.drive({own}, {DdVec3{0, 0, 0}}, x, 0.0f, 10.0f, 0.1f);
+    CHECK(scene.threat().collider == DD_INVALID_COLLIDER);
+    CHECK(dragdoll_character_get_riding(scene.human) == 5);
+
+    float other = -9.0f;
+    const DdColliderId second = addVehicle(scene, sedan, mesh, other, 0.0f, 6); // A different vehicle on the same course
+    scene.drive({second}, {DdVec3{0, 0, 0}}, other, 0.0f, 10.0f, 0.2f);
+    CHECK(scene.threat().collider == second);
+    REQUIRE(dragdoll_character_set_riding(scene.human, 0) == DD_OK);
+}
+
 TEST_CASE("perception: the front profile probe recovers each vehicle pack's own profile, and predicts the trajectory class")
 {
     Library lib;
@@ -161,16 +184,17 @@ TEST_CASE("perception: the front profile probe recovers each vehicle pack's own 
         const bool flatFront = p.hoodLength < 0.05f; // No bonnet: the front runs up to the roof
         if (flatFront) CHECK(t.profile.front_top_height >= p.bonnetEdgeHeight - 0.11f); // The face simply carries on up
         else CHECK(std::fabs(t.profile.front_top_height - p.bumperHeight) <= 0.11f);
-        CHECK(std::fabs(t.profile.leading_edge_height - (flatFront ? p.roofHeight : p.bonnetEdgeHeight)) <= 0.08f);
+        // The motorbike's fairing rises at exactly the regulation's 40 degrees: its "edge" is wherever the rays fall.
+        if (name != "motorbike") CHECK(std::fabs(t.profile.leading_edge_height - (flatFront ? p.roofHeight : p.bonnetEdgeHeight)) <= 0.08f);
         CHECK(std::fabs(t.profile.roof_height - p.roofHeight) <= 0.03f);
-        if (!flatFront)
+        if (!flatFront && name != "motorbike") // The motorbike's 40-degree fairing is neither front nor bonnet
         {
             CHECK(std::fabs(t.profile.bonnet_length - p.hoodLength) <= 0.2f);
             CHECK(std::fabs(t.profile.bonnet_angle - p.hoodAngle) <= (p.hoodLength < 0.8f ? 6.0f : 4.0f)); // Short bonnets: few rays
             const float screenRise = p.roofHeight - (p.bonnetEdgeHeight + p.hoodLength * std::tan(p.hoodAngle * 3.14159265f / 180.0f));
             if (screenRise > 0.4f) CHECK(std::fabs(t.profile.windscreen_angle - p.windshieldAngle) <= 6.0f); // Else too short for 10 cm rays
         }
-        else
+        else if (flatFront)
         {
             CHECK(t.profile.bonnet_length == 0.0f);
         }
@@ -231,7 +255,10 @@ TEST_CASE("perception: a car built from spheres (one group) is one threat, and i
     REQUIRE(t.profile.valid == 1);
     MESSAGE("sphere car: leading edge " << t.profile.leading_edge_height << " @ " << t.profile.leading_edge_setback << ", bonnet "
                                         << t.profile.bonnet_length << " m, roof " << t.profile.roof_height);
-    CHECK(std::fabs(t.profile.leading_edge_height - 0.72f) <= 0.1f);
+    // Body spheres: radius 0.35 m, centres 0.37 m up. A straight edge leaning back 50 degrees touches such a sphere at
+    // centre + r * sin(50 deg) = 0.64 m; the crest is at 0.72 m.
+    CHECK(t.profile.leading_edge_height >= 0.54f);
+    CHECK(t.profile.leading_edge_height <= 0.70f);
     CHECK(t.profile.bonnet_length > 0.8f);
     CHECK(std::fabs(t.profile.roof_height - 1.45f) <= 0.05f);
     CHECK(t.predicted == DD_TRAJECTORY_WRAP);

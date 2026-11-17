@@ -381,6 +381,53 @@ DD_API float DD_CALL dragdoll_character_get_vitality(const DdCharacter* characte
     return character != nullptr ? character->vitality : 0.0f;
 }
 
+DD_API DdResult DD_CALL dragdoll_character_aim(DdCharacter* character, DdRegion region, DdVec3 target, float extension)
+{
+    DD_GUARD_BEGIN
+    if (character == nullptr || character->state == DD_STATE_FAILED)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_aim: a character that has not FAILED is required");
+    }
+    if (static_cast<int>(region) < 0 || region >= DD_REGION_COUNT || !std::isfinite(target.x) || !std::isfinite(target.y) ||
+        !std::isfinite(target.z) || !std::isfinite(extension))
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_aim: a region and finite target / extension are required");
+    }
+    if (!dragdoll::aimLimb(*character, region, JPH::RVec3(target.x, target.y, target.z), extension))
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_aim: the region is not a two-joint limb, or the target is at its first joint");
+    }
+    if (dragdoll::rec::Recorder* recorder = recorderOf(character))
+    {
+        recorder->aim(character->id, static_cast<uint32_t>(region), target, extension);
+    }
+    return DD_OK;
+    DD_GUARD_END(DD_ERROR_INTERNAL)
+}
+
+DD_API DdResult DD_CALL dragdoll_character_apply_pose(DdCharacter* character, const char* behaviour, const char* pose, uint32_t region_mask)
+{
+    DD_GUARD_BEGIN
+    if (character == nullptr || character->state == DD_STATE_FAILED || behaviour == nullptr || pose == nullptr)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_apply_pose: character (not FAILED), behaviour and pose names are required");
+    }
+    try
+    {
+        dragdoll::applyNamedPose(*character, character->world->behaviourParams().of(behaviour), pose, region_mask);
+    }
+    catch (const std::invalid_argument& e)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, e.what());
+    }
+    if (dragdoll::rec::Recorder* recorder = recorderOf(character))
+    {
+        recorder->namedPose(character->id, behaviour, pose, region_mask);
+    }
+    return DD_OK;
+    DD_GUARD_END(DD_ERROR_INTERNAL)
+}
+
 DD_API DdResult DD_CALL dragdoll_character_set_balance(DdCharacter* character, int enabled)
 {
     DD_GUARD_BEGIN
@@ -582,6 +629,30 @@ DD_API DdResult DD_CALL dragdoll_character_get_threat(const DdCharacter* charact
     }
     return DD_OK;
     DD_GUARD_END(DD_ERROR_INTERNAL)
+}
+
+DD_API DdResult DD_CALL dragdoll_character_set_riding(DdCharacter* character, uint32_t group)
+{
+    DD_GUARD_BEGIN
+    if (character == nullptr)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_set_riding: character is required");
+    }
+    if (character->ridingGroup != group)
+    {
+        character->ridingGroup = group;
+        if (dragdoll::rec::Recorder* recorder = recorderOf(character))
+        {
+            recorder->riding(character->id, group);
+        }
+    }
+    return DD_OK;
+    DD_GUARD_END(DD_ERROR_INTERNAL)
+}
+
+DD_API uint32_t DD_CALL dragdoll_character_get_riding(const DdCharacter* character)
+{
+    return character != nullptr ? character->ridingGroup : 0;
 }
 
 DD_API uint32_t DD_CALL dragdoll_character_get_threat_silhouette(const DdCharacter* character, DdVec3* out_points, uint32_t capacity)
