@@ -552,6 +552,32 @@ void collectThreats(DdWorld* world, std::vector<Line>& lines, std::vector<std::s
         std::snprintf(line, sizeof(line), "senses: %s | ground %.2f m below | upright %.2f | hardest hit: head %.1f m/s, body %.1f m/s", where,
                       s.ground_height, s.upright, s.peak_head_delta_v, s.peak_impact_delta_v);
         text.emplace_back(line);
+        DdImpactReport r{};
+        r.struct_size = sizeof(DdImpactReport);
+        if (dragdoll_character_get_impact_report(c, &r) == DD_OK && r.valid != 0)
+        {
+            static const char* const kZone[] = {"-", "front", "leading edge", "bonnet", "windscreen", "roof"};
+            static const char* const kClass[] = {"...", "wrap", "forward projection", "fender vault", "roof vault", "somersault"};
+            char head[96] = "no head strike";
+            if (r.head_strike_time >= 0.0f)
+            {
+                std::snprintf(head, sizeof(head), "head on the %s at %.0f ms, wrap-around %.2f m", kZone[std::clamp(static_cast<int>(r.head_strike_zone), 0, 5)],
+                              r.head_strike_time * 1000.0f, r.wrap_around_distance);
+            }
+            char report[260];
+            if (r.finished != 0)
+            {
+                std::snprintf(report, sizeof(report), "impact: %s | %s | launch %.0f km/h | throw %.1f m (carry %.1f + flight/slide %.1f; expected %.1f-%.1f %s)",
+                              kClass[std::clamp(static_cast<int>(r.measured), 0, 5)], head, r.launch_speed * 3.6f, r.throw_distance, r.carry_distance,
+                              r.flight_slide_distance, r.corridor_min, r.corridor_max, r.in_corridor != 0 ? "- inside" : "- OUTSIDE");
+            }
+            else
+            {
+                std::snprintf(report, sizeof(report), "impact: %s | %s | first contact on the %s", kClass[std::clamp(static_cast<int>(r.measured), 0, 5)], head,
+                              kZone[std::clamp(static_cast<int>(r.first_zone), 0, 5)]);
+            }
+            text.emplace_back(report);
+        }
         break;
     }
     for (uint32_t i = 0; i < count; ++i)

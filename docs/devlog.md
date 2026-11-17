@@ -714,3 +714,47 @@ Crowd question (car through the pier) → cost is linear in awake ragdolls (~70 
 
 **Open questions**
 * The level winding fix assumes SA is consistent (car meshes were, 12 of 12 triangles). If a ragdoll ever passes through one piece of level, that piece is wound the other way: make level meshes two-sided then.
+
+---
+
+## 2026-11-17 — Task 4.2 (code half): the impact report
+**Changed** (local, not committed)
+* `core/src/impact_report.cpp`: per character, the first hit by a moving object since creation / handover, measured from the senses after every step: first contact (lowest touching body; zone and height from the probed silhouette), contact order, head strike (time, zone, wrap-around distance along the contour from the ground, head speed relative to the vehicle), separation (25 ms apart) and launch (centre-of-mass velocity, angle, height), apex, first ground contact after separation, rest (still 0.5 s); carry, flight+slide and throw distances (horizontal); the throw corridor for the measured launch; pitch about the vehicle's left axis until ground contact; the measured class (wrap if head or upper trunk touched bonnet / windscreen / roof, else forward projection; roof vault if over the roof at separation; fender vault at a corner with a sideways launch; somersault = wrap with > 270 deg pitch). Silhouette points now also keep their (behind-the-front, height) values. The report restarts at every kinematic -> dynamic handover.
+* API `DdImpactReport`, `DdZone`, `dragdoll_character_get_impact_report`; live tap `impact`; viewer line "impact: ...".
+* **First numbers** (limp, side-on, 40 km/h, braking 7 m/s^2 from contact; tests print them):
+
+| Vehicle | Class | First contact | Head strike | Launch | Throw (carry + flight/slide) | Flight/slide vs corridor |
+|---|---|---|---|---|---|---|
+| sedan | wrap | shin, front, 0.32 m | 442 ms on the bonnet, WAD 1.53 m, 15 km/h | 29 km/h | 10.3 m (6.3 + 4.0) | 4.0 vs 5.6-7.9: short |
+| sports | forward projection | shin, front | none | 29 km/h | 10.8 m (8.2 + 2.6) | short |
+| SUV | forward projection | shin, front | none | 36 km/h | 10.4 m (4.1 + 6.3) | inside |
+| van | forward projection | shin, front | none | 35 km/h | 10.2 m (3.5 + 6.7) | inside |
+| bus | forward projection | near hand, front, 0.87 m | 25 ms on the front face | 43 km/h | 9.3 m (2.0 + 7.2) | short |
+| motorbike | forward projection | shin, front | none | 37 km/h | 11.9 m (5.9 + 6.0) | inside |
+
+* Against the literature (reference file §2-§3), these are **findings for task 4.3, not report bugs**: the sedan's head strike is three times late (442 ms vs 50-140 ms) and slow (15 vs ~33 km/h), the sports car carries the body 8 m on its bonnet without a head strike; flights + slides of the low cars are short of the corridor. Likely suspects: friction between body and bonnet (the default 0.6 on both sides), the limp body's stiffness at hips and knees, the braking from contact (in real crashes braking often starts earlier).
+* Tests: impact report (2). Targeted run on x64-release: 59 cases green. Benchmark 81.5-83.8 us per character per step (79 before the report; budget 100). x86 builds (via dragdoll-sa).
+
+**Next**
+* Task 4.3 (passive baseline): the 6 vehicle classes x 10-80 km/h x seeds, headless, table against the reference numbers; fix body / vehicle / friction until the pattern holds — Opus.
+
+**Open questions**
+* The braking model in the tests and scenarios (from first contact) decides much of the carry distance: 4.3 should sweep "brakes before / at / after contact".
+
+---
+
+## 2026-11-17 — Task 4.3 started: the passive baseline runner and its first findings
+**Changed** (local, not committed)
+* `tools/baseline` (`dragdoll_baseline`): limp pedestrian standing host-animated until the vehicle is one step away, then handed over (the literature's cadavers are held and released the same way); vehicle packs x speeds x headings x lateral offsets; per run the impact report -> CSV; summary per vehicle and speed. Switches: `--brake contact|none`, `--car-friction`, `--tension`, `--rig file`, `--trace` (body every 25 ms). 168 runs in 6 s (x64-release, single thread).
+* **Found (v0, default rig, braking at contact):**
+  * Heading decides the class: side-on (0 / 180 deg) mostly forward projection below 40 km/h, wraps above; facing or back to the car (90 / 270) mostly wraps (the bonnet edge meets the thigh first).
+  * Low cars carry the body far (sports car 8-9 m) and 10 of 168 runs never separate: body-on-car friction is 0.69 (Jolt combines body 0.8 and car 0.6 as a geometric mean), the braking car decelerates at 0.71 g, so the body barely slides off. Lowering car friction to 0.3 / 0.12 does not change head strike times.
+  * **Sedan head strikes are 2-3 times late** (220-430 ms vs 50-140 ms) while the wrap-around distance is right (1.8-2.1 m vs 1.5-2.3). Ruled out by experiment: braking (constant speed: same), car friction, a larger and lower pelvis (0.82-1.08 m, 34 cm wide), stiffer hips (25 N*m passive). The trace: the trunk rotates as a whole at about 6-9 rad/s (a rigid-body estimate gives ~11), the spine stays straight, the legs whip up to 2.1 m, and the pelvis rides at 1.07-1.4 m - so the head must pass horizontal before reaching a sedan's bonnet (~0.9 m). In real wraps the pelvis sits on the bonnet edge.
+  * SUV / van head strikes are close to the literature (50-125 ms at 30-80 km/h); flights + slides mostly fall outside the corridor (both short and long).
+* Nothing in the library changed for 4.3 yet.
+
+**Next**
+* Compare whole trajectories, not one time: published PMHS pelvis / head (and T1) trajectories relative to the vehicle over time for sedan-type cars at 40 km/h (Kerrigan et al., ESV / Stapp; open ESV proceedings) -> a reference corridor in `docs/reference/`, and a trajectory plot from `--trace`. Then decide what the body lacks (pelvis height on the bonnet, lumbar / hip passive stiffness, leg mass, contact geometry).
+
+**Open questions**
+* Whether 1-step-before-contact handover is fair: a limp body has no time to sag; cadavers are released earlier (they sag a little).

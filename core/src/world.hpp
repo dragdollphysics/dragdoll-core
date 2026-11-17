@@ -164,6 +164,7 @@ private:
     void updatePerception();
     void beforePhysics(); // senses.cpp: remembers velocities, clears the contact log
     void updateSenses();  // senses.cpp
+    void updateImpactReport(DdCharacter& character); // impact_report.cpp, after the senses
     void refreshObjects();
     void updateThreat(DdCharacter& character);
     void probeFront(DdCharacter& character, uint64_t key, const Object& object, float lateral);

@@ -55,6 +55,7 @@ add_library(dragdoll SHARED
     src/balance.cpp
     src/perception.cpp
     src/senses.cpp
+    src/impact_report.cpp
     src/behaviour_host.hpp
     src/behaviour_host.cpp
     src/aim.cpp

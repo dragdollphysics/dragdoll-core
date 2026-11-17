@@ -738,6 +738,10 @@ DdCharacter* World::createCharacter(const DdCharacterDesc& desc)
         character->names.push_back(body.name);
     }
     assignRegions(*character);
+    for (size_t i = 0; i < character->names.size(); ++i)
+    {
+        if (character->region[i] == DD_REGION_TRUNK) character->upperTrunkBody = static_cast<int>(i); // The last trunk body: the top of the spine
+    }
     character->contacts.assign(character->names.size(), DdBodyContact{});
     character->senses.struct_size = sizeof(DdSenses);
     character->senses.ground_height = character->senses.landing_seconds = -1.0f;
@@ -934,6 +938,11 @@ void World::setCharacterKinematic(DdCharacter& c, bool kinematic)
     }
     c.kinematic = kinematic;
     c.airborneSteps = 0;
+    if (!kinematic)
+    {
+        c.impact = DdImpactReport{}; // A new handover: a new report
+        c.impactTracking = DdCharacter::ImpactTracking{};
+    }
     c.senses.peak_head_delta_v = c.senses.peak_impact_delta_v = 0.0f; // Peaks count from the handover
     c.musclesDirty = true;
     c.stillSeconds = 0.0f;

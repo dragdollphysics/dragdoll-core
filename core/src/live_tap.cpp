@@ -278,6 +278,15 @@ void LiveTap::afterStep(DdWorld* world)
                               {"ttc", c->threat.collider != DD_INVALID_COLLIDER ? c->threat.time_to_collision : -1.0f},
                               {"expects", static_cast<int>(c->threat.predicted)}, {"behaviour", c->behaviourName},
                               {"riding", c->ridingGroup},
+                              // Impact report (ADR-0024 §5): what a hit did, while it unfolds and once it is over.
+                              {"impact", c->impact.valid == 0 ? Json(nullptr)
+                                                              : Json{{"class", static_cast<int>(c->impact.measured)}, {"finished", c->impact.finished},
+                                                                     {"first_body", c->impact.first_body}, {"first_zone", static_cast<int>(c->impact.first_zone)},
+                                                                     {"head_time", c->impact.head_strike_time}, {"head_zone", static_cast<int>(c->impact.head_strike_zone)},
+                                                                     {"wad", c->impact.wrap_around_distance}, {"launch", c->impact.launch_speed},
+                                                                     {"throw", c->impact.throw_distance}, {"carry", c->impact.carry_distance},
+                                                                     {"corridor", {c->impact.corridor_min, c->impact.corridor_max}},
+                                                                     {"in_corridor", c->impact.in_corridor}, {"peak_head", c->impact.peak_head_delta_v}}},
                               // Senses (ADR-0024 §3): airborne seconds (-1 = in contact), landing prediction, bodies on
                               // the level / on moving objects, ground distance, peak hits (head, whole body).
                               {"senses", {{"air", c->senses.airborne != 0 ? c->senses.airborne_seconds : -1.0f},

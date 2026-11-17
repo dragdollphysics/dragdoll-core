@@ -291,6 +291,7 @@ void World::updateSenses()
                 }
             }
         }
+        updateImpactReport(c);
     }
 }
 } // namespace dragdoll

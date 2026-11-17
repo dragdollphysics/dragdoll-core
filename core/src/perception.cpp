@@ -410,6 +410,10 @@ void World::probeFront(DdCharacter& c, uint64_t key, const Object& object, float
     // For tools: the silhouette (front face bottom to top, then back over the top), stored in the local space of the
     // object's first collider so that it moves, climbs and tilts with the vehicle.
     c.probedAnchor = object.members.front();
+    c.threatSilhouetteProfile.clear();
+    c.threatSilhouetteFace = static_cast<uint32_t>(last - first + 1);
+    for (size_t i = first; i <= last; ++i) c.threatSilhouetteProfile.push_back({face[i].back, face[i].height});
+    for (size_t i = 0; i < n; ++i) c.threatSilhouetteProfile.push_back({top[i].back, z[i]});
     const JPH::RMat44 anchor = mPhysics->GetBodyInterfaceNoLock().GetWorldTransform(mColliders.at(c.probedAnchor).body).Inversed();
     for (size_t i = first; i <= last; ++i)
     {

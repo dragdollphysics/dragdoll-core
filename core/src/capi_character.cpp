@@ -658,6 +658,19 @@ DD_API uint32_t DD_CALL dragdoll_character_get_contacts(const DdCharacter* chara
     return count;
 }
 
+DD_API DdResult DD_CALL dragdoll_character_get_impact_report(const DdCharacter* character, DdImpactReport* out)
+{
+    DD_GUARD_BEGIN
+    if (character == nullptr || out == nullptr || out->struct_size != sizeof(DdImpactReport))
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_get_impact_report: character and out (with struct_size set) are required");
+    }
+    *out = character->impact;
+    out->struct_size = sizeof(DdImpactReport);
+    return DD_OK;
+    DD_GUARD_END(DD_ERROR_INTERNAL)
+}
+
 DD_API DdResult DD_CALL dragdoll_character_set_riding(DdCharacter* character, uint32_t group)
 {
     DD_GUARD_BEGIN

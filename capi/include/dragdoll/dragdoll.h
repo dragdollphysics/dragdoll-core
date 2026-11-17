@@ -581,6 +581,64 @@ DD_API DdResult DD_CALL dragdoll_character_get_threat(const DdCharacter* charact
 DD_API DdResult DD_CALL dragdoll_character_set_riding(DdCharacter* character, uint32_t group);
 DD_API uint32_t DD_CALL dragdoll_character_get_riding(const DdCharacter* character);
 
+/* ---- Impact report (ADR-0024 §5): what happened when a moving object hit the character ------------------------
+ * Measured, never steered: the first hit by a moving object after the character was created or last made dynamic,
+ * from first contact to rest. Times are seconds after the first contact (< 0 = has not happened). Distances are
+ * horizontal, metres. Zones are where on the object's front a contact lies (from its probed profile). */
+
+typedef enum DdZone
+{
+    DD_ZONE_NONE = 0,
+    DD_ZONE_FRONT = 1,        /* The near-vertical front face (bumper, grille). */
+    DD_ZONE_LEADING_EDGE = 2, /* Within 15 cm of the bonnet leading edge. */
+    DD_ZONE_BONNET = 3,
+    DD_ZONE_WINDSCREEN = 4,
+    DD_ZONE_ROOF = 5,
+    DD_ZONE_FORCE_32BIT = 0x7FFFFFFF
+} DdZone;
+
+#define DD_IMPACT_MAX_ORDER 16
+
+typedef struct DdImpactReport
+{
+    uint32_t struct_size;     /* = sizeof(DdImpactReport) */
+    int32_t valid;            /* 1 once a moving object has touched the character (the other fields are then set). */
+    int32_t finished;         /* 1 once the character has come to rest after it. */
+    uint32_t group;           /* The object (group) that hit it, and the collider first touched. */
+    DdColliderId collider;
+    float vehicle_speed;      /* m/s, the object's speed at first contact. */
+    float lateral_offset;     /* m from the object's centre line at first contact (+ = its left). */
+    int32_t first_body;       /* The body that touched first, where on the front, and at what height above the ground. */
+    DdZone first_zone;
+    float first_height;
+    uint32_t contact_order[DD_IMPACT_MAX_ORDER]; /* Bodies in the order they first touched the object. */
+    uint32_t contact_count;
+    float head_strike_time;   /* First head contact with the object. */
+    DdZone head_strike_zone;
+    float wrap_around_distance; /* m along the object's front contour, from the ground to the head contact. */
+    float head_strike_speed;  /* m/s, the head's speed relative to the object just before the strike. */
+    float separation_time;    /* No body has touched the object for 25 ms. */
+    DdVec3 launch_velocity;   /* Centre of mass, at separation. */
+    float launch_speed;
+    float launch_angle;       /* Degrees above horizontal. */
+    float launch_height;      /* m, centre of mass above the ground at separation. */
+    float apex_height;        /* m, highest centre of mass above the ground during the flight. */
+    float ground_time;        /* First ground contact after separation, and the body that made it. */
+    int32_t ground_body;
+    float rest_time;          /* Still for 0.5 s (settled). */
+    float carry_distance;     /* First contact -> separation (centre of mass). */
+    float flight_slide_distance; /* Separation -> rest. */
+    float throw_distance;     /* First contact -> rest. */
+    float corridor_min;       /* Flight + slide expected for this launch (body-on-road friction 0.7): see ADR-0024 §5. */
+    float corridor_max;
+    int32_t in_corridor;      /* 1 = flight_slide_distance inside [corridor_min, corridor_max]. */
+    float pitch_degrees;      /* Body rotation about the object's left axis from first contact to first ground contact. */
+    float peak_head_delta_v;  /* m/s, hardest head hit (one step) from first contact to rest. */
+    DdTrajectory measured;    /* The class the motion fits (ADR-0024 §5 rules). */
+} DdImpactReport;
+
+DD_API DdResult DD_CALL dragdoll_character_get_impact_report(const DdCharacter* character, DdImpactReport* out);
+
 /* For tools: the probed front silhouette as a world-space polyline (front face bottom to top, then back over the
  * top). Returns the number of points (0 = no profile); copies at most `capacity`. */
 DD_API uint32_t DD_CALL dragdoll_character_get_threat_silhouette(const DdCharacter* character, DdVec3* out_points, uint32_t capacity);

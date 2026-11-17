@@ -118,6 +118,32 @@ struct DdCharacter
     float sensedComHeight = 0.0f;                  // Centre of mass above the probed ground (for tools)
     std::vector<DdVec3> threatSilhouette; // In the local space of the object's first collider: it moves and tilts with it
     DdColliderId probedAnchor = DD_INVALID_COLLIDER; // That collider
+    std::vector<std::array<float, 2>> threatSilhouetteProfile; // Per point: metres behind the front, height above the ground
+    uint32_t threatSilhouetteFace = 0;                         // How many of the points are on the front face
+
+    // Impact report (ADR-0024 §5, impact_report.cpp): the first hit by a moving object since creation / handover.
+    DdImpactReport impact{};
+    struct ImpactTracking
+    {
+        bool started = false, separated = false, grounded = false, headStruck = false;
+        uint64_t startStep = 0;
+        uint32_t group = 0;
+        DdColliderId anchor = DD_INVALID_COLLIDER; // A collider of the object: follows its motion
+        JPH::RVec3 anchorStart;
+        JPH::Vec3 direction, left, up;              // The object's frame at first contact
+        float frontStart = 0.0f;                    // Its foremost extent along `direction` then
+        float halfWidth = 0.0f;
+        std::vector<DdVec3> silhouette;             // Its probed front, local to `anchor` (empty = unknown)
+        std::vector<std::array<float, 2>> profile;  // Per silhouette point: behind the front, above the ground
+        uint32_t faceCount = 0;
+        DdFrontProfile front{};
+        JPH::RVec3 impactCom, separationCom;
+        uint32_t stepsApart = 0;
+        bool upperOnTop = false;                    // Head or upper trunk touched the bonnet / windscreen / roof
+        float behindFrontAtSeparation = 0.0f;       // Centre of mass behind the object's front at separation (m)
+        std::vector<bool> touched;                  // Per body: has touched the object
+    } impactTracking;
+    int upperTrunkBody = -1; // The trunk body nearest the head (for the class rules)
     uint64_t probedKey = 0;               // Which object the profile belongs to (0 = none)
     uint32_t probedRevision = 0;          // ...and its member set at that time
     float probedLateral = 0.0f;           // ...and the lateral line that was probed
