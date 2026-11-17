@@ -98,16 +98,20 @@ void World::refreshObjects()
             }
             velocity = body.GetBody().GetLinearVelocity();
         }
-        velocity -= mUp * velocity.Dot(mUp); // Horizontal travel
-        const float speed = velocity.Length();
+        const JPH::Vec3 horizontal = velocity - mUp * velocity.Dot(mUp);
+        const float speed = horizontal.Length();
         if (speed < kMinObjectSpeed)
         {
             continue;
         }
+        // Along the slope it drives on (up to about 35 degrees; steeper is a fall or a jump: treated as level travel).
+        const float climb = std::clamp(velocity.Dot(mUp), -0.7f * speed, 0.7f * speed);
+        velocity = horizontal + mUp * climb;
         object.moving = true;
         object.velocity = velocity;
-        object.direction = velocity / speed;
-        object.left = mUp.Cross(object.direction);
+        object.direction = velocity.Normalized();
+        object.left = mUp.Cross(object.direction).Normalized();
+        object.up = object.direction.Cross(object.left);
         const float inf = std::numeric_limits<float>::max();
         object.front = object.leftMost = object.top = -inf;
         object.rear = object.rightMost = object.bottom = inf;
@@ -125,7 +129,7 @@ void World::refreshObjects()
                 const JPH::Vec3 local((corner & 1) ? box.mMax.GetX() : box.mMin.GetX(), (corner & 2) ? box.mMax.GetY() : box.mMin.GetY(),
                                       (corner & 4) ? box.mMax.GetZ() : box.mMin.GetZ());
                 const JPH::Vec3 p(transform * local);
-                const float along = p.Dot(object.direction), side = p.Dot(object.left), height = p.Dot(mUp);
+                const float along = p.Dot(object.direction), side = p.Dot(object.left), height = p.Dot(object.up);
                 object.front = std::max(object.front, along);
                 object.rear = std::min(object.rear, along);
                 object.leftMost = std::max(object.leftMost, side);
@@ -233,7 +237,7 @@ void World::updateThreat(DdCharacter& c)
     const float line = std::clamp(bestLateral, -std::max(half - 0.1f, 0.0f), std::max(half - 0.1f, 0.0f));
     if (c.probedKey != bestKey || c.probedRevision != best->revision || std::fabs(line - c.probedLateral) > kReprobeLateral)
     {
-        probeFront(c, bestKey, *best, line, com.Dot(mUp));
+        probeFront(c, bestKey, *best, line);
     }
     const DdFrontProfile& profile = c.threat.profile;
     c.threat.predicted = DD_TRAJECTORY_NONE;
@@ -243,7 +247,7 @@ void World::updateThreat(DdCharacter& c)
         // wrap when the body is struck below it. A hit at a front corner is expected to vault off the side.
         // The character's centre of mass above the ground it stands on (not the ground under the vehicle: on a slope the
         // two differ), against the leading edge above the vehicle's own ground.
-        float standsOn = c.probedGround;
+        float standsOn = com.Dot(mUp) - 1.0f; // No ground found below: assume a standing height
         {
             constexpr float kReach = 3.0f;
             JPH::RayCastResult hit;
@@ -262,7 +266,7 @@ void World::updateThreat(DdCharacter& c)
     }
 }
 
-void World::probeFront(DdCharacter& c, uint64_t key, const Object& object, float lateral, float comHeightWorld)
+void World::probeFront(DdCharacter& c, uint64_t key, const Object& object, float lateral)
 {
     c.probedKey = key;
     c.probedRevision = object.revision;
@@ -278,7 +282,9 @@ void World::probeFront(DdCharacter& c, uint64_t key, const Object& object, float
     }
     const float side = 0.5f * (object.leftMost + object.rightMost) + lateral;
     // A point from its coordinates along the object's direction of travel, to its left, and up.
-    const auto point = [&](float along, float height) { return JPH::RVec3(object.direction * along + object.left * side + mUp * height); };
+    // A point from its coordinates in the object's frame: along its travel, to its left, and along its own up. On a
+    // slope the whole probe tilts with the vehicle, so the measured front does not depend on the road's gradient.
+    const auto point = [&](float along, float height) { return JPH::RVec3(object.direction * along + object.left * side + object.up * height); };
     const auto cast = [&](JPH::RVec3Arg origin, JPH::Vec3Arg ray, const JPH::BroadPhaseLayerFilter& bp, const JPH::ObjectLayerFilter& layer,
                           const JPH::BodyFilter& filter, float& outFraction) {
         JPH::RayCastResult hit;
@@ -294,15 +300,14 @@ void World::probeFront(DdCharacter& c, uint64_t key, const Object& object, float
     // (wheels) or the character's feet level, whichever is lower.
     float ground = object.bottom;
     {
-        const float from = std::max(object.top, comHeightWorld) + 0.5f, length = from - object.bottom + 3.0f;
+        const float from = object.top + 0.5f, length = from - object.bottom + 3.0f;
         float fraction = 0.0f;
-        if (cast(point(object.front + 0.5f, from), mUp * -length, JPH::SpecifiedBroadPhaseLayerFilter(bp_layers::kNonMoving),
+        if (cast(point(object.front + 0.5f, from), object.up * -length, JPH::SpecifiedBroadPhaseLayerFilter(bp_layers::kNonMoving),
                  JPH::SpecifiedObjectLayerFilter(layers::kStatic), JPH::BodyFilter(), fraction))
         {
             ground = from - fraction * length;
         }
     }
-    c.probedGround = ground;
     const JPH::BroadPhaseLayerFilter anyBroadPhase;
     const JPH::ObjectLayerFilter anyLayer;
 
@@ -340,7 +345,7 @@ void World::probeFront(DdCharacter& c, uint64_t key, const Object& object, float
     for (float x = 0.5f * kRayStep; x <= probeLength; x += kRayStep)
     {
         float fraction = 0.0f;
-        if (cast(point(object.front - x, from), mUp * -down, anyBroadPhase, anyLayer, members, fraction))
+        if (cast(point(object.front - x, from), object.up * -down, anyBroadPhase, anyLayer, members, fraction))
         {
             top.push_back(Sample{x, down * (1.0f - fraction)});
         }
@@ -402,31 +407,33 @@ void World::probeFront(DdCharacter& c, uint64_t key, const Object& object, float
         profile.windscreen_angle = std::atan2(z[screenEnd] - z[bonnetEnd], top[screenEnd].back - top[bonnetEnd].back) * kRadToDeg;
     }
 
-    // For tools: the silhouette relative to the object's front (front face bottom to top, then back over the top).
+    // For tools: the silhouette (front face bottom to top, then back over the top), stored in the local space of the
+    // object's first collider so that it moves, climbs and tilts with the vehicle.
+    c.probedAnchor = object.members.front();
+    const JPH::RMat44 anchor = mPhysics->GetBodyInterfaceNoLock().GetWorldTransform(mColliders.at(c.probedAnchor).body).Inversed();
     for (size_t i = first; i <= last; ++i)
     {
-        c.threatSilhouette.push_back(DdVec3{face[i].back, 0.0f, face[i].height});
+        c.threatSilhouette.push_back(toDd(JPH::Vec3(anchor * point(object.front - face[i].back, ground + face[i].height))));
     }
     for (size_t i = 0; i < n; ++i)
     {
-        c.threatSilhouette.push_back(DdVec3{top[i].back, 0.0f, z[i]});
+        c.threatSilhouette.push_back(toDd(JPH::Vec3(anchor * point(object.front - top[i].back, ground + z[i]))));
     }
 }
 
 uint32_t World::threatSilhouette(const DdCharacter& c, DdVec3* out, uint32_t capacity) const
 {
-    const auto object = mObjects.find(c.probedKey);
-    if (object == mObjects.end() || c.threat.profile.valid == 0)
+    const auto collider = mColliders.find(c.probedAnchor);
+    if (collider == mColliders.end() || c.threat.profile.valid == 0)
     {
         return 0;
     }
-    const Object& o = object->second;
-    const float side = 0.5f * (o.leftMost + o.rightMost) + c.probedLateral;
+    const JPH::RMat44 anchor = mPhysics->GetBodyInterfaceNoLock().GetWorldTransform(collider->second.body);
     const uint32_t count = static_cast<uint32_t>(c.threatSilhouette.size());
     for (uint32_t i = 0; i < count && i < capacity && out != nullptr; ++i)
     {
         const DdVec3& p = c.threatSilhouette[i];
-        out[i] = toDd(o.direction * (o.front - p.x) + o.left * side + mUp * (c.probedGround + p.z));
+        out[i] = toDd(JPH::Vec3(anchor * JPH::Vec3(p.x, p.y, p.z)));
     }
     return count;
 }

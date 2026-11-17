@@ -39,6 +39,13 @@ struct Percept
     float stillSeconds = 0.0f;   // How long every body has been nearly still
     DdTension tension[DD_REGION_COUNT] = {}; // What each region is set to now
 
+    // Contacts and self state after the last step (ADR-0024 §3): airborne, ground, landing prediction, spin, how
+    // hard the head and the whole body were hit; and per body what it touches (`contacts[bodyCount]`, rig order;
+    // valid during update only).
+    DdSenses senses{};
+    const DdBodyContact* contacts = nullptr;
+    uint32_t bodyCount = 0;
+
     // Threat (ADR-0024). threat.collider == DD_INVALID_COLLIDER: none.
     DdThreat threat{};
     float threatSeconds = 0.0f;     // How long this object has been the threat

@@ -631,6 +631,33 @@ DD_API DdResult DD_CALL dragdoll_character_get_threat(const DdCharacter* charact
     DD_GUARD_END(DD_ERROR_INTERNAL)
 }
 
+DD_API DdResult DD_CALL dragdoll_character_get_senses(const DdCharacter* character, DdSenses* out)
+{
+    DD_GUARD_BEGIN
+    if (character == nullptr || out == nullptr || out->struct_size != sizeof(DdSenses))
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_get_senses: character and out (with struct_size set) are required");
+    }
+    *out = character->senses;
+    out->struct_size = sizeof(DdSenses);
+    return DD_OK;
+    DD_GUARD_END(DD_ERROR_INTERNAL)
+}
+
+DD_API uint32_t DD_CALL dragdoll_character_get_contacts(const DdCharacter* character, DdBodyContact* out, uint32_t capacity)
+{
+    if (character == nullptr)
+    {
+        return 0;
+    }
+    const uint32_t count = static_cast<uint32_t>(character->contacts.size());
+    for (uint32_t i = 0; i < count && i < capacity && out != nullptr; ++i)
+    {
+        out[i] = character->contacts[i];
+    }
+    return count;
+}
+
 DD_API DdResult DD_CALL dragdoll_character_set_riding(DdCharacter* character, uint32_t group)
 {
     DD_GUARD_BEGIN

@@ -2,6 +2,7 @@
 #include "world.hpp"
 
 #include "character.hpp"
+#include "senses.hpp"
 
 #include <Jolt/Core/JobSystemSingleThreaded.h>
 #include <Jolt/Core/JobSystemThreadPool.h>
@@ -139,6 +140,8 @@ World::World(const DdWorldDesc& desc)
     mPhysics = std::make_unique<JPH::PhysicsSystem>();
     mPhysics->Init(desc.max_bodies, 0, desc.max_bodies, desc.max_bodies, mBroadPhaseLayers, mObjectVsBroadPhase,
                    mObjectPairs);
+    mContactLog = std::make_unique<ContactLog>(); // Feeds the characters' senses (ADR-0024 §3)
+    mPhysics->SetContactListener(mContactLog.get());
     mGravity = desc.gravity;
     mPhysics->SetGravity(-mUp * desc.gravity);
 
@@ -266,6 +269,7 @@ void World::simulate(uint32_t steps)
                 updateMuscles(*character, fixedDt);
             }
         }
+        beforePhysics();
         const JPH::EPhysicsUpdateError error = mPhysics->Update(fixedDt, 1, mTempAllocator.get(), mJobSystem.get());
         if (error != JPH::EPhysicsUpdateError::None)
         {
@@ -273,6 +277,7 @@ void World::simulate(uint32_t steps)
         }
         ++mStepCount;
         captureTransforms();
+        updateSenses(); // What happened in this step: contacts, how hard, airborne, ground (ADR-0024 §3)
     }
 }
 
@@ -733,6 +738,10 @@ DdCharacter* World::createCharacter(const DdCharacterDesc& desc)
         character->names.push_back(body.name);
     }
     assignRegions(*character);
+    character->contacts.assign(character->names.size(), DdBodyContact{});
+    character->senses.struct_size = sizeof(DdSenses);
+    character->senses.ground_height = character->senses.landing_seconds = -1.0f;
+    character->senses.landing_body = -1;
     for (size_t i = 0; i < character->names.size(); ++i)
     {
         if (character->region[i] == DD_REGION_HEAD_NECK)
@@ -778,6 +787,7 @@ DdCharacter* World::createCharacter(const DdCharacterDesc& desc)
             return false;
         };
         character->bodyMass = mass;
+        character->bodyInertia = selfInertia;
         character->jointInertia.assign(count, 0.0f);
         character->loadInertia.assign(count, 0.0f);
         for (size_t j = 0; j < count; ++j)
@@ -923,6 +933,8 @@ void World::setCharacterKinematic(DdCharacter& c, bool kinematic)
         bodies.SetLinearAndAngularVelocity(id, linear, angular); // Keep the motion across the switch
     }
     c.kinematic = kinematic;
+    c.airborneSteps = 0;
+    c.senses.peak_head_delta_v = c.senses.peak_impact_delta_v = 0.0f; // Peaks count from the handover
     c.musclesDirty = true;
     c.stillSeconds = 0.0f;
 }

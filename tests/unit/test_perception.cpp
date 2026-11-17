@@ -7,6 +7,7 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -267,4 +268,93 @@ TEST_CASE("perception: a car built from spheres (one group) is one threat, and i
     REQUIRE(dragdoll_world_remove_colliders(scene.world, ids.data(), static_cast<uint32_t>(ids.size())) == DD_OK);
     REQUIRE(dragdoll_world_step(scene.world, 1.0f / 60.0f, nullptr) == DD_OK);
     CHECK(scene.threat().collider == DD_INVALID_COLLIDER);
+}
+
+TEST_CASE("perception: on a slope the probe tilts with the vehicle, and the silhouette climbs with it")
+{
+    Library lib;
+    DdWorldDesc desc;
+    dragdoll_world_desc_default(&desc);
+    desc.up = DdVec3{0, 0, 1};
+    desc.worker_threads = 0;
+    DdWorld* world = nullptr;
+    REQUIRE(dragdoll_world_create(&desc, &world) == DD_OK);
+    // A 15-degree ramp rising along +X, through the origin: direction of travel d, surface normal n.
+    const float angle = 15.0f * 3.14159265f / 180.0f;
+    const DdVec3 d{std::cos(angle), 0.0f, std::sin(angle)}, n{-std::sin(angle), 0.0f, std::cos(angle)};
+    const DdQuat tilt{0.0f, std::sin(-angle * 0.5f), 0.0f, std::cos(-angle * 0.5f)}; // Turns +X onto d
+    DdColliderDesc ramp;
+    dragdoll_collider_desc_default(&ramp);
+    ramp.shape = DD_SHAPE_BOX;
+    ramp.half_extents = DdVec3{80, 80, 0.5f};
+    ramp.transform.position = DdVec3{-n.x * 0.5f, 0.0f, -n.z * 0.5f};
+    ramp.transform.rotation = tilt;
+    DdColliderId rampId;
+    REQUIRE(dragdoll_world_add_colliders(world, &ramp, 1, &rampId) == DD_OK);
+    DdCharacterDesc cd;
+    dragdoll_character_desc_default(&cd);
+    cd.rig_json = dragdoll_get_builtin_rig("humanoid16");
+    cd.transform.position = DdVec3{0, 0, 0.01f}; // Standing on the ramp at the origin
+    DdCharacter* human = nullptr;
+    REQUIRE(dragdoll_character_create(world, &cd, &human) == DD_OK);
+    REQUIRE(dragdoll_character_set_kinematic(human, 1) == DD_OK);
+
+    const VehicleProfile sedan = parseVehicle(builtinVehicle("sedan"));
+    const VehicleMesh mesh = buildVehicleMesh(sedan, DdVec3{1, 0, 0}, DdVec3{0, 1, 0}, DdVec3{0, 0, 1});
+    DdColliderDesc car;
+    dragdoll_collider_desc_default(&car);
+    car.shape = DD_SHAPE_MESH;
+    car.motion = DD_MOTION_KINEMATIC;
+    car.vertices = mesh.vertices.data();
+    car.vertex_count = static_cast<uint32_t>(mesh.vertices.size());
+    car.indices = mesh.indices.data();
+    car.index_count = static_cast<uint32_t>(mesh.indices.size());
+    float along = -14.0f; // Metres up the ramp from the origin (negative = below it), climbing at 10 m/s
+    car.transform.position = DdVec3{d.x * along, 0.0f, d.z * along};
+    car.transform.rotation = tilt;
+    car.group = 1;
+    DdColliderId carId = DD_INVALID_COLLIDER;
+    REQUIRE(dragdoll_world_add_colliders(world, &car, 1, &carId) == DD_OK);
+    const auto drive = [&](float seconds) {
+        for (int f = 0; f < static_cast<int>(std::lround(seconds * 60.0f)); ++f)
+        {
+            along += 10.0f / 60.0f;
+            const DdTransform target{{d.x * along, 0.0f, d.z * along}, tilt};
+            REQUIRE(dragdoll_world_set_kinematic_targets(world, &carId, &target, 1) == DD_OK);
+            REQUIRE(dragdoll_world_step(world, 1.0f / 60.0f, nullptr) == DD_OK);
+        }
+    };
+    const auto silhouette = [&] {
+        std::vector<DdVec3> points(160);
+        points.resize(std::min<uint32_t>(dragdoll_character_get_threat_silhouette(human, points.data(), 160), 160));
+        return points;
+    };
+    const auto aboveRamp = [&](DdVec3 p) { return p.x * n.x + p.z * n.z; };
+
+    drive(0.3f);
+    DdThreat t{};
+    t.struct_size = sizeof(DdThreat);
+    REQUIRE(dragdoll_character_get_threat(human, &t) == DD_OK);
+    REQUIRE(t.collider == carId);
+    REQUIRE(t.profile.valid == 1);
+    MESSAGE("on a 15 degree ramp: leading edge " << t.profile.leading_edge_height << " (0.72 on the flat), bumper line "
+                                                << t.profile.front_top_height << ", roof " << t.profile.roof_height << ", bonnet "
+                                                << t.profile.bonnet_angle << " deg");
+    // The same car as on the flat: measured in its own frame, not against the world's level.
+    CHECK(std::fabs(t.profile.leading_edge_height - sedan.bonnetEdgeHeight) <= 0.08f);
+    CHECK(std::fabs(t.profile.roof_height - sedan.roofHeight) <= 0.05f);
+    CHECK(std::fabs(t.profile.bonnet_angle - sedan.hoodAngle) <= 4.0f);
+    CHECK(t.direction.z > 0.2f); // Travelling up the slope
+
+    const std::vector<DdVec3> early = silhouette();
+    REQUIRE(early.size() > 8);
+    drive(0.5f); // Five metres further up: 1.3 m higher
+    const std::vector<DdVec3> later = silhouette();
+    REQUIRE(later.size() == early.size());
+    const size_t top = early.size() / 2;
+    CHECK(later[top].z - early[top].z > 1.0f);                                  // It climbed with the car...
+    CHECK(std::fabs(aboveRamp(later[top]) - aboveRamp(early[top])) < 0.03f);    // ...staying at the same height above the road
+    CHECK(aboveRamp(early[0]) < sedan.bumperHeight + 0.11f);                    // And its foot is on the car's front, near the road
+    CHECK(aboveRamp(early[0]) > 0.0f);
+    dragdoll_world_destroy(world);
 }

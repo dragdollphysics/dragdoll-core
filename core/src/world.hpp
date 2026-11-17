@@ -155,14 +155,18 @@ private:
         uint32_t revision = 0; // Bumped when members change (invalidates probed profiles)
         // Refreshed every fixed step:
         bool moving = false;
-        JPH::Vec3 velocity = JPH::Vec3::sZero(), direction = JPH::Vec3::sZero(), left = JPH::Vec3::sZero();
+        // The object's own frame: direction of travel (following the slope it drives on), its left, and the up that
+        // goes with them (perpendicular to the road, not the world's up).
+        JPH::Vec3 velocity = JPH::Vec3::sZero(), direction = JPH::Vec3::sZero(), left = JPH::Vec3::sZero(), up = JPH::Vec3::sZero();
         float front = 0, rear = 0, leftMost = 0, rightMost = 0, bottom = 0, top = 0; // Extents along direction / left / up
     };
     static uint64_t objectKey(uint32_t group, DdColliderId id) { return group != 0 ? group : (uint64_t{1} << 32) | id; }
     void updatePerception();
+    void beforePhysics(); // senses.cpp: remembers velocities, clears the contact log
+    void updateSenses();  // senses.cpp
     void refreshObjects();
     void updateThreat(DdCharacter& character);
-    void probeFront(DdCharacter& character, uint64_t key, const Object& object, float lateral, float comHeightWorld);
+    void probeFront(DdCharacter& character, uint64_t key, const Object& object, float lateral);
 
     JPH::Ref<JPH::Shape> createShape(const DdColliderDesc& desc) const;
     void stampPendingTargets(double hostTime);
@@ -200,6 +204,7 @@ private:
     std::map<uint32_t, std::unique_ptr<DdCharacter>> mCharacters;
     uint32_t mNextCharacterId = 1;
 
+    std::unique_ptr<class ContactLog> mContactLog; // Filled by Jolt's contact callbacks during a step (senses.cpp)
     BehaviourParams mBehaviourParams; // Behaviour numbers of this world (recorded when changed)
 
     void* mOwner = nullptr;

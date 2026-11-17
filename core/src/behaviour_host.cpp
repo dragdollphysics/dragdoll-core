@@ -233,6 +233,9 @@ void updateBehaviour(DdCharacter& c, World& world, float dt)
         percept.tension[r] = c.regionMuscles[static_cast<size_t>(r)].tension;
     }
     percept.vitality = c.vitality;
+    percept.senses = c.senses;
+    percept.contacts = c.contacts.data();
+    percept.bodyCount = static_cast<uint32_t>(c.contacts.size());
 
     // Threat, how long it has been one, and whether the character knows: told by the host, or seen — the object lies
     // within the head's field of view (about 100 degrees to each side of where the head faces).

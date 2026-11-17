@@ -484,6 +484,51 @@ DD_API DdResult DD_CALL dragdoll_character_apply_pose(DdCharacter* character, co
  * character using it picks them up on the next step. Recorded, so replays use the same numbers. */
 DD_API DdResult DD_CALL dragdoll_world_set_behaviour_params(DdWorld* world, const char* behaviour, const char* json);
 
+/* ---- Perception: contacts and self state (ADR-0024 §3). Read-only senses, refreshed after every fixed step. -------
+ * Contacts and hit severity exist for simulated (dynamic) characters; a host-animated (kinematic) character is not
+ * pushed by anything, so it reports none. */
+
+#define DD_CONTACT_GROUND 0x1u    /* Touching static geometry (the level). */
+#define DD_CONTACT_OBJECT 0x2u    /* Touching a moving collider (a vehicle). */
+#define DD_CONTACT_CHARACTER 0x4u /* Touching another character. */
+
+/* What one body of a character touched during the last fixed step. */
+typedef struct DdBodyContact
+{
+    uint32_t flags;        /* DD_CONTACT_* bits; 0 = touching nothing. */
+    DdColliderId collider; /* The moving collider it touches (the deepest contact), else the static one; 0 if none. */
+    uint32_t group;        /* That collider's group. */
+    DdVec3 point;          /* World position of that contact. */
+    DdVec3 normal;         /* Unit vector from the other thing into this body. */
+    float delta_v;         /* m/s: this body's velocity change over the step without gravity's share: what an accelerometer
+                            * on it would report. 0 in free fall, g x dt (0.08 at 120 Hz) when resting, large when hit. */
+} DdBodyContact;
+
+typedef struct DdSenses
+{
+    uint32_t struct_size;       /* = sizeof(DdSenses) */
+    int32_t airborne;           /* 1 = no body has touched anything for at least 3 steps (25 ms). */
+    float airborne_seconds;     /* How long nothing has been touched (0 while in contact). */
+    uint32_t ground_bodies;     /* How many bodies touch the level. */
+    uint32_t object_bodies;     /* How many bodies touch moving colliders. */
+    DdColliderId carried_by;    /* The moving collider most of those bodies touch (0 = none): what the body lies on. */
+    uint32_t carried_by_group;
+    float ground_height;        /* m: centre of mass above the level straight below it; < 0 = no ground within 30 m. */
+    DdVec3 ground_normal;       /* Unit normal of that ground (the world's up if unknown). */
+    float upright;              /* 1 = trunk pointing up, 0 = horizontal, -1 = head down. */
+    DdVec3 angular_momentum;    /* kg m^2/s about the centre of mass (which way, and how fast, the body is turning). */
+    float landing_seconds;      /* While airborne: ballistic time until the body reaches the ground; else < 0. */
+    int32_t landing_body;       /* ...and the body predicted to arrive first (-1 = unknown). */
+    float head_delta_v;         /* m/s: the head's delta_v over the last step (see DdBodyContact.delta_v). */
+    float impact_delta_v;       /* m/s: the same for the whole body (its centre of mass). */
+    float peak_head_delta_v;    /* Largest head_delta_v since the character was created or last made dynamic. */
+    float peak_impact_delta_v;
+} DdSenses;
+
+DD_API DdResult DD_CALL dragdoll_character_get_senses(const DdCharacter* character, DdSenses* out);
+/* Copies one DdBodyContact per body (rig order); returns the body count, copying at most `capacity`. */
+DD_API uint32_t DD_CALL dragdoll_character_get_contacts(const DdCharacter* character, DdBodyContact* out, uint32_t capacity);
+
 /* ---- Perception: threat (ADR-0024). Read-only senses, updated every fixed step for every character. ---- */
 
 /* Post-impact trajectory classes of the pedestrian-impact literature. DragDoll predicts and measures them; it never

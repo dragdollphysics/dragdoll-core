@@ -679,3 +679,38 @@ Crowd question (car through the pier) → cost is linear in awake ragdolls (~70 
 * The car body spans the outline mesh's full width at every station (the cabin is as wide as the body): fine for frontal hits; revisit for side impacts.
 * Vehicles without an outline mesh (bikes, some specials) still use the game's spheres; at the extreme lateral line they read very low profiles.
 * Passengers of one vehicle still perceive other vehicles (crashes between cars are out of scope for v1).
+
+---
+
+## 2026-11-17 — Probe on slopes; task 4.1: contacts and self state
+**Changed** (local, not committed)
+* **Founder report:** on a slope the yellow silhouette did not go up and down with the car. Cause: the probe used the world's level and vertical, and the silhouette was stored against the ground height at probe time. Now the object has its own frame (travel direction following the slope, its left, and the up that goes with them): extents, probe rays and heights are in that frame, and the silhouette is stored in the local space of the object's first collider. Test: a sedan on a 15 degree ramp reads leading edge 0.72 m, roof 1.45 m, bonnet 10 degrees (as on the flat), and the silhouette climbs with it at a constant height above the road.
+* **Task 4.1** (`core/src/senses.{hpp,cpp}`): `ContactLog` (Jolt `ContactListener`; entries appended under a lock from worker threads, sorted before use). After every step, per character: per-body contacts and velocity change; airborne; ground / object body counts; carried by; ground distance and normal (ray); uprightness; angular momentum (orbital + spin with the mean principal inertia); landing prediction (ballistic centre of mass, body turning as the pelvis turns now; lowest body on arrival). Peaks restart at the kinematic -> dynamic handover.
+* API: `DdSenses`, `DdBodyContact`, `dragdoll_character_get_senses`, `dragdoll_character_get_contacts`; SDK `Percept::senses / contacts`; live tap `senses` per character; viewer line "senses: ...".
+* **Bug found by the tests:** a body lying still falls asleep and Jolt reports no contacts for sleeping bodies, so it felt airborne. A sleeping body keeps the contacts it fell asleep with.
+* Meaning of `delta_v` settled: velocity change minus gravity's share = what an accelerometer reports (0 in free fall, 0.082 m/s per step at rest, large when hit).
+* Measured: 3 m feet-first drop -> landing predicted 0.66 s ahead (0.67 analytic), on a foot; landing 3.2 m/s (body) / 3.6 m/s (head) in one step; sedan at 40 km/h on a braced pedestrian 2.4 / 2.7 m/s in one step; 30 N*s at the head of a floating body -> 22.8 kg m^2/s, conserved.
+* Tests: senses (7), slope (1). Targeted run on x64-release: 57 cases green. Benchmark 79 us per character per step (8 characters, single thread; budget 100; the figure before perception / behaviours / senses was not recorded). x86 builds via dragdoll-sa; deployed to the running game.
+* In the game: an F7 drop through the input channel created the ragdoll on real terrain, but the game was then paused (clock stopped), so its senses on real terrain are not checked yet.
+
+**Next**
+* Founder: unpause, press F7, watch the ragdoll's "senses" in its status / a capture.
+* Then 4.2's code half (impact report: events, wrap-around distance, launch speed, throw distance, measured class) and 4.3 (passive baseline) — both now unblocked. 4.6 (Impact stage) — Fable.
+
+**Open questions**
+* Benchmark headroom is 21 %: record a baseline before the Impact stage adds work; the contact log allocates per step (reuse the vector's capacity: it does, but the per-character temporaries could be pooled).
+* `delta_v` is per 1/120 s step; injury-style measures need a window (the impact report can integrate).
+
+---
+
+## 2026-11-17 — Two founder-found bugs: ragdoll through the level, outlines on every driver
+**Changed** (local, not committed)
+* **The F7 ragdoll fell through the level** (it only collided with cars). Capture: it lay on a car with up to 16 bodies in contact, slid off, and fell 755 m until the too-fast guard failed it — while its ground ray kept reporting the road 1.25 m below. Cause: Jolt's simulation ignores the back faces of mesh triangles, and SA winds its collision triangles the opposite way round (every car-mesh triangle had needed flipping; rays hit both sides, so the probes never showed it). Since the level collision task the level meshes had been inside out. `addBuildingColliders` now reverses the winding. The mod also removes an F7 ragdoll that ends up 40 m below the player.
+* **Yellow outlines on every car, for its driver** (viewer only): the mirror recomputes threats and did not know who rides what. The tap streams `riding` per character; the viewer sets it on the mirror characters.
+* **Verified in the game** (F7 through the input channel, senses read from the tap): airborne 0.08 s, landing predicted 0.49 s ahead on a foot; landed (2 bodies on the ground), folded (7, then 11 bodies), settled with the centre of mass 0.12 m above the ground; hardest head hit 2.8 m/s. First real-terrain run of task 4.1's senses.
+
+**Next**
+* 4.2's code half (impact report) and 4.3 (passive baseline) — Opus; 4.6 (Impact stage) — Fable.
+
+**Open questions**
+* The level winding fix assumes SA is consistent (car meshes were, 12 of 12 triangles). If a ragdoll ever passes through one piece of level, that piece is wound the other way: make level meshes two-sided then.

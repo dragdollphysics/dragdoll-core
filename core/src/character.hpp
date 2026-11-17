@@ -104,13 +104,20 @@ struct DdCharacter
     DdColliderId threatFrom = DD_INVALID_COLLIDER; // The object the timers below refer to
     float threatSeconds = 0.0f, threatSeenSeconds = 0.0f;
 
+    // Perception (ADR-0024 §3): contacts and self state, refreshed after every fixed step.
+    std::vector<DdBodyContact> contacts;   // Per body
+    std::vector<JPH::Vec3> velocityBefore; // Per body, just before the physics step (for delta_v)
+    std::vector<float> bodyInertia;        // Per body: mean principal inertia about its own centre (kg m^2)
+    DdSenses senses{};
+    uint32_t airborneSteps = 0;
+
     // Perception (ADR-0024): the most imminent threat and the probed front of that object.
     DdThreat threat{};
     uint32_t ridingGroup = 0; // The object (group) the character rides: never a threat to it
     JPH::Vec3 sensedVelocity = JPH::Vec3::sZero(); // Centre-of-mass velocity, smoothed (host-animated bodies move in bursts)
     float sensedComHeight = 0.0f;                  // Centre of mass above the probed ground (for tools)
-    std::vector<DdVec3> threatSilhouette; // Per point: x = distance behind the object's front, z = height above the ground
-    float probedGround = 0.0f;            // Ground height (along up) under the object's front when probed
+    std::vector<DdVec3> threatSilhouette; // In the local space of the object's first collider: it moves and tilts with it
+    DdColliderId probedAnchor = DD_INVALID_COLLIDER; // That collider
     uint64_t probedKey = 0;               // Which object the profile belongs to (0 = none)
     uint32_t probedRevision = 0;          // ...and its member set at that time
     float probedLateral = 0.0f;           // ...and the lateral line that was probed

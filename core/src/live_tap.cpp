@@ -277,6 +277,15 @@ void LiveTap::afterStep(DdWorld* world)
                               // What it senses and makes of it (ADR-0024 / 0025); ttc < 0 = no threat.
                               {"ttc", c->threat.collider != DD_INVALID_COLLIDER ? c->threat.time_to_collision : -1.0f},
                               {"expects", static_cast<int>(c->threat.predicted)}, {"behaviour", c->behaviourName},
+                              {"riding", c->ridingGroup},
+                              // Senses (ADR-0024 §3): airborne seconds (-1 = in contact), landing prediction, bodies on
+                              // the level / on moving objects, ground distance, peak hits (head, whole body).
+                              {"senses", {{"air", c->senses.airborne != 0 ? c->senses.airborne_seconds : -1.0f},
+                                          {"land", c->senses.landing_seconds}, {"land_body", c->senses.landing_body},
+                                          {"ground", c->senses.ground_bodies}, {"object", c->senses.object_bodies},
+                                          {"carried", c->senses.carried_by}, {"height", c->senses.ground_height},
+                                          {"upright", c->senses.upright}, {"head_hit", c->senses.peak_head_delta_v},
+                                          {"body_hit", c->senses.peak_impact_delta_v}}},
                               // The measurements behind "expects": which object, its leading edge and bumper line, the
                               // character's centre of mass above the same ground, where across the front it will hit.
                               {"threat", {{"group", c->threat.group}, {"lead", c->threat.profile.leading_edge_height},

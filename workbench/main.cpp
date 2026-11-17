@@ -527,6 +527,33 @@ void collectThreats(DdWorld* world, std::vector<Line>& lines, std::vector<std::s
 {
     static const char* const kClass[] = {"?", "wrap", "forward projection", "fender vault", "roof vault", "somersault"};
     const uint32_t count = dragdoll_world_get_character_count(world);
+    // Senses of the first simulated character (ADR-0024 §3): what it touches, airborne and landing, how hard it was hit.
+    for (uint32_t i = 0; i < count; ++i)
+    {
+        DdCharacter* c = dragdoll_world_get_character(world, i);
+        DdSenses s{};
+        s.struct_size = sizeof(DdSenses);
+        if (dragdoll_character_get_kinematic(c) != 0 || dragdoll_character_get_senses(c, &s) != DD_OK) continue;
+        char where[96];
+        if (s.airborne != 0 && s.landing_seconds >= 0.0f && s.landing_body >= 0)
+        {
+            std::snprintf(where, sizeof(where), "airborne %.2f s, lands in %.2f s on %s", s.airborne_seconds, s.landing_seconds,
+                          dragdoll_character_get_body_name(c, static_cast<uint32_t>(s.landing_body)));
+        }
+        else if (s.airborne != 0)
+        {
+            std::snprintf(where, sizeof(where), "airborne %.2f s", s.airborne_seconds);
+        }
+        else
+        {
+            std::snprintf(where, sizeof(where), "%u bodies on the ground, %u on a vehicle", s.ground_bodies, s.object_bodies);
+        }
+        char line[220];
+        std::snprintf(line, sizeof(line), "senses: %s | ground %.2f m below | upright %.2f | hardest hit: head %.1f m/s, body %.1f m/s", where,
+                      s.ground_height, s.upright, s.peak_head_delta_v, s.peak_impact_delta_v);
+        text.emplace_back(line);
+        break;
+    }
     for (uint32_t i = 0; i < count; ++i)
     {
         DdCharacter* c = dragdoll_world_get_character(world, i);
@@ -1710,6 +1737,7 @@ void applyLiveFrame(App& app, const nlohmann::json& frame)
             entry.tension = c.value("tension", 0);
             entry.balance = c.value("balance", 0) != 0;
         }
+        dragdoll_character_set_riding(found->second, c.value("riding", 0u)); // Its own vehicle is no threat to it here either
         App::LivePose pose;
         for (const nlohmann::json& q : c["joints"]) pose.joints.push_back(jsonQuat(q));
         pose.root = DdTransform{jsonVec(c["p"]), jsonQuat(c["q"])};
