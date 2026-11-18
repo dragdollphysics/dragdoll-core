@@ -42,6 +42,14 @@ ped back to the game's own get-up after it lies still.
    DragDoll's car hits are on, that one push (on the hitting car, from inside the hit function) is skipped - the game
    never applies it; every other force in the game is untouched, and the collision itself still slows the car a little.
    F6 off restores the game's push for comparison.
+7. **Exception (founder's decision, 2026-11-18): the get-up matches the body.** The game picks its face-up or face-down
+   get-up from its own knock-down animation, not from how the body landed (measured: 6 of 14 releases flipped). For a
+   ped whose body DragDoll holds, the game's own front / back check is shown the body's facing for the duration of that
+   one check, then restored; the game itself starts the get-up. A body on its side keeps the game's choice.
+8. **Exception (founder's decision, 2026-11-18): no second get-up after a dive.** A ped hit while diving away keeps the
+   game's dive-and-get-up task waiting under the fall-and-get-up; after the fall's get-up it resumes and plays a second
+   get-up (the plain game does it too). At the release DragDoll ends that waiting task through the game's own
+   mechanism (made abortable, slot cleared by the task manager).
 5. **When something breaks, first ask which game decision DragDoll took over** - and give it back, rather than adding
    a patch.
 
