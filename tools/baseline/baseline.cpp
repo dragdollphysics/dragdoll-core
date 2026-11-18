@@ -32,6 +32,7 @@ float gCarFriction = 0.6f;     // Vehicle surface (Jolt combines it with the bod
 float gCarRestitution = 0.0f; // --car-restitution: spring-back of the vehicle surface (Jolt takes the larger of the two)
 DdTension gTension = DD_TENSION_LIMP;
 std::string gRig; // --rig file: a rig JSON instead of the built-in humanoid16
+std::string gParams; // --params file: a behaviour pack JSON replacing the built-in one for --behaviour
 bool gTrace = false;
 bool gMomentum = false; // --momentum: centre-of-mass and rotation trace for the first 0.8 s
 std::string gBehaviour; // --behaviour car_hit: the reaction chain runs (relaxed standing, core auto handover)
@@ -103,6 +104,7 @@ Run simulate(const std::string& vehicle, float kmh, float headingDegrees, float 
     desc.worker_threads = 0;
     DdWorld* world = nullptr;
     if (dragdoll_world_create(&desc, &world) != DD_OK) std::abort();
+    if (!gParams.empty() && dragdoll_world_set_behaviour_params(world, gBehaviour.c_str(), gParams.c_str()) != DD_OK) std::abort();
     DdColliderDesc ground;
     dragdoll_collider_desc_default(&ground);
     ground.shape = DD_SHAPE_BOX;
@@ -404,6 +406,14 @@ int main(int argc, char** argv)
         else if (a == "--kick") {}
         else if (a == "--arms-forward") gArmsForward = true;
         else if (a == "--size") gSize = std::strtof(next().c_str(), nullptr);
+        else if (a == "--params")
+        {
+            FILE* f = nullptr;
+            if (fopen_s(&f, next().c_str(), "rb") != 0 || f == nullptr) return 2;
+            char chunk[4096];
+            for (size_t n; (n = std::fread(chunk, 1, sizeof(chunk), f)) > 0;) gParams.append(chunk, n);
+            std::fclose(f);
+        }
         else if (a == "--rig")
         {
             FILE* f = nullptr;

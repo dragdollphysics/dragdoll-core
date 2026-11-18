@@ -29,6 +29,8 @@ Each ADR is one page. Change a decision only by adding a new ADR that supersedes
 | [0023](0023-standing-balance.md) | Standing balance via capture point, ankle and hip strategies | Accepted |
 | [0024](0024-impact-perception-and-measured-outcomes.md) | Impact perception, and trajectories as measured outcomes | Accepted |
 | [0025](0025-reaction-chain.md) | The reaction chain: stages, reflex layers, vitality, behaviour SDK | Accepted |
+| [0026](0026-vehicles-and-bodies-on-the-ground.md) | Vehicles and bodies on the ground: pass-through once landed, the bump is the host's | Accepted |
+| [0027](0027-the-game-decides-dragdoll-draws.md) | The game decides, DragDoll draws: start on the game's own hit, release on its next step | Accepted |
 
 ## Template
 ```

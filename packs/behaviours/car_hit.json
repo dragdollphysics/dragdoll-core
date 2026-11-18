@@ -26,7 +26,8 @@
     },
     "impact": {
       "yield_blend": 0.02,
-      "brace_blend": 0.05
+      "brace_blend": 0.05,
+      "brace": 1
     },
     "carried": {
       "relax": 0.5,
@@ -39,7 +40,29 @@
       "blend": 0.3
     },
     "after": {
-      "blend": 0.3
+      "blend": 0.3,
+      "tension": 1
+    },
+    "reach": {
+      "min_time": 0.12,
+      "extension": 0.9,
+      "blend": 0.15,
+      "approach_height": 0.9,
+      "approach_speed": 0.8
+    },
+    "landing": {
+      "lead": 0.12,
+      "yield": 0.08
+    },
+    "tumble": {
+      "extension": 0.4
+    },
+    "fall": {
+      "upright": 0.8,
+      "speed": 0.5
+    },
+    "airborne": {
+      "curl": 0
     }
   },
   "poses": {

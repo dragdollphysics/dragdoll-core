@@ -557,6 +557,27 @@ DD_API DdResult DD_CALL dragdoll_character_set_auto_handover(DdCharacter* charac
     DD_GUARD_END(DD_ERROR_INTERNAL)
 }
 
+DD_API DdResult DD_CALL dragdoll_character_set_vehicle_pass_through(DdCharacter* character, int enabled)
+{
+    DD_GUARD_BEGIN
+    if (character == nullptr)
+    {
+        return fail(DD_ERROR_INVALID_ARGUMENT, "dragdoll_character_set_vehicle_pass_through: character is required");
+    }
+    character->vehiclePassThrough = enabled != 0;
+    if (dragdoll::rec::Recorder* recorder = recorderOf(character))
+    {
+        recorder->vehiclePassThrough(character->id, enabled != 0);
+    }
+    return DD_OK;
+    DD_GUARD_END(DD_ERROR_INTERNAL)
+}
+
+DD_API int DD_CALL dragdoll_character_get_vehicle_pass_through(const DdCharacter* character)
+{
+    return character != nullptr && character->vehiclePassThrough ? 1 : 0;
+}
+
 DD_API float DD_CALL dragdoll_character_get_auto_handover(const DdCharacter* character)
 {
     return character != nullptr ? character->autoHandover : 0.0f;

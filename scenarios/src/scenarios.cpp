@@ -876,6 +876,51 @@ private:
     DdColliderId mCar = DD_INVALID_COLLIDER;
 };
 
+// A standing pedestrian is shoved backwards hard enough to fall (task 4.7, the cheap landing test from ideas.md).
+// reflexes: relaxed with the "car_hit" chain, which treats any fall as a stimulus - after the reflex latency the hands
+// reach for the ground and give on contact. Otherwise limp: the passive fall to compare with.
+class DeathDropScenario final : public RagdollScenario
+{
+public:
+    explicit DeathDropScenario(bool reflexes)
+        : RagdollScenario(reflexes ? "death_drop" : "death_drop_limp",
+                          reflexes ? "A standing, relaxed pedestrian is shoved backwards and falls (car_hit reflexes on). Judge: about "
+                                     "0.1 s into the fall the arms go out towards the ground behind, the chin tucks; the hands meet "
+                                     "the ground first and give, the head does not bang down."
+                                   : "The same shove, limp: the passive fall to compare death_drop with.",
+                          DdVec3{0.0f, 0.0f, 0.005f}, DdQuat{0, 0, 0, 1}),
+          mReflexes(reflexes)
+    {
+    }
+    void build(DdWorld* world) override
+    {
+        RagdollScenario::build(world);
+        DdCharacter* c = character();
+        if (c == nullptr) return;
+        if (mReflexes)
+        {
+            dragdoll_character_set_tension(c, DD_TENSION_RELAXED, 0.0f);
+            dragdoll_character_set_behaviour(c, "car_hit");
+        }
+        // Backwards = opposite to where the feet point (found from the pose, not assumed).
+        std::vector<DdTransform> b(dragdoll_character_get_body_count(c));
+        dragdoll_character_get_body_transforms(c, 0, b.data(), static_cast<uint32_t>(b.size()));
+        const int foot = dragdoll_character_find_body(c, "foot_l"), shin = dragdoll_character_find_body(c, "shin_l");
+        const int chest = dragdoll_character_find_body(c, "upper_spine");
+        if (foot < 0 || shin < 0 || chest < 0) return;
+        float fx = b[static_cast<size_t>(foot)].position.x - b[static_cast<size_t>(shin)].position.x;
+        float fy = b[static_cast<size_t>(foot)].position.y - b[static_cast<size_t>(shin)].position.y;
+        const float length = std::sqrt(fx * fx + fy * fy);
+        if (length < 1e-4f) return;
+        fx /= length;
+        fy /= length;
+        dragdoll_character_apply_impulse(c, static_cast<uint32_t>(chest), DdVec3{-fx * 30.0f, -fy * 30.0f, 0.0f}, nullptr);
+    }
+
+private:
+    bool mReflexes = true;
+};
+
 using Factory = std::function<std::unique_ptr<Scenario>()>;
 
 const std::vector<std::pair<std::string, Factory>>& registry()
@@ -937,6 +982,8 @@ const std::vector<std::pair<std::string, Factory>>& registry()
     all.emplace_back("stand_balance", [] { return std::make_unique<HoldStanceScenario>("stand_balance", 0.0f, 10.0); });
     all.emplace_back("hold_stance", [] { return std::make_unique<HoldStanceScenario>("hold_stance", 5.0f, 20.0); });
     all.emplace_back("bump_5kmh", [] { return std::make_unique<VehicleHitScenario>("sedan", 5.0f, true, "bump_5kmh"); });
+    all.emplace_back("death_drop", [] { return std::make_unique<DeathDropScenario>(true); });
+    all.emplace_back("death_drop_limp", [] { return std::make_unique<DeathDropScenario>(false); });
     all.emplace_back("aware_sedan_40kmh", [] { return std::make_unique<VehicleHitScenario>("sedan", 40.0f, true, "aware_sedan_40kmh", true); });
     for (const std::string& vehicle : vehicleNames())
     {

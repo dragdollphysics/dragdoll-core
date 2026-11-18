@@ -363,6 +363,14 @@ void Recorder::riding(uint32_t character, uint32_t group)
     write(Record::Riding, mScratch);
 }
 
+void Recorder::vehiclePassThrough(uint32_t character, bool enabled)
+{
+    mScratch.clear();
+    mScratch.u32(character);
+    mScratch.u8(enabled ? 1 : 0);
+    write(Record::VehiclePassThrough, mScratch);
+}
+
 void Recorder::autoHandover(uint32_t character, float leadSeconds)
 {
     mScratch.clear();

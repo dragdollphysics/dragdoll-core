@@ -86,6 +86,7 @@ struct DdCharacter
     bool inPhysics = true;          // false once FAILED: removed from the physics system
     bool kinematic = false;         // Host-animated: moved only by activate
     float autoHandover = 0.0f;      // s: turn dynamic when the threat is due within this (0 = off)
+    bool vehiclePassThrough = false; // Once landed after a hit, moving colliders pass through (ADR-0026)
     bool debugCorrupt = false;      // Test hook: inject NaN on the next capture
 
     // Standing balance (ADR-0023)
@@ -143,6 +144,7 @@ struct DdCharacter
         JPH::RVec3 impactCom, separationCom;
         uint32_t stepsApart = 0;
         bool upperOnTop = false;                    // Head or upper trunk touched the bonnet / windscreen / roof
+        bool lyingDown = false;                     // Since the hit, the trunk or head has touched the ground
         float behindFrontAtSeparation = 0.0f;       // Centre of mass behind the object's front at separation (m)
         float deepestBehindFront = -100.0f;         // ...and the most it reached while in contact (-100 = unknown)
         std::vector<bool> touched;                  // Per body: has touched the object

@@ -249,6 +249,21 @@ void World::updateImpactReport(DdCharacter& c)
         r.peak_head_delta_v = std::max(r.peak_head_delta_v, c.contacts[static_cast<size_t>(c.headBody)].delta_v);
     }
 
+    // --- Down on the ground: the trunk or head touches it (not the legs: the feet stand on it from the start; not the
+    // arms: a hand reaching down while the body still lies on the bonnet). From then on a pass-through character lets
+    // vehicles through (ADR-0026).
+    if (!t.lyingDown)
+    {
+        for (size_t i = 0; i < count && i < c.region.size(); ++i)
+        {
+            if ((c.contacts[i].flags & DD_CONTACT_GROUND) != 0 && (c.region[i] == DD_REGION_TRUNK || c.region[i] == DD_REGION_HEAD_NECK))
+            {
+                t.lyingDown = true;
+                break;
+            }
+        }
+    }
+
     // --- Rotation about the object's left axis until the first ground contact (somersault rule).
     if (!t.grounded && !t.left.IsNearZero())
     {

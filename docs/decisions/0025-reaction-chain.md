@@ -65,6 +65,7 @@ Stages may be skipped (a 10 km/h knock-down goes Impact -> Tumble; a forward pro
 and projection are **not** stages: they are what happens between Impact and Landing, and they are measured.
 
 ### 3a. Rest poses: one animation slot replaced, nothing left behind (amended 2026-11-16, founder's design)
+*Amended 2026-11-17 by ADR-0027 for game hosts:* the game decides and DragDoll only draws - the start is the game's own hit, the release is the game's own next step (its get-up; a corpse stays a sleeping ragdoll until the game moves on). No rest pose is forced on the game.
 The chain replaces exactly one thing in the host: the animation of being hit. It starts from the host's pose and
 velocities at the hit (activation from motion) and ends in the pose the host's own animation would have ended in.
 * The host gives the character its **rest poses** (for San Andreas: lying face up and lying face down, read from the

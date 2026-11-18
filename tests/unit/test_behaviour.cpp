@@ -300,7 +300,7 @@ TEST_CASE("behaviour: car_hit after contact - auto handover, struck leg yields, 
             }
             if (carried < 0 && status.rfind("carried", 0) == 0) carried = t;
             if (guarded < 0 && status.find("guard") != std::string::npos) guarded = t;
-            if (after < 0 && status.rfind("after", 0) == 0) after = t;
+            if (after < 0 && (status.rfind("airborne", 0) == 0 || status.rfind("landing", 0) == 0 || status.rfind("tumble", 0) == 0)) after = t;
         }
         MESSAGE(std::string(aware ? "aware" : "unaware") << ": handover " << handover << " s, impact " << impact << ", brace " << brace
                                               << ", carried " << carried << ", after " << after);
@@ -410,4 +410,54 @@ TEST_CASE("behaviour: a session with a behaviour, live parameters, awareness and
     CHECK(dragdoll_character_get_vitality(replayed) == doctest::Approx(0.8f));
     dragdoll_replay_close(replay);
     std::remove(path);
+}
+
+TEST_CASE("vehicle pass-through: a car driving over a landed body does not launch it (ADR-0026)")
+{
+    const float facing = yawFacing(DdVec3{-1, 0, 0});
+    Library lib;
+    float fastest[2] = {0.0f, 0.0f};
+    for (int pass = 0; pass < 2; ++pass)
+    {
+        CAPTURE(pass);
+        Scene scene(facing + 90.0f);
+        REQUIRE(dragdoll_character_set_auto_handover(scene.human, 0.0125f) == DD_OK);
+        REQUIRE(dragdoll_character_set_vehicle_pass_through(scene.human, pass) == DD_OK);
+        CHECK(dragdoll_character_get_vehicle_pass_through(scene.human) == pass);
+        // The car hits at 10 m/s and brakes to a stop; the body lands ahead of it; 3 s later the car drives on at
+        // 8 m/s, over the body lying on the road.
+        float v = 10.0f, stopped = -1.0f;
+        DdVec3 last{};
+        bool haveLast = false, overBody = false;
+        for (int f = 0; f < 12 * 120; ++f)
+        {
+            const float t = f / 120.0f;
+            DdImpactReport r{};
+            r.struct_size = sizeof(DdImpactReport);
+            REQUIRE(dragdoll_character_get_impact_report(scene.human, &r) == DD_OK);
+            const bool landed = r.valid != 0 && r.ground_time >= 0.0f;
+            if (r.valid != 0 && stopped < 0.0f) v = std::fmax(0.0f, v - 7.0f / 120.0f); // Brakes after contact
+            if (stopped < 0.0f && r.valid != 0 && v == 0.0f) stopped = t;
+            if (stopped >= 0.0f && t > stopped + 3.0f) v = std::fmin(8.0f, v + 3.0f / 120.0f); // Drives on
+            scene.x += v / 120.0f;
+            const DdTransform target{{scene.x, 0, 0}, {0, 0, 0, 1}};
+            REQUIRE(dragdoll_world_set_kinematic_targets(scene.world, &scene.car, &target, 1) == DD_OK);
+            REQUIRE(dragdoll_world_step(scene.world, 1.0f / 120.0f, nullptr) == DD_OK);
+            DdTransform root{};
+            REQUIRE(dragdoll_character_get_pose(scene.human, 0, nullptr, 0, &root) == DD_OK);
+            if (stopped >= 0.0f && t > stopped + 3.0f && landed && haveLast)
+            {
+                const float dx = root.position.x - last.x, dy = root.position.y - last.y, dz = root.position.z - last.z;
+                fastest[pass] = std::fmax(fastest[pass], std::sqrt(dx * dx + dy * dy + dz * dz) * 120.0f);
+                if (scene.x > root.position.x) overBody = true; // The car's centre went past the body
+            }
+            last = root.position;
+            haveLast = true;
+        }
+        REQUIRE(stopped >= 0.0f);
+        if (pass == 1) CHECK(overBody); // Colliding, the car pushes the body ahead of it instead
+    }
+    MESSAGE("fastest pelvis while the car drives over the body: " << fastest[0] << " m/s colliding, " << fastest[1] << " m/s passing through (car up to 8 m/s)");
+    CHECK(fastest[0] > 3.0f);  // Colliding, the car shoves the body (the in-game launches)
+    CHECK(fastest[1] < 0.5f);  // Passing through, the body stays where it lies
 }

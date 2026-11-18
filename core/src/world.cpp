@@ -279,6 +279,14 @@ void World::simulate(uint32_t steps)
             }
         }
         beforePhysics();
+        {
+            std::vector<uint32_t> passThrough; // Landed bodies that vehicles pass through (ADR-0026)
+            for (auto& [characterId, character] : mCharacters)
+            {
+                if (character->vehiclePassThrough && character->impactTracking.lyingDown) passThrough.push_back(character->id);
+            }
+            mContactLog->setPassThrough(std::move(passThrough));
+        }
         // Collision sub-steps for fast host-driven colliders: their surfaces are hollow triangle meshes, and a car face
         // moving 0.21 m in one step (90 km/h) can end up past a 0.1 m limb, which is then pushed out the wrong way
         // (through the underside). Keep every collider's motion per collision check under kMaxSweep. Only fast

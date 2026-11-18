@@ -388,6 +388,12 @@ DD_API int DD_CALL dragdoll_character_get_kinematic(const DdCharacter* character
  * step (1/120 s) plus a margin, e.g. 0.0125, hands over just before contact. */
 DD_API DdResult DD_CALL dragdoll_character_set_auto_handover(DdCharacter* character, float lead_seconds);
 DD_API float DD_CALL dragdoll_character_get_auto_handover(const DdCharacter* character);
+/* Bodies on the road (ADR-0026): from the moment the trunk or head touches the ground after a hit (also while
+ * the vehicle still touches it: a body dragged under a car), moving colliders (vehicles) pass through it instead of colliding, so a car driving over a body lying on the road
+ * cannot wedge it under its front and squeeze it out. The static level still collides. The host may give its own
+ * vehicle the bump (SA: the game ped's own collision). Off by default; recorded. */
+DD_API DdResult DD_CALL dragdoll_character_set_vehicle_pass_through(DdCharacter* character, int enabled);
+DD_API int DD_CALL dragdoll_character_get_vehicle_pass_through(const DdCharacter* character);
 
 DD_API DdResult DD_CALL dragdoll_character_activate(DdCharacter* character, const DdTransform* previous_root,
                                                     const DdQuat* previous_joints, const DdTransform* current_root,

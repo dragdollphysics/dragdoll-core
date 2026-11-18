@@ -203,3 +203,42 @@ TEST_CASE("debug draw: dev builds produce geometry, shipping builds report UNSUP
     callbacks.struct_size = 4;
     CHECK(dragdoll_world_debug_draw(instance.world, &callbacks) == DD_ERROR_INVALID_ARGUMENT);
 }
+
+TEST_CASE("scenarios: death_drop - with the fall reflexes the hands, not the head, meet the ground first")
+{
+    Library lib;
+    for (const char* name : {"death_drop", "death_drop_limp"})
+    {
+        CAPTURE(name);
+        Instance instance = make(name);
+        DdCharacter* c = instance.scenario->character();
+        REQUIRE(c != nullptr);
+        const uint32_t n = dragdoll_character_get_body_count(c);
+        std::vector<DdBodyContact> contacts(n);
+        std::string first, reached;
+        double firstTime = -1.0;
+        for (int step = 0; step < 3 * 120 && first.empty(); ++step)
+        {
+            REQUIRE(dragdoll_world_step_fixed(instance.world, 1) == DD_OK);
+            const std::string status = dragdoll_character_get_behaviour_status(c);
+            if (reached.empty() && status == "airborne: reach") reached = std::to_string(step / 120.0);
+            dragdoll_character_get_contacts(c, contacts.data(), n);
+            for (uint32_t i = 0; i < n && first.empty(); ++i)
+            {
+                const DdRegion region = dragdoll_character_get_body_region(c, i);
+                if ((contacts[i].flags & DD_CONTACT_GROUND) != 0 && region != DD_REGION_LEG_LEFT && region != DD_REGION_LEG_RIGHT)
+                {
+                    first = dragdoll_character_get_body_name(c, i);
+                    firstTime = step / 120.0;
+                }
+            }
+        }
+        MESSAGE(std::string(name) << ": first non-leg ground contact " << first << " at " << firstTime << " s; reaching from " << reached << " s");
+        REQUIRE(!first.empty()); // It falls
+        if (std::string(name) == "death_drop")
+        {
+            CHECK(!reached.empty());
+            CHECK(first.rfind("hand", 0) == 0); // The hands arrive first
+        }
+    }
+}
