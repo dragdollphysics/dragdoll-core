@@ -108,13 +108,42 @@ bool aimLimb(DdCharacter& c, DdRegion region, JPH::RVec3Arg target, float extens
         }
     }
 
-    // First joint: turn the bent limb, by the shortest arc from rest, so that its end points at the target.
+    // First joint. A reach (end at least 85 % of the limb's length away): turn the bent limb by the shortest arc from
+    // rest so that its end points at the target (reaching for the ground, fending). A fold (end closer): place it so
+    // that its end lies on the target AND its middle joint points the natural way (elbows down and out, knees
+    // forward) - a person folding an arm onto the face or across the belly lifts the elbow out to the side; the
+    // shortest turn left the bend plane wherever rest had it and folded the forearm into the head or the trunk (25 cm
+    // short of the forehead, founder's review 2026-11-19).
     const JPH::Vec3 end = upper + JPH::Quat::sRotation(axis, bend) * lower;
     if (end.LengthSq() < 1e-8f)
     {
         return false;
     }
-    c.targetPose[r] = JPH::Quat::sFromTo(end.Normalized(), toTarget / distance).Normalized();
+    const JPH::Vec3 t = toTarget / distance;
+    const float endLength = end.Length();
+    // Pole: where the middle joint should point. Arms: down along the hanging arm and out to its side; legs: forward.
+    const bool arm = region == DD_REGION_ARM_LEFT || region == DD_REGION_ARM_RIGHT;
+    const JPH::Vec3 outward(c.pivotRig[r].GetX() >= 0.0f ? 1.0f : -1.0f, 0.0f, 0.0f);
+    JPH::Vec3 pole = arm ? upper.Normalized() + outward * 0.6f : JPH::Vec3(0.0f, 0.0f, 1.0f);
+    pole -= t * pole.Dot(t);
+    JPH::Quat shoulder = JPH::Quat::sFromTo(end / endLength, t); // The shortest turn (reaches, and the fallback)
+    if (reach < 0.85f * (a + b) && pole.LengthSq() > 1e-6f)
+    {
+        pole = pole.Normalized();
+        // In the rest-bent limb, the middle joint's offset from the line first joint -> end.
+        const JPH::Vec3 e0 = end / endLength;
+        JPH::Vec3 off0 = upper - e0 * upper.Dot(e0);
+        if (off0.LengthSq() > 1e-8f)
+        {
+            off0 = off0.Normalized();
+            // Rotation taking the rest frame (e0, off0) onto the wanted frame (t, pole).
+            const JPH::Vec3 s0 = e0.Cross(off0), s1 = t.Cross(pole);
+            const JPH::Mat44 restFrame(JPH::Vec4(e0, 0), JPH::Vec4(off0, 0), JPH::Vec4(s0, 0), JPH::Vec4(0, 0, 0, 1));
+            const JPH::Mat44 wantedFrame(JPH::Vec4(t, 0), JPH::Vec4(pole, 0), JPH::Vec4(s1, 0), JPH::Vec4(0, 0, 0, 1));
+            shoulder = (wantedFrame * restFrame.Transposed3x3()).GetQuaternion();
+        }
+    }
+    c.targetPose[r] = shoulder.Normalized();
     c.targetPose[m] = JPH::Quat::sRotation(axis, bend);
     c.musclesDirty = true;
     c.ragdoll->Activate(); // A body at rest is asleep and would ignore the new targets

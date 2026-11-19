@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MIT
-// Impact report (ADR-0024 §5, task 4.2): a limp pedestrian hit side-on by each vehicle pack at 40 km/h (the car brakes
-// hard at contact, as in the hit_* scenarios). Checked here: that the report records the events in order and that its
+// Impact report (ADR-0024 §5, task 4.2): a limp pedestrian hit side-on by each vehicle pack at 40 km/h on the crash
+// sandbox (the car brakes at contact). Checked here: that the report records the events in order and that its
 // numbers are consistent with each other. Whether the physics matches the literature is task 4.3 (passive baseline).
 #include <dragdoll/dragdoll.h>
 #include <dragdoll_scenarios/vehicles.hpp>
+#include <dragdoll_scenarios/crash.hpp>
+#include <dragdoll_scenarios/scenario.hpp>
 
 #include <doctest/doctest.h>
 
@@ -107,6 +109,37 @@ Hit run(const std::string& vehicle, float kmh, bool kinematic = false)
     dragdoll_world_destroy(world);
     return hit;
 }
+
+// The same hit on the crash sandbox (what the viewer's sandbox plays): limp, side-on, braking at the contact.
+Hit runSandbox(const std::string& vehicle, float kmh)
+{
+    CrashParams p;
+    p.vehicle = vehicle;
+    p.kmh = kmh;
+    p.limp = true;
+    p.brake = true;
+    Instance instance;
+    std::string error;
+    REQUIRE_MESSAGE(Instance::make(crashName(p), instance, error), error);
+    DdCharacter* human = instance.scenario->character();
+    REQUIRE(human != nullptr);
+    DdImpactReport r{};
+    r.struct_size = sizeof(DdImpactReport);
+    for (int f = 0; f < 120 * 12; ++f)
+    {
+        REQUIRE(dragdoll_character_get_impact_report(human, &r) == DD_OK);
+        if (r.finished != 0) break;
+        instance.hostFrame(1.0f / 120.0f);
+    }
+    Hit hit;
+    hit.report = r;
+    const auto name = [&](int32_t body) { return body >= 0 ? std::string(dragdoll_character_get_body_name(human, static_cast<uint32_t>(body))) : std::string("-"); };
+    hit.firstBody = name(r.first_body);
+    hit.groundBody = name(r.ground_body);
+    if (r.first_body >= 0) hit.firstRegion = dragdoll_character_get_body_region(human, static_cast<uint32_t>(r.first_body));
+    for (uint32_t i = 0; i < r.contact_count && i < 6; ++i) hit.order += (i ? ", " : "") + name(static_cast<int32_t>(r.contact_order[i]));
+    return hit;
+}
 } // namespace
 
 TEST_CASE("impact report: a limp pedestrian hit at 40 km/h by each vehicle pack - events in order, numbers consistent")
@@ -115,7 +148,7 @@ TEST_CASE("impact report: a limp pedestrian hit at 40 km/h by each vehicle pack 
     for (const std::string& vehicle : vehicleNames())
     {
         CAPTURE(vehicle);
-        const Hit hit = run(vehicle, 40.0f);
+        const Hit hit = runSandbox(vehicle, 40.0f);
         const DdImpactReport& r = hit.report;
         MESSAGE(vehicle << " 40 km/h: " << className(r.measured) << " | first " << hit.firstBody << " on the " << zoneName(r.first_zone) << " at "
                         << r.first_height << " m; order " << hit.order << " | head strike " << r.head_strike_time << " s on the "

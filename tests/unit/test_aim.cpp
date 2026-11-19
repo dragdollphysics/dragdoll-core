@@ -290,3 +290,36 @@ TEST_CASE("behaviour: car_hit raises both hands towards the vehicle once the vol
     CHECK(body("hand_l").z > body("pelvis").z); // Raised above the hips
     dragdoll_world_destroy(world);
 }
+
+TEST_CASE("aim: the two pain gestures are reachable - palms on the forehead, arms crossed around the belly")
+{
+    // car_hit's Hurt stage (founder, 2026-11-19): the hands must actually get there on an upright, floating body before
+    // it can work on a lying one. Alone each hand gets within a few cm; together the arms touch and push each other a
+    // little (self-collision), hence 11 cm.
+    Library lib;
+    const auto left = [](DdVec3 f) { return DdVec3{-f.y, f.x, 0.0f}; }; // up x forward (Z up)
+    {
+        Floating f;
+        const DdVec3 forehead = add(f.at("head"), f.forward, 0.13f);
+        const DdVec3 l = add(forehead, left(f.forward), 0.09f), r = add(forehead, left(f.forward), -0.09f);
+        f.aim(DD_REGION_ARM_LEFT, l, 0.95f, 1.2f);
+        MESSAGE("forehead, left alone: " << distance(f.at("hand_l"), l) * 100.0f << " cm");
+        f.aim(DD_REGION_ARM_RIGHT, r, 0.95f, 1.2f);
+        MESSAGE("forehead: left hand " << distance(f.at("hand_l"), l) * 100.0f << " cm, right hand " << distance(f.at("hand_r"), r) * 100.0f
+                                       << " cm from their places");
+        CHECK(distance(f.at("hand_l"), l) < 0.11f);
+        CHECK(distance(f.at("hand_r"), r) < 0.11f);
+    }
+    {
+        Floating f;
+        const DdVec3 belly = f.at("lower_spine");
+        const DdVec3 l = add(add(belly, f.forward, 0.17f), left(f.forward), -0.10f), r = add(add(belly, f.forward, 0.25f), left(f.forward), 0.10f);
+        f.aim(DD_REGION_ARM_LEFT, l, 0.95f, 1.2f);
+        MESSAGE("belly, left alone: " << distance(f.at("hand_l"), l) * 100.0f << " cm");
+        f.aim(DD_REGION_ARM_RIGHT, r, 0.95f, 1.2f);
+        MESSAGE("belly: left hand " << distance(f.at("hand_l"), l) * 100.0f << " cm, right hand " << distance(f.at("hand_r"), r) * 100.0f
+                                    << " cm from their places");
+        CHECK(distance(f.at("hand_l"), l) < 0.11f);
+        CHECK(distance(f.at("hand_r"), r) < 0.11f);
+    }
+}

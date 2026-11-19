@@ -429,7 +429,7 @@ int main(int argc, char** argv)
         else if (a == "--tension")
         {
             const std::string t = next();
-            gTension = t == "relaxed" ? DD_TENSION_RELAXED : t == "tense" ? DD_TENSION_TENSE : t == "stunned" ? DD_TENSION_STUNNED : DD_TENSION_LIMP;
+            gTension = t == "relaxed" ? DD_TENSION_RELAXED : t == "tense" ? DD_TENSION_TENSE : t == "stunned" ? DD_TENSION_STUNNED : t == "braced" ? DD_TENSION_BRACED : DD_TENSION_LIMP;
         }
         else
         {

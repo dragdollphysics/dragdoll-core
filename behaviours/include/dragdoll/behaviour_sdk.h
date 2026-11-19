@@ -50,6 +50,9 @@ struct Percept
     const DdTransform* bodies = nullptr;
     DdRegion bodyRegion[kMaxBodies] = {};
     int32_t headBody = -1;
+    // Which way the body's front points now (world, unit): the head's forward (where the face looks), the pelvis'
+    // forward (where the belly faces) and the pelvis' left - the rig's +Z and +X carried by each body's rotation.
+    DdVec3 headForward{}, trunkForward{}, trunkLeft{};
 
     // Threat (ADR-0024). threat.collider == DD_INVALID_COLLIDER: none.
     DdThreat threat{};

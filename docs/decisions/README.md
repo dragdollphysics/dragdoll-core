@@ -31,6 +31,7 @@ Each ADR is one page. Change a decision only by adding a new ADR that supersedes
 | [0025](0025-reaction-chain.md) | The reaction chain: stages, reflex layers, vitality, behaviour SDK | Accepted |
 | [0026](0026-vehicles-and-bodies-on-the-ground.md) | Vehicles and bodies on the ground: pass-through once landed, the bump is the host's | Accepted |
 | [0027](0027-the-game-decides-dragdoll-draws.md) | The game decides, DragDoll draws: start on the game's own hit, release on its next step | Accepted |
+| [0028](0028-crash-sandbox-and-analyzer.md) | One crash sandbox and a knowledge-based analyzer: what is tested is what is seen | Accepted |
 
 ## Template
 ```

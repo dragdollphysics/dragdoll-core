@@ -3,7 +3,7 @@
   "version": 1,
   "name": "sports",
   "description": "Low sports car: very low bumper and bonnet edge, long flat bonnet, steep-raked windscreen. Tends to scoop the body up (wrap / roof vault at speed).",
-  "space": "Vehicle space: metres, origin = ground point under the vehicle's centre; forward = driving direction. Angles in degrees: hood_angle = rise of the bonnet towards the windscreen, windshield_angle = from horizontal.",
+  "space": "Vehicle space: metres, origin = ground point under the vehicle's centre; forward = driving direction. Angles in degrees: hood_angle = rise of the bonnet towards the windscreen, windshield_angle = from horizontal. brake_decel = emergency braking on a dry road, m/s^2 (own generic values: about 0.7 g for cars, after the 0.7 g used in published reconstructions; less for heavy vehicles).",
   "sources": "Own generic class dimensions; bonnet-edge-height classes follow the pedestrian-impact literature (low / medium / high fronts).",
   "profile": {
     "length": 4.4,
@@ -17,6 +17,7 @@
     "windshield_angle": 25,
     "roof_height": 1.2,
     "roof_length": 1.0,
-    "rear_height": 0.95
+    "rear_height": 0.95,
+    "brake_decel": 8.0
   }
 }

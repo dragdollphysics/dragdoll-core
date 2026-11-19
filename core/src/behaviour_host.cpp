@@ -248,6 +248,15 @@ void updateBehaviour(DdCharacter& c, World& world, float dt)
     }
     percept.bodies = c.perceptBodies.data();
     percept.headBody = c.headBody;
+    {
+        const size_t head = c.headBody >= 0 ? static_cast<size_t>(c.headBody) : 0;
+        const JPH::Vec3 hf = c.currRotation[head] * (c.restRig[head].Conjugated() * JPH::Vec3::sAxisZ());
+        const JPH::Vec3 tf = c.currRotation[0] * (c.restRig[0].Conjugated() * JPH::Vec3::sAxisZ());
+        const JPH::Vec3 tl = c.currRotation[0] * (c.restRig[0].Conjugated() * JPH::Vec3::sAxisX());
+        percept.headForward = toDd(hf);
+        percept.trunkForward = toDd(tf);
+        percept.trunkLeft = toDd(tl);
+    }
 
     // Threat, how long it has been one, and whether the character knows: told by the host, or seen — the object lies
     // within the head's field of view (about 100 degrees to each side of where the head faces).

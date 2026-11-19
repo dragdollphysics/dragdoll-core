@@ -314,7 +314,9 @@ typedef enum DdTension
     DD_TENSION_RELAXED = 1, /* Low tone: 15% strength, 1.2 Hz, critically damped; loose but keeps some shape. */
     DD_TENSION_TENSE = 2,   /* Braced: full strength, 8 Hz, over-damped: reaches a pose and locks there. */
     DD_TENSION_STUNNED = 3, /* Dazed: 30% strength, 0.6 Hz, under-damped; folds slowly and wobbles. */
-    DD_TENSION_COUNT = 4,
+    DD_TENSION_BRACED = 4,  /* On guard: 50% strength, 3 Hz, critically damped; holds a stance but gives under load
+                             * (between relaxed and tense: the startle eases into it, task 4.9). */
+    DD_TENSION_COUNT = 5,
     DD_TENSION_FORCE_32BIT = 0x7FFFFFFF
 } DdTension;
 

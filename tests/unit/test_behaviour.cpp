@@ -4,6 +4,8 @@
 #include <dragdoll/dragdoll.h>
 #include <dragdoll_scenarios/vehicles.hpp>
 
+#include <dragdoll_scenarios/crash.hpp>
+
 #include <doctest/doctest.h>
 
 #include <cmath>
@@ -257,72 +259,35 @@ TEST_CASE("behaviour: car_hit startles an aware character after the reflex laten
     }
 }
 
-TEST_CASE("behaviour: car_hit after contact - auto handover, struck leg yields, brace after the reflex latency, carried, after")
+TEST_CASE("behaviour: car_hit after contact - auto handover, struck leg yields, brace after the reflex latency, guard on the car")
 {
-    const float facing = yawFacing(DdVec3{-1, 0, 0});
+    // Runs on the crash sandbox (what the viewer shows): a sedan at 36 km/h that keeps going, as game drivers do; a
+    // pedestrian facing it who sees it coming, and one side-on who never does. The checks are the analyzer's contract
+    // rules: handover_before_contact, reflex_latency (unaware), struck_leg_gives (aware), guard_on_vehicle.
     Library lib;
-    for (bool aware : {false, true})
+    for (const char* name : {"crash:vehicle=sedan,kmh=36,aware=1,facing=0", "crash:vehicle=sedan,kmh=36,aware=0,facing=90"})
     {
-        CAPTURE(aware);
-        Scene scene(aware ? facing : facing + 90.0f); // Aware: facing the car; unaware: side-on, looking away
-        REQUIRE(dragdoll_character_set_behaviour(scene.human, "car_hit") == DD_OK);
-        REQUIRE(dragdoll_character_set_tension(scene.human, DD_TENSION_RELAXED, 0.0f) == DD_OK);
-        REQUIRE(dragdoll_character_set_auto_handover(scene.human, 0.0125f) == DD_OK);
-        CHECK(dragdoll_character_get_auto_handover(scene.human) == doctest::Approx(0.0125f));
-        if (!aware)
+        CAPTURE(std::string(name));
+        dragdoll::scenarios::CrashParams p;
+        dragdoll::scenarios::CrashObservations o;
+        dragdoll::scenarios::CrashAnalysis a;
+        std::string error;
+        REQUIRE(dragdoll::scenarios::parseCrashName(name, p, error));
+        REQUIRE_MESSAGE(dragdoll::scenarios::runCrash(p, o, a, error), error);
+        MESSAGE(name << ": handover " << o.handover << " s, contact " << o.contact << ", brace " << o.brace << ", carried " << o.carried
+                     << ", guard " << o.guard << ", off the car " << o.offVehicle << " | " << dragdoll::scenarios::verdictName(a.overall));
+        REQUIRE(o.contact >= 0.0);
+        int contracts = 0;
+        for (const dragdoll::scenarios::RuleResult& r : a.results)
         {
-            REQUIRE(dragdoll_character_set_awareness(scene.human, 0.0f) == DD_OK);
+            if (r.kind != "contract" && r.kind != "sanity") continue;
+            CAPTURE(r.id);
+            CAPTURE(r.measured);
+            CAPTURE(r.expected);
+            CHECK(r.verdict == dragdoll::scenarios::Verdict::Pass);
+            if (r.kind == "contract") ++contracts;
         }
-
-        // Drive at 120 host frames a second and note when things happen.
-        double handover = -1, impact = -1, brace = -1, carried = -1, after = -1, guarded = -1;
-        bool legYielded = false;
-        for (int f = 0; f < 3 * 120; ++f)
-        {
-            scene.x += 10.0f / 120.0f;
-            const DdTransform target{{scene.x, 0, 0}, {0, 0, 0, 1}};
-            REQUIRE(dragdoll_world_set_kinematic_targets(scene.world, &scene.car, &target, 1) == DD_OK);
-            REQUIRE(dragdoll_world_step(scene.world, 1.0f / 120.0f, nullptr) == DD_OK);
-            const double t = f / 120.0;
-            const std::string status = scene.status();
-            if (handover < 0 && dragdoll_character_get_kinematic(scene.human) == 0) handover = t;
-            if (impact < 0 && status.rfind("impact", 0) == 0)
-            {
-                impact = t;
-                // A leg braced by the startle gives at once where the bumper meets it.
-                legYielded = dragdoll_character_get_region_tension(scene.human, DD_REGION_LEG_LEFT) == DD_TENSION_RELAXED ||
-                             dragdoll_character_get_region_tension(scene.human, DD_REGION_LEG_RIGHT) == DD_TENSION_RELAXED;
-            }
-            // The reflex co-contraction (the trunk may already be easing again if the body lies on the car in the same step).
-            if (brace < 0 && impact >= 0 && dragdoll_character_get_region_tension(scene.human, DD_REGION_HEAD_NECK) == DD_TENSION_TENSE)
-            {
-                brace = t;
-            }
-            if (carried < 0 && status.rfind("carried", 0) == 0) carried = t;
-            if (guarded < 0 && status.find("guard") != std::string::npos) guarded = t;
-            if (after < 0 && (status.rfind("airborne", 0) == 0 || status.rfind("landing", 0) == 0 || status.rfind("tumble", 0) == 0)) after = t;
-        }
-        MESSAGE(std::string(aware ? "aware" : "unaware") << ": handover " << handover << " s, impact " << impact << ", brace " << brace
-                                              << ", carried " << carried << ", after " << after);
-        REQUIRE(handover >= 0.0);
-        REQUIRE(impact >= 0.0);
-        CHECK(impact - handover < 0.05); // Handed over just before the contact
-        CHECK(handover <= impact);
-        REQUIRE(brace >= 0.0);
-        if (!aware) // (An aware character's neck is already tense from the startle.)
-        {
-            CHECK(brace - impact >= 0.08); // The 0.1 s reflex latency, give or take the step it is counted on
-            CHECK(brace - impact <= 0.11);
-        }
-        CHECK(after > brace);         // It left the car in the end
-        REQUIRE(guarded >= 0.0);
-        MESSAGE("guard " << guarded - impact << " s after contact");
-        CHECK(guarded - carried <= 0.01); // Guards as soon as it lies on the car (reflexes available by then)
-        CHECK(guarded < after);           // ...and only on the car: never starts in the air
-        if (aware)
-        {
-            CHECK(legYielded); // The startle had tensed the legs
-        }
+        CHECK(contracts >= 3); // handover, guard, and the reflex or the struck leg giving
     }
 }
 

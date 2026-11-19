@@ -1,0 +1,23 @@
+{
+  "format": "dragdoll-vehicle",
+  "version": 1,
+  "name": "pickup",
+  "description": "Pickup truck: high, flat bonnet just behind a tall bumper, short cab, open bed.",
+  "space": "Vehicle space: metres, origin = ground point under the vehicle's centre; forward = driving direction. Angles in degrees: hood_angle = rise of the bonnet towards the windscreen, windshield_angle = from horizontal. brake_decel = emergency braking on a dry road, m/s^2 (own generic values: about 0.7 g for cars, after the 0.7 g used in published reconstructions; less for heavy vehicles).",
+  "sources": "Own generic class dimensions, rounded from aggregate measurements (medians per class) of the vehicles of a game-scale world whose people stand about 1.93 m (ADR-0014, founder decision 2026-11-18). No game data or shapes are included.",
+  "profile": {
+    "length": 5.0,
+    "width": 2.2,
+    "clearance": 0.29,
+    "bumper_height": 0.7,
+    "bonnet_edge_height": 1.08,
+    "bonnet_edge_setback": 0.08,
+    "hood_length": 1.0,
+    "hood_angle": 3,
+    "windshield_angle": 38,
+    "roof_height": 1.72,
+    "roof_length": 0.9,
+    "rear_height": 1.05,
+    "brake_decel": 6.5
+  }
+}

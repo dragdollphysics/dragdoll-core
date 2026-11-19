@@ -26,6 +26,7 @@ struct VehicleProfile
     float windshieldAngle = 0;   // Degrees from horizontal
     float roofHeight = 0, roofLength = 0;
     float rearHeight = 0;        // Top of the vertical rear face
+    float brakeDecel = 7.0f;     // m/s^2: emergency braking on a dry road ("brake_decel"; 7 if not given)
 
     // Side outline as (forward, up) points, counter-clockwise, origin = ground under the vehicle's centre.
     std::vector<std::array<float, 2>> outline() const;

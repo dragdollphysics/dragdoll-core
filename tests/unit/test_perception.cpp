@@ -183,7 +183,16 @@ TEST_CASE("perception: the front profile probe recovers each vehicle pack's own 
                      << t.profile.windscreen_angle << " (" << p.windshieldAngle << "), roof " << t.profile.roof_height << " ("
                      << p.roofHeight << "), predicted " << static_cast<int>(t.predicted));
         const bool flatFront = p.hoodLength < 0.05f; // No bonnet: the front runs up to the roof
-        if (flatFront) CHECK(t.profile.front_top_height >= p.bonnetEdgeHeight - 0.11f); // The face simply carries on up
+        // A nose rising steeper than 60 degrees from the bumper to the bonnet edge reads as part of the near-vertical
+        // front face (tall, blunt fronts): the face then ends somewhere on that nose.
+        const bool steepNose = p.bonnetEdgeHeight - p.bumperHeight > std::tan(60.0f * 3.14159265f / 180.0f) * p.bonnetEdgeSetback;
+        if (flatFront && p.windshieldAngle >= 60.0f) CHECK(t.profile.front_top_height >= p.bonnetEdgeHeight - 0.11f); // The face carries on up
+        else if (flatFront) CHECK(t.profile.front_top_height >= p.bumperHeight - 0.11f); // A raked screen above a blunt nose (cab-over)
+        else if (steepNose)
+        {
+            CHECK(t.profile.front_top_height >= p.bumperHeight - 0.11f);
+            CHECK(t.profile.front_top_height <= p.bonnetEdgeHeight + 0.11f);
+        }
         else CHECK(std::fabs(t.profile.front_top_height - p.bumperHeight) <= 0.11f);
         // The motorbike's fairing rises at exactly the regulation's 40 degrees: its "edge" is wherever the rays fall.
         if (name != "motorbike") CHECK(std::fabs(t.profile.leading_edge_height - (flatFront ? p.roofHeight : p.bonnetEdgeHeight)) <= 0.08f);
@@ -193,7 +202,8 @@ TEST_CASE("perception: the front profile probe recovers each vehicle pack's own 
             CHECK(std::fabs(t.profile.bonnet_length - p.hoodLength) <= 0.2f);
             CHECK(std::fabs(t.profile.bonnet_angle - p.hoodAngle) <= (p.hoodLength < 0.8f ? 6.0f : 4.0f)); // Short bonnets: few rays
             const float screenRise = p.roofHeight - (p.bonnetEdgeHeight + p.hoodLength * std::tan(p.hoodAngle * 3.14159265f / 180.0f));
-            if (screenRise > 0.4f) CHECK(std::fabs(t.profile.windscreen_angle - p.windshieldAngle) <= 6.0f); // Else too short for 10 cm rays
+            // Else too short for 10 cm rays; near-upright screens read up to ~10 degrees flatter (the rays graze them).
+            if (screenRise > 0.4f) CHECK(std::fabs(t.profile.windscreen_angle - p.windshieldAngle) <= (p.windshieldAngle >= 60.0f ? 10.0f : 6.0f));
         }
         else if (flatFront)
         {

@@ -27,6 +27,7 @@ add_executable(dragdoll_tests
     unit/main.cpp
     unit/test_world.cpp
     unit/test_scenarios.cpp
+    unit/test_crash.cpp
     unit/test_character.cpp
     unit/test_vehicles.cpp
     unit/test_muscles.cpp

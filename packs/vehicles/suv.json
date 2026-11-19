@@ -3,7 +3,7 @@
   "version": 1,
   "name": "suv",
   "description": "Sport utility vehicle: high, blunt bonnet edge at pelvis height, upright windscreen. Tends towards forward projection rather than wrap.",
-  "space": "Vehicle space: metres, origin = ground point under the vehicle's centre; forward = driving direction. Angles in degrees: hood_angle = rise of the bonnet towards the windscreen, windshield_angle = from horizontal.",
+  "space": "Vehicle space: metres, origin = ground point under the vehicle's centre; forward = driving direction. Angles in degrees: hood_angle = rise of the bonnet towards the windscreen, windshield_angle = from horizontal. brake_decel = emergency braking on a dry road, m/s^2 (own generic values: about 0.7 g for cars, after the 0.7 g used in published reconstructions; less for heavy vehicles).",
   "sources": "Own generic class dimensions; bonnet-edge-height classes follow the pedestrian-impact literature (low / medium / high fronts).",
   "profile": {
     "length": 4.8,
@@ -17,6 +17,7 @@
     "windshield_angle": 35,
     "roof_height": 1.85,
     "roof_length": 2.0,
-    "rear_height": 1.8
+    "rear_height": 1.8,
+    "brake_decel": 6.5
   }
 }

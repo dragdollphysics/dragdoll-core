@@ -4,6 +4,7 @@
 #include <dragdoll/dragdoll.h>
 #include <dragdoll_scenarios/scenario.hpp>
 #include <dragdoll_scenarios/vehicles.hpp>
+#include <dragdoll_scenarios/crash.hpp>
 
 #include <doctest/doctest.h>
 
@@ -29,7 +30,8 @@ struct Library
 TEST_CASE("vehicles: the six built-in classes parse into closed outward meshes of the stated size")
 {
     const std::vector<std::string> names = vehicleNames();
-    CHECK(names == std::vector<std::string>{"bus", "motorbike", "sedan", "sports", "suv", "van"});
+    CHECK(names == std::vector<std::string>{"box_truck", "bus", "estate", "heavy_truck", "motorbike", "pickup", "sedan", "sports", "suv",
+                                            "van"});
     for (const std::string& name : names)
     {
         CAPTURE(name);
@@ -88,9 +90,9 @@ TEST_CASE("vehicles: invalid profiles are rejected with a precise message")
     CHECK_THROWS_WITH_AS(parseVehicle(R"({"format":"dragdoll-vehicle","version":1,"profile":{}})"),
                          doctest::Contains("length"), std::invalid_argument);
     std::string tooLong = builtinVehicle("sedan");
-    const size_t at = tooLong.find("\"roof_length\": 1.4");
+    const size_t at = tooLong.find("\"roof_length\": ");
     REQUIRE(at != std::string::npos);
-    tooLong.replace(at, 18, "\"roof_length\": 9.0");
+    tooLong.replace(at, tooLong.find_first_of(",}", at) - at, "\"roof_length\": 9.0");
     CHECK_THROWS_WITH_AS(parseVehicle(tooLong), doctest::Contains("longer than the vehicle"), std::invalid_argument);
 }
 
@@ -103,41 +105,32 @@ TEST_CASE("vehicles: braking drive covers v*t, then stops after v^2/(2a)")
     CHECK(d.distance(10.0) == doctest::Approx(20.0));
 }
 
-TEST_CASE("vehicles: every hit scenario throws the pedestrian ahead of or onto the vehicle, never through it")
+TEST_CASE("vehicles: every vehicle, braking at 40 km/h on a limp and a game pedestrian - no sanity or contract rule broken")
 {
+    // Was: "every hit scenario throws the pedestrian ahead of or onto the vehicle, never through it" - now the crash
+    // analyzer's sanity rules (not_through_vehicle, moved_by_hit, not_through_ground), run on the crash sandbox.
     Library lib;
     for (const std::string& vehicle : vehicleNames())
     {
-        const std::string name = "hit_" + vehicle + "_40kmh";
-        CAPTURE(name);
-        Instance run;
-        std::string error;
-        REQUIRE(Instance::make(name, run, error));
-        DdCharacter* c = run.scenario->character();
-        REQUIRE(c != nullptr);
-        for (int frame = 0; frame < 180; ++frame) // 3 s at 60 fps: the vehicle has stopped (40 km/h, 7 m/s^2)
+        for (bool limp : {true, false})
         {
-            run.hostFrame(1.0f / 60.0f);
+            CrashParams p;
+            p.vehicle = vehicle;
+            p.kmh = 40.0f;
+            p.brake = true;
+            p.limp = limp;
+            CAPTURE(crashName(p));
+            CrashObservations o;
+            CrashAnalysis a;
+            std::string error;
+            REQUIRE_MESSAGE(runCrash(p, o, a, error), error);
+            for (const RuleResult& r : a.results)
+            {
+                CAPTURE(r.id);
+                CAPTURE(r.measured);
+                CAPTURE(r.expected);
+                CHECK(r.verdict != Verdict::Fail);
+            }
         }
-        std::vector<DdTransform> bodies(dragdoll_character_get_body_count(c));
-        REQUIRE(dragdoll_character_get_body_transforms(c, 0, bodies.data(), static_cast<uint32_t>(bodies.size())) == DD_OK);
-        const VehicleProfile v = parseVehicle(builtinVehicle(vehicle));
-        const float speed = 40.0f / 3.6f;
-        // Front face position once stopped: starts 0.25 m before the pedestrian, 0.1 s of travel, then braking.
-        const float front = -0.25f + speed * speed / (2.0f * 7.0f);
-        const DdTransform& pelvis = bodies[static_cast<size_t>(dragdoll_character_find_body(c, "pelvis"))];
-        float lowest = 1e9f;
-        for (const DdTransform& t : bodies)
-        {
-            REQUIRE(std::isfinite(t.position.x));
-            REQUIRE(std::isfinite(t.position.z));
-            lowest = std::min(lowest, t.position.z);
-        }
-        CAPTURE(pelvis.position.x);
-        CAPTURE(pelvis.position.z);
-        CAPTURE(front);
-        CHECK(lowest > -0.02f);                                                      // Not sunk into the ground
-        CHECK((pelvis.position.x > front - 0.3f || pelvis.position.z > v.bonnetEdgeHeight)); // Ahead of or on the vehicle
-        CHECK(pelvis.position.x > 1.0f);                                             // Actually moved by the hit
     }
 }

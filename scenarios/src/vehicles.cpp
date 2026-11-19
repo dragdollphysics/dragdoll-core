@@ -176,6 +176,7 @@ VehicleProfile parseVehicle(std::string_view text)
     v.roofHeight = number(p, "roof_height", 0.3f, 5.0f);
     v.roofLength = number(p, "roof_length", 0.0f, 24.0f);
     v.rearHeight = number(p, "rear_height", 0.1f, 5.0f);
+    if (p.contains("brake_decel")) v.brakeDecel = number(p, "brake_decel", 1.0f, 12.0f);
     if (!(v.bumperHeight > v.clearance) || v.bonnetEdgeHeight < v.bumperHeight || v.roofHeight < v.bonnetEdgeHeight ||
         v.rearHeight > v.roofHeight || v.rearHeight <= v.clearance)
     {

@@ -8,6 +8,11 @@
     ./scripts/watch.ps1 -Replay build/shove.ddrec
     ./scripts/watch.ps1 -List
     ./scripts/watch.ps1 pile_zup -Build      # rebuild first
+    ./scripts/watch.ps1 -Attach 47830        # the live game, in a second window next to the scenario viewer
+
+    Two viewers can be open at once: one on a scenario / recording (command port 47820) and one attached to a live
+    game (-Attach, command port 47821: dragdoll_ctl --port 47821 ...). Opening one replaces only the viewer of the
+    same kind; -Build closes both (the build rewrites the viewer's exe).
 #>
 param(
     [Parameter(Position = 0)]
@@ -42,9 +47,14 @@ if ($Replay) {
 }
 $exe = Join-Path $repoRoot "build\$preset\bin\dragdoll_view.exe"
 
-# A running viewer locks dragdoll.dll and would pile up windows: close any previous one first.
-Get-Process dragdoll_view -ErrorAction SilentlyContinue | Stop-Process -Force
-Start-Sleep -Milliseconds 200
+# One viewer per kind (scenario / live game): close the previous one of the same kind so windows do not pile up.
+# Each viewer runs its own copy of dragdoll.dll, so the two kinds never lock each other. -Build closes both: the
+# build relinks the viewer's exe.
+$live = $Attach -gt 0
+$previous = @(Get-CimInstance Win32_Process -Filter "Name = 'dragdoll_view.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $Build -or (($_.CommandLine -match '--attach') -eq $live) })
+foreach ($v in $previous) { Stop-Process -Id $v.ProcessId -Force -ErrorAction SilentlyContinue }
+if ($previous.Count -gt 0) { Start-Sleep -Milliseconds 200 }
 
 if ($Build -or -not (Test-Path $exe)) {
     & (Join-Path $PSScriptRoot 'dd.ps1') $preset -Step configure
@@ -63,7 +73,7 @@ $viewerArgs += @('--rig', "`"$rigFile`"")
 if ($Fps -ne 0) { $viewerArgs += @('--fps', $Fps) }
 if ($Record) { $viewerArgs += @('--record', "`"$((Resolve-Path -LiteralPath (Split-Path $Record -Parent)).Path)\$(Split-Path $Record -Leaf)`"") }
 if ($Replay) { $viewerArgs += @('--replay', "`"$((Resolve-Path -LiteralPath $Replay).Path)`"") }
-if ($Attach -gt 0) { $viewerArgs = @('--attach', $Attach) }
+if ($live) { $viewerArgs = @('--attach', $Attach, '--port', 47821) }
 if ($Dll) { $viewerArgs += @('--dll', "`"$((Resolve-Path -LiteralPath $Dll).Path)`"") }
 $p = Start-Process -FilePath $exe -ArgumentList $viewerArgs -WorkingDirectory (Split-Path $exe) -PassThru
-Write-Host "dragdoll_view started (pid $($p.Id)): $Scenario"
+Write-Host "dragdoll_view started (pid $($p.Id)): $(if ($live) { "live game on port $Attach (ctl port 47821)" } else { $Scenario })"

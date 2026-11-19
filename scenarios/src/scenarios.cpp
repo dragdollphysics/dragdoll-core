@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: MIT
 #include <dragdoll_scenarios/scenario.hpp>
 #include <dragdoll_scenarios/vehicles.hpp>
+#include <dragdoll_scenarios/crash.hpp>
 
 #include <cmath>
+#include <iterator>
 #include <random>
 #include <cstdio>
+#include <cstdlib>
 #include <functional>
 #include <map>
 
@@ -289,6 +292,16 @@ private:
 // ------------------------------------------------------------------------------------------------
 // Characters: the humanoid16 rig as a limp ragdoll (no muscles yet).
 // ------------------------------------------------------------------------------------------------
+DdQuat mul(DdQuat a, DdQuat b)
+{
+    return DdQuat{a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y, a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+                  a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w, a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z};
+}
+DdQuat conj(DdQuat q)
+{
+    return DdQuat{-q.x, -q.y, -q.z, q.w};
+}
+
 DdQuat axisAngle(DdVec3 axis, float degrees)
 {
     const float half = degrees * 3.14159265f / 360.0f;
@@ -320,6 +333,7 @@ public:
         desc.rig_json = rigJson();
         desc.transform.position = mOrigin;
         desc.transform.rotation = mRotation;
+        desc.size_scale = mSizeScale;
         dragdoll_character_create(world, &desc, &mCharacter);
         if (mCharacter != nullptr)
         {
@@ -361,9 +375,14 @@ protected:
     const char* mDescription;
     DdVec3 mOrigin;
     DdQuat mRotation;
+    float mSizeScale = 1.0f; // The rig's size (1 = the 1.75 m rig)
     DdCharacter* mCharacter = nullptr;
     std::vector<DdTransform> mBodies;
 };
+
+// Pedestrians in the vehicle scenarios stand as tall as the people of the game-scale world the vehicle packs are
+// measured in (about 1.93 m; ADR-0014, founder decision 2026-11-18).
+constexpr float kPedestrianSize = 1.10f;
 
 // Same as a drop, plus a sideways shove on the chest while falling.
 class ShoveScenario final : public RagdollScenario
@@ -799,11 +818,12 @@ public:
                            (braced ? std::string() : mProfile.description);
         mName = mNameText.c_str();
         mDescription = mDescriptionText.c_str();
+        mSizeScale = kPedestrianSize;
         mDrive.speed = kmh / 3.6f;
         mDrive.brakeAt = mContactTime;
         mDrive.decel = 7.0f; // Emergency braking on a dry road
         // The front face reaches the pedestrian's near side (~0.25 m from the centre) at the contact time.
-        mStart = -0.25f - mProfile.length * 0.5f - mDrive.speed * mContactTime;
+        mStart = -0.25f * kPedestrianSize - mProfile.length * 0.5f - mDrive.speed * mContactTime;
     }
     DdVec3 cameraTarget() const override { return DdVec3{1.5f, 0.0f, 0.8f}; }
     float cameraDistance() const override { return mProfile.length > 8.0f ? 16.0f : 9.0f; }
@@ -921,6 +941,483 @@ private:
     bool mReflexes = true;
 };
 
+// Starting states' key poses: our own rounded numbers, averaged over many measurements of how pedestrians react in a
+// game-scale world (ADR-0014, founder decisions 2026-11-19), in the vehicle's frame (founder's drawing): whatever way
+// it faced, within 0.2 s the pedestrian turns to a facing set by the vehicle (k*Facing: degrees from the vehicle's
+// travel, + = away from its path - the dodge faces the path and steps back from it, the dive faces away and dives,
+// hands up faces the vehicle), then moves: `move` = away from the path, up (the root's rise), along the vehicle's
+// travel, in metres (rounded to 0.05). The body: the root's rotation relative to that facing, and the joints, as
+// rotation vectors in degrees about the rig's axes (rounded to 5). Bodies in rig order.
+struct StartKey
+{
+    float t;
+    float move[3]; // away from the vehicle's path, up, along its travel
+    int turn[3];
+    int joints[16][3];
+};
+// Dodge: 28 measurements; faces -80 deg from the vehicle's travel (+ = away from its path); triggered 1.14 s before the vehicle arrives (n=28)
+constexpr float kStepFacing = -80.0f;
+const StartKey kStepKeys[] = {
+    {0.00f, {0.00f, 0.00f, 0.00f}, {0, 0, 0}, {{0, 0, 0}, {5, 0, 0}, {5, 5, 0}, {5, 0, 0}, {10, -35, 25}, {-40, 0, 0}, {15, 5, 10}, {0, 15, -20}, {-35, 0, 0}, {10, 5, 0}, {-20, 10, -5}, {25, 0, 0}, {10, 0, 0}, {-5, -5, 0}, {35, 0, 0}, {5, 0, 0}}},
+    {0.20f, {0.00f, 0.05f, 0.00f}, {0, 5, -5}, {{0, 0, 0}, {0, 5, 5}, {5, 0, 5}, {10, 0, -5}, {-25, -20, 15}, {-25, 0, 0}, {5, -5, 5}, {5, 10, -25}, {-20, 0, 0}, {15, 0, 5}, {-10, 20, 10}, {30, 0, 0}, {5, 10, 0}, {-20, -5, 5}, {30, 0, 0}, {15, -5, 5}}},
+    {0.40f, {0.35f, 0.10f, 0.00f}, {-5, 0, 0}, {{0, 0, 0}, {15, 20, 5}, {15, -5, 0}, {15, 0, -5}, {-75, -15, 45}, {-45, 0, 0}, {5, 10, 5}, {-25, -5, -60}, {-90, 0, 0}, {10, 20, 0}, {0, 25, 10}, {35, 0, 0}, {15, -5, 5}, {-35, -5, -15}, {40, 0, 0}, {30, -10, 5}}},
+    {0.60f, {0.80f, 0.05f, -0.05f}, {5, -10, 0}, {{0, 0, 0}, {25, 10, 5}, {10, 0, 0}, {10, 0, -10}, {-40, -10, 40}, {-50, 0, 0}, {-10, 10, 10}, {-15, 20, -55}, {-65, 0, 0}, {5, 0, 5}, {-25, 30, 10}, {35, 0, 0}, {-5, -5, 0}, {-30, -5, -15}, {60, 0, 0}, {5, 0, 15}}},
+    {0.75f, {1.15f, 0.05f, -0.05f}, {10, -30, -5}, {{0, 0, 0}, {10, 10, 5}, {0, 0, 0}, {10, 0, -10}, {20, -15, 25}, {-35, 0, 0}, {0, 5, 10}, {20, 40, -35}, {-45, 0, 0}, {5, -10, 10}, {-40, 20, 20}, {30, 0, 0}, {10, 5, -5}, {-20, -5, 0}, {45, 0, 0}, {-5, 0, 10}}},
+    {0.90f, {1.30f, 0.00f, -0.10f}, {10, -35, -5}, {{0, 0, 0}, {5, 15, 0}, {0, 5, 0}, {10, 0, -10}, {25, -25, 30}, {-35, 0, 0}, {10, 5, 5}, {35, 40, -20}, {-40, 0, 0}, {10, -10, 10}, {-40, 20, 25}, {25, 0, 0}, {15, 10, -5}, {-25, -10, 5}, {45, 0, 0}, {-10, 5, 5}}},
+};
+// Dive: 8 measurements; faces +85 deg from the vehicle's travel (+ = away from its path); triggered 1.01 s before the vehicle arrives (n=8)
+constexpr float kDiveFacing = 85.0f;
+const StartKey kDiveKeys[] = {
+    {0.00f, {0.00f, 0.00f, 0.00f}, {0, 0, 0}, {{0, 0, 0}, {5, 0, 0}, {0, 0, 0}, {5, 0, -5}, {15, -40, 20}, {-50, 0, 0}, {25, 10, 30}, {15, 5, -15}, {-35, 0, 0}, {10, 25, 0}, {0, 0, -5}, {15, 0, 0}, {5, 0, 5}, {-20, -10, 0}, {35, 0, 0}, {20, -5, 0}}},
+    {0.20f, {0.00f, 0.05f, 0.00f}, {0, -10, -10}, {{0, 0, 0}, {-5, 0, 5}, {5, 0, 5}, {10, -5, 0}, {-10, -20, 10}, {-15, 0, 0}, {5, -5, 5}, {5, 15, -10}, {-5, 0, 0}, {20, -5, 5}, {-15, 15, 5}, {30, 0, 0}, {5, 10, -5}, {-15, -10, 0}, {30, 0, 0}, {15, -5, 5}}},
+    {0.40f, {0.30f, -0.05f, 0.05f}, {25, -30, 0}, {{0, 0, 0}, {-15, -15, 0}, {30, -15, -10}, {-5, 5, 5}, {-55, -20, 80}, {-60, 0, 0}, {5, 10, 15}, {5, 5, -25}, {-35, 0, 0}, {15, 5, 0}, {-35, 10, 5}, {60, 0, 0}, {25, 5, -20}, {-60, -20, 0}, {70, 0, 0}, {-5, -5, 5}}},
+    {0.60f, {0.80f, -0.05f, 0.05f}, {25, -5, 5}, {{0, 0, 0}, {-5, -5, 0}, {15, 10, -10}, {10, 35, 5}, {-20, -25, 45}, {-50, 0, 0}, {5, 5, 5}, {40, 10, -15}, {-60, 0, 0}, {15, 5, 0}, {-60, 15, 5}, {85, 0, 0}, {5, -5, -5}, {-55, -20, 5}, {50, 0, 0}, {-5, -20, -5}}},
+    {0.80f, {1.70f, -0.05f, 0.20f}, {30, -15, 10}, {{0, 0, 0}, {5, 0, 0}, {10, 10, -10}, {5, 10, 0}, {5, -10, 50}, {-75, 0, 0}, {0, 5, 5}, {5, -5, -30}, {-100, 0, 0}, {15, 5, -5}, {-35, 30, 5}, {65, 0, 0}, {20, -5, 0}, {-35, -15, -10}, {55, 0, 0}, {20, 5, -5}}},
+    {1.00f, {2.70f, 0.15f, 0.30f}, {45, -20, 20}, {{0, 0, 0}, {10, 0, 0}, {10, 0, 0}, {10, 10, 0}, {-40, 20, 70}, {-60, 0, 0}, {5, 10, 10}, {-55, -5, -50}, {-70, 0, 0}, {5, 5, -20}, {-35, 20, 5}, {70, 0, 0}, {25, -10, 0}, {-20, -15, -25}, {45, 0, 0}, {25, 0, 5}}},
+    {1.30f, {4.40f, -0.10f, 0.75f}, {65, -20, 15}, {{0, 0, 0}, {5, -5, 0}, {20, -10, -5}, {10, 15, 0}, {-55, 0, 75}, {-60, 0, 0}, {5, 0, 0}, {-30, -5, -55}, {-65, 0, 0}, {0, 5, -5}, {-55, 20, 10}, {80, 0, 0}, {15, -5, 0}, {-45, -10, -10}, {60, 0, 0}, {0, 0, 0}}},
+    {1.60f, {5.00f, -0.75f, 0.85f}, {90, 0, 0}, {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {-10, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}}}, // landing: our own key - face down along the dive, lying straight
+};
+// Hands up: 1 measurement; faces -180 deg from the vehicle's travel (+ = away from its path); triggered 1.18 s before the vehicle arrives (n=1)
+constexpr float kHandsUpFacing = -180.0f;
+const StartKey kHandsUpKeys[] = {
+    {0.00f, {0.00f, 0.00f, 0.00f}, {0, 0, 0}, {{0, 0, 0}, {5, 5, -5}, {5, 5, -5}, {0, -5, 5}, {15, -20, 20}, {-20, 0, 0}, {5, -20, -5}, {-20, 35, -20}, {-25, 0, 0}, {30, 5, 5}, {-20, 20, 0}, {20, 0, 0}, {5, 0, 5}, {0, -5, 0}, {55, 0, 0}, {10, 0, 15}}},
+    {0.20f, {0.00f, 0.00f, -0.05f}, {0, -15, -5}, {{0, 0, 0}, {5, 10, 5}, {0, 0, 0}, {5, 0, -10}, {-30, 20, 40}, {-70, 0, 0}, {5, -25, -15}, {-20, 5, -40}, {-60, 0, 0}, {10, 30, 30}, {-25, 30, 10}, {30, 0, 0}, {-5, -5, 5}, {0, -10, -5}, {35, 0, 0}, {5, 0, 10}}},
+    {0.40f, {0.00f, 0.00f, 0.35f}, {5, 5, 0}, {{0, 0, 0}, {0, 0, -5}, {-10, -5, 5}, {10, 0, 0}, {-40, 70, 60}, {-115, 0, 0}, {10, 15, 5}, {-40, -20, -60}, {-90, 0, 0}, {10, 15, -10}, {-35, 25, 5}, {40, 0, 0}, {10, -5, 0}, {-10, -15, 5}, {15, 0, 0}, {-5, 5, -5}}},
+    {0.60f, {0.00f, 0.00f, 0.35f}, {5, 5, 0}, {{0, 0, 0}, {0, 0, 0}, {-10, -5, 5}, {10, 0, 0}, {-40, 65, 60}, {-110, 0, 0}, {10, 10, 0}, {-45, -30, -65}, {-95, 0, 0}, {5, 5, -25}, {-15, 15, 0}, {20, 0, 0}, {-5, 0, 0}, {-10, -10, 0}, {15, 0, 0}, {-5, 5, -5}}},
+    {0.90f, {0.00f, 0.00f, 0.35f}, {5, 5, 0}, {{0, 0, 0}, {0, 0, 0}, {-10, -5, 5}, {10, 0, 0}, {-40, 65, 60}, {-110, 0, 0}, {10, 10, 0}, {-45, -30, -65}, {-95, 0, 0}, {5, 5, -25}, {-15, 15, 0}, {20, 0, 0}, {-5, 0, 0}, {-10, -10, 0}, {15, 0, 0}, {-5, 5, -5}}},
+};
+
+DdQuat fromRotationVector(const int v[3])
+{
+    const float x = static_cast<float>(v[0]), y = static_cast<float>(v[1]), z = static_cast<float>(v[2]);
+    const float degrees = std::sqrt(x * x + y * y + z * z);
+    if (degrees < 1e-4f) return DdQuat{0, 0, 0, 1};
+    return axisAngle(DdVec3{x / degrees, y / degrees, z / degrees}, degrees);
+}
+
+DdQuat nlerp(DdQuat a, DdQuat b, float k)
+{
+    if (a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w < 0.0f) b = DdQuat{-b.x, -b.y, -b.z, -b.w};
+    DdQuat q{a.x + (b.x - a.x) * k, a.y + (b.y - a.y) * k, a.z + (b.z - a.z) * k, a.w + (b.w - a.w) * k};
+    const float n = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+    return DdQuat{q.x / n, q.y / n, q.z / n, q.w / n};
+}
+
+// The crash sandbox (crash.hpp): one vehicle hits one pedestrian, every input a setting. Game mode is what a game
+// host does: the pedestrian stands host-animated (kinematic) with the car_hit behaviour and is handed over to physics
+// at the contact; limp mode is the passive reference. The vehicle keeps going, or brakes a set time after the first
+// contact. Everything the analyzer needs is recorded every host frame.
+class CrashScenario final : public Scenario
+{
+public:
+    explicit CrashScenario(const CrashParams& p) : mParams(p)
+    {
+        mProfile = parseVehicle(builtinVehicle(p.vehicle)); // The name was checked by parseCrashName
+        mNameText = crashName(p);
+        char text[512];
+        std::snprintf(text, sizeof(text),
+                      "Crash sandbox: a %s at %.0f km/h %s a %.2f m pedestrian (%s%s), facing %.0f deg from the vehicle "
+                      "(0 = facing it, 90 = struck on the right side), %.2f m off its centre line. %s",
+                      p.vehicle.c_str(), static_cast<double>(p.kmh),
+                      p.brake ? "brakes after the contact and hits" : "keeps going and hits", 1.75 * static_cast<double>(p.size),
+                      p.limp ? "limp" : "game: host-animated, car_hit", p.limp ? "" : (p.aware ? ", sees it coming" : ", never sees it"),
+                      static_cast<double>(p.facing), static_cast<double>(p.offset), mProfile.description.c_str());
+        mDescriptionText = text;
+        mSpeed = p.kmh / 3.6f;
+        mDecel = p.decel > 0.0f ? p.decel : mProfile.brakeDecel;
+        // Limp bodies cannot stand long; DragDoll's own anticipation needs > 1.2 s. With a game reaction the pedestrian
+        // first stands normally while the vehicle approaches (1.5 s), then reacts when the vehicle is the reaction's lead
+        // away - as the game decides to react to an approaching vehicle (founder, 2026-11-19).
+        mContactTime = p.limp ? 0.1f : p.start == "run" ? 1.5f : p.start != "none" ? 1.5f + startLead(p) : p.aware ? 1.6f : 1.0f;
+        // The front reaches the pedestrian's near side (~0.25 m x size from its centre) at the contact time.
+        mX = -0.25f * p.size - mProfile.length * 0.5f - mSpeed * mContactTime;
+        mObs.vehicle = p.vehicle;
+        mObs.kmh = p.kmh;
+        mObs.limp = p.limp;
+        mObs.aware = p.aware;
+        mObs.start = p.start;
+        mObs.brake = p.brake;
+        mObs.facing = p.facing;
+        mObs.offset = p.offset;
+        mObs.stature = 1.75f * p.size;
+        mObs.bonnetEdgeHeight = mProfile.bonnetEdgeHeight;
+        mObs.vehicleHalfWidth = mProfile.width * 0.5f;
+        // Where the pedestrian is sideways when the vehicle arrives: a step or a dive can carry it clear of a narrow
+        // vehicle (a motorbike) - an escape, not a missed contact.
+        // Where a step / dive has taken it (across the path, away from the centre) when the vehicle arrives.
+        // (A runner passes the impact point as the vehicle arrives.)
+        const float fled = p.start == "step" || p.start == "dive" ? keyAside(p.start, startLead(p)) : 0.0f;
+        const float aside = p.limp ? 0.0f : (p.side == "right" ? -1.0f : 1.0f) * fled;
+        mObs.contactExpected = std::fabs(p.offset + aside) < mProfile.width * 0.5f + 0.1f;
+        mObs.report.struct_size = sizeof(DdImpactReport);
+    }
+    const char* name() const override { return mNameText.c_str(); }
+    const char* description() const override { return mDescriptionText.c_str(); }
+    void configure(DdWorldDesc& desc) const override { desc.up = DdVec3{0.0f, 0.0f, 1.0f}; } // Z-up, as SA
+    double duration() const override { return mContactTime + (mParams.brake ? 5.0 : 6.0); }
+    DdCharacter* character() const override { return mCharacter; }
+    DdVec3 cameraTarget() const override { return DdVec3{1.5f, 0.0f, 0.8f}; }
+    float cameraDistance() const override { return mProfile.length > 8.0f ? 16.0f : 9.0f; }
+    const CrashObservations& observations() const { return mObs; }
+
+    void build(DdWorld* world) override
+    {
+        addGround(world, DdVec3{0.0f, 0.0f, 1.0f});
+        // Facing: the rig's own forward is found from its pose (the feet point forward), then the rig is turned so
+        // that it looks the chosen way. Forward = the direction towards the vehicle (-X) turned by `facing`
+        // counter-clockwise: 90 turns the right side towards the vehicle.
+        DdCharacterDesc desc;
+        dragdoll_character_desc_default(&desc);
+        desc.rig_json = rigJson();
+        desc.size_scale = mParams.size;
+        desc.transform.position = DdVec3{0.0f, mParams.offset, 0.01f};
+        desc.transform.rotation = DdQuat{0, 0, 0, 1};
+        if (dragdoll_character_create(world, &desc, &mCharacter) != DD_OK || mCharacter == nullptr) return;
+        mBodies.resize(dragdoll_character_get_body_count(mCharacter));
+        dragdoll_character_get_body_transforms(mCharacter, 0, mBodies.data(), static_cast<uint32_t>(mBodies.size()));
+        const int foot = dragdoll_character_find_body(mCharacter, "foot_l"), shin = dragdoll_character_find_body(mCharacter, "shin_l");
+        if (foot >= 0 && shin >= 0)
+        {
+            const float fx = mBodies[static_cast<size_t>(foot)].position.x - mBodies[static_cast<size_t>(shin)].position.x;
+            const float fy = mBodies[static_cast<size_t>(foot)].position.y - mBodies[static_cast<size_t>(shin)].position.y;
+            const float wanted = (180.0f + mParams.facing) * 3.14159265f / 180.0f;
+            const float turn = (wanted - std::atan2(fy, fx)) * 180.0f / 3.14159265f;
+            dragdoll_character_destroy(mCharacter);
+            mCharacter = nullptr;
+            desc.transform.rotation = axisAngle(DdVec3{0, 0, 1}, turn);
+            if (dragdoll_character_create(world, &desc, &mCharacter) != DD_OK || mCharacter == nullptr) return;
+        }
+        if (!mParams.limp)
+        {
+            dragdoll_character_set_kinematic(mCharacter, 1); // Host-animated standing until the handover
+            dragdoll_character_set_tension(mCharacter, DD_TENSION_RELAXED, 0.0f);
+            dragdoll_character_set_behaviour(mCharacter, "car_hit");
+            // Aware: DragDoll's own anticipation (general profile), or the game made the pedestrian react (SA: the
+            // starting state - the game decided it noticed the vehicle).
+            dragdoll_character_set_awareness(mCharacter, mParams.aware || mParams.start != "none" ? 1.0f : 0.0f);
+            dragdoll_character_get_pose(mCharacter, 0, nullptr, 0, &mRestRoot);
+            mCount = dragdoll_character_get_body_count(mCharacter);
+            // No predictive handover: as in the game, the pedestrian becomes a ragdoll when the vehicle's body actually
+            // reaches it (the game's own hit), so a near miss - a step or dive that gets clear - stays the host's.
+            dragdoll_character_set_vehicle_pass_through(mCharacter, 1); // As the game integration (ADR-0026)
+        }
+        mMesh = buildVehicleMesh(mProfile, DdVec3{1, 0, 0}, DdVec3{0, 1, 0}, DdVec3{0, 0, 1}); // Drives along +X
+        DdColliderDesc car;
+        dragdoll_collider_desc_default(&car);
+        car.shape = DD_SHAPE_MESH;
+        car.motion = DD_MOTION_KINEMATIC;
+        car.vertices = mMesh.vertices.data();
+        car.vertex_count = static_cast<uint32_t>(mMesh.vertices.size());
+        car.indices = mMesh.indices.data();
+        car.index_count = static_cast<uint32_t>(mMesh.indices.size());
+        car.transform.position = DdVec3{mX, 0.0f, 0.0f};
+        car.group = 1; // One vehicle = one perceived object (ADR-0024)
+        mCar = addOne(world, car);
+    }
+
+    void hostFrame(DdWorld* world, double hostTime, float dt) override
+    {
+        observe(world, hostTime - dt);
+        // The game animates the pedestrian's reaction until the handover (activation from motion carries it on).
+        if (!mParams.limp && mParams.start != "none" && mCharacter != nullptr && dragdoll_character_get_kinematic(mCharacter) != 0)
+        {
+            DdTransform before, now;
+            std::vector<DdQuat> jointsBefore, jointsNow;
+            startPose(hostTime - std::max(dt, 1e-3f), before, jointsBefore);
+            startPose(hostTime, now, jointsNow);
+            dragdoll_character_activate(mCharacter, &before, jointsBefore.data(), &now, jointsNow.data(), mCount, std::max(dt, 1e-3f));
+        }
+        // The vehicle: constant speed; braking from the first contact + the delay (if it brakes).
+        if (mParams.brake && mObs.contact >= 0.0 && hostTime > mObs.contact + mParams.brakeDelayMs / 1000.0)
+        {
+            mSpeed = std::max(0.0f, mSpeed - mDecel * dt);
+        }
+        mX += mSpeed * dt;
+        // The game's hit: the vehicle's body reaches a body of the pedestrian (inside its length and width, below its
+        // roof) - the host hands it over to physics then (ADR-0027), a frame ahead of DragDoll's own contact.
+        if (!mParams.limp && mCharacter != nullptr && dragdoll_character_get_kinematic(mCharacter) != 0)
+        {
+            const float front = mX + mProfile.length * 0.5f, rear = mX - mProfile.length * 0.5f;
+            for (const DdTransform& b : mBodies)
+            {
+                if (b.position.x <= front + 0.1f && b.position.x >= rear && std::fabs(b.position.y) <= mProfile.width * 0.5f + 0.1f &&
+                    b.position.z <= mProfile.roofHeight)
+                {
+                    dragdoll_character_set_kinematic(mCharacter, 0);
+                    break;
+                }
+            }
+        }
+        const DdTransform target{{mX, 0.0f, 0.0f}, {0, 0, 0, 1}};
+        dragdoll_world_set_kinematic_targets(world, &mCar, &target, 1);
+    }
+
+    void hud(DdWorld*, std::vector<std::string>& lines) override
+    {
+        char b[200];
+        std::snprintf(b, sizeof(b), "%s: bumper %.2f m, bonnet edge %.2f m | speed %.1f km/h%s", mParams.vehicle.c_str(),
+                      static_cast<double>(mProfile.bumperHeight), static_cast<double>(mProfile.bonnetEdgeHeight),
+                      static_cast<double>(mSpeed * 3.6f), mParams.brake ? (mSpeed < mParams.kmh / 3.6f ? " (braking)" : " (will brake)") : " (keeps going)");
+        lines.emplace_back(b);
+        std::snprintf(b, sizeof(b), "status: %s", mStatus.c_str());
+        lines.emplace_back(b);
+    }
+
+private:
+    // How long before the contact the game's reaction began (how far into it the pedestrian is struck).
+    static float startLead(const CrashParams& p)
+    {
+        if (p.leadMs > 0.0f) return p.leadMs / 1000.0f;
+        // Measured: the game starts a dodge about 1.15 s, a dive about 1.0 s, hands up about 1.2 s before the vehicle
+        // arrives (the run: our own choice).
+        return p.start == "step" ? 1.15f : p.start == "dive" ? 1.0f : p.start == "handsup" ? 1.2f : 0.0f; // (The run: none)
+    }
+    // Travel away from the vehicle's path (m) of a measured reaction this far into it.
+    static float keyAside(const std::string& s, float u)
+    {
+        const StartKey* keys = s == "step" ? kStepKeys : kDiveKeys;
+        const size_t n = s == "step" ? std::size(kStepKeys) : std::size(kDiveKeys);
+        float best = 0.0f;
+        for (size_t i = 0; i < n; ++i)
+        {
+            if (keys[i].t <= u) best = std::max(best, keys[i].move[0]);
+            else if (i > 0) // Part way to the next key
+            {
+                const float k = (u - keys[i - 1].t) / (keys[i].t - keys[i - 1].t);
+                best = std::max(best, keys[i - 1].move[0] + (keys[i].move[0] - keys[i - 1].move[0]) * k);
+                break;
+            }
+        }
+        return best;
+    }
+
+    // The starting state at host time t: a stand-in for the game's reaction animation (its timing and motion, our own
+    // shapes): it starts shortly before the contact, early enough to be under way, late enough that the pedestrian is
+    // still struck (these were all struck in game). Sideways = towards the vehicle's left (+Y).
+    void startPose(double t, DdTransform& root, std::vector<DdQuat>& joints) const
+    {
+        root = mRestRoot;
+        joints.assign(mCount, DdQuat{0, 0, 0, 1});
+        const auto set = [&](const char* body, float degrees) {
+            const int i = dragdoll_character_find_body(mCharacter, body);
+            if (i >= 0) joints[static_cast<size_t>(i)] = axisAngle(DdVec3{1, 0, 0}, degrees);
+        };
+        const std::string& s = mParams.start;
+        const float lead = startLead(mParams);
+        const float u = std::max(0.0f, static_cast<float>(t) - (mContactTime - lead)); // Seconds into the reaction
+        const auto ramp = [&](float seconds) { return std::min(1.0f, u / seconds); };
+        if (s == "step" || s == "dive" || s == "handsup")
+        {
+            const StartKey* keys = s == "step" ? kStepKeys : s == "dive" ? kDiveKeys : kHandsUpKeys;
+            const size_t n = s == "step" ? std::size(kStepKeys) : s == "dive" ? std::size(kDiveKeys) : std::size(kHandsUpKeys);
+            size_t i = 0;
+            while (i + 2 < n && keys[i + 1].t <= u) ++i;
+            const StartKey &k0 = keys[i], &k1 = keys[std::min(i + 1, n - 1)];
+            const float k = k1.t > k0.t ? std::clamp((u - k0.t) / (k1.t - k0.t), 0.0f, 1.0f) : 0.0f;
+            float away = k0.move[0] + (k1.move[0] - k0.move[0]) * k, up = k0.move[1] + (k1.move[1] - k0.move[1]) * k,
+                  along = k0.move[2] + (k1.move[2] - k0.move[2]) * k;
+            // A pedestrian that has got away stays away: the travel never shrinks back (late keys average fewer, often
+            // shorter recordings) - it holds the farthest point reached so far.
+            for (size_t m = 0; m < n && keys[m].t <= u; ++m) away = std::max(away, keys[m].move[0]);
+            // The vehicle drives along +X; the side the reaction goes to (+Y = the vehicle's left).
+            const float side = mParams.side == "right" ? -1.0f : 1.0f; // The setting, not where it stands
+            root.position = DdVec3{mRestRoot.position.x + along, mRestRoot.position.y + side * away, mRestRoot.position.z + up};
+            // Facing: degrees from the vehicle's travel, + = away from its path (mirrored to the pedestrian's side).
+            const float facingDeg = (s == "step" ? kStepFacing : s == "dive" ? kDiveFacing : kHandsUpFacing) * side;
+            const DdVec3 f0 = metrics::rotate(mRestRoot.rotation, DdVec3{0.0f, 0.0f, 1.0f});
+            const float turnTo = facingDeg - std::atan2(f0.y, f0.x) * 57.2958f;
+            const DdQuat facing = mul(axisAngle(DdVec3{0, 0, 1}, turnTo), mRestRoot.rotation);
+            const DdQuat react = mul(facing, nlerp(fromRotationVector(k0.turn), fromRotationVector(k1.turn), k));
+            root.rotation = u < 0.2f ? nlerp(mRestRoot.rotation, react, u / 0.2f) : react; // The game turns it within 0.2 s
+            for (size_t j = 1; j < mCount && j < 16; ++j)
+                joints[j] = nlerp(fromRotationVector(k0.joints[j]), fromRotationVector(k1.joints[j]), k);
+            // After the dodge the pedestrian stands again where it got to (0.4 s back to standing), facing as it was set.
+            if (s == "step" && u > keys[n - 1].t)
+            {
+                const float settle = std::min(1.0f, (u - keys[n - 1].t) / 0.4f);
+                root.position.z = mRestRoot.position.z + up * (1.0f - settle);
+                root.rotation = nlerp(react, facing, settle);
+                for (size_t j = 1; j < mCount && j < 16; ++j) joints[j] = nlerp(joints[j], DdQuat{0, 0, 0, 1}, settle);
+            }
+        }
+        else if (s == "run")
+        {
+            // Running in panic - from this vehicle or from something else (founder, 2026-11-19): already running from the
+            // first frame, straight the way it faces (the facing sets the crash angle: 180 = running away down the
+            // vehicle's path, caught from behind; 90 / 270 = crossing; 0 = towards it), timed to pass the impact point
+            // as the vehicle arrives (our stand-in shape; 3.5 m/s).
+            const DdVec3 f0 = metrics::rotate(mRestRoot.rotation, DdVec3{0.0f, 0.0f, 1.0f});
+            const float fl = std::sqrt(f0.x * f0.x + f0.y * f0.y);
+            const float run = 3.5f * (static_cast<float>(t) - mContactTime);
+            if (fl > 1e-4f)
+            {
+                root.position.x += f0.x / fl * run;
+                root.position.y += f0.y / fl * run;
+            }
+            const float stride = 2.0f * 3.14159265f * 1.4f * static_cast<float>(t);
+            for (int leg = 0; leg < 2; ++leg)
+            {
+                const float phase = std::sin(stride + static_cast<float>(leg) * 3.14159265f);
+                set(leg == 0 ? "thigh_l" : "thigh_r", -40.0f * phase);
+                set(leg == 0 ? "shin_l" : "shin_r", 35.0f + 35.0f * phase);
+                set(leg == 0 ? "upper_arm_l" : "upper_arm_r", 35.0f * phase);
+            }
+            set("lower_spine", 10.0f);
+        }
+    }
+
+    // Records what the analyzer needs, at the start of each host frame (the state the last step left).
+    void observe(DdWorld* world, double t)
+    {
+        mObs.duration = t;
+        if (mCharacter == nullptr) return;
+        DdCharacterInfo info{};
+        info.struct_size = sizeof(DdCharacterInfo);
+        if (dragdoll_character_get_info(mCharacter, &info) == DD_OK && info.state == DD_STATE_FAILED)
+        {
+            mObs.failed = true;
+            return;
+        }
+        if (dragdoll_character_get_body_transforms(mCharacter, 0, mBodies.data(), static_cast<uint32_t>(mBodies.size())) == DD_OK)
+        {
+            const double dt = t - mLastT;
+            for (size_t i = 0; i < mBodies.size(); ++i)
+            {
+                const DdVec3 p = mBodies[i].position;
+                if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) mObs.nanSeen = true;
+                mObs.lowestBody = std::min(mObs.lowestBody, p.z);
+                // Speeds only once physics drives the body: the host's animation before the hit is not ours to judge.
+                if (mLast.size() == mBodies.size() && dt > 1e-6 && dragdoll_character_get_kinematic(mCharacter) == 0)
+                {
+                    const DdVec3 q = mLast[i].position;
+                    const float v = std::sqrt((p.x - q.x) * (p.x - q.x) + (p.y - q.y) * (p.y - q.y) + (p.z - q.z) * (p.z - q.z)) /
+                                    static_cast<float>(dt);
+                    mObs.fastestBody = std::max(mObs.fastestBody, v);
+                }
+            }
+            mLast = mBodies;
+            mLastT = t;
+        }
+        dragdoll_character_get_impact_report(mCharacter, &mObs.report);
+        if (mObs.contact < 0.0 && mObs.report.valid) mObs.contact = t;
+        if (!mParams.limp)
+        {
+            if (mObs.handover < 0.0 && dragdoll_character_get_kinematic(mCharacter) == 0) mObs.handover = t;
+            mStatus = dragdoll_character_get_behaviour_status(mCharacter);
+            if (!mImpactSeen && mStatus.rfind("impact", 0) == 0) // The behaviour's own impact stage: the struck leg gives
+            {
+                mImpactSeen = true;
+                // When a leg was struck first, a leg has given at the impact (car_hit: a startle-braced leg cannot hold
+                // against the bumper). -1 = something else met the vehicle first (side-on: often the hanging hand).
+                DdImpactReport now{};
+                now.struct_size = sizeof(DdImpactReport);
+                mObs.legYielded = -1;
+                if (dragdoll_character_get_impact_report(mCharacter, &now) == DD_OK && now.valid && now.first_body >= 0)
+                {
+                    const DdRegion first = dragdoll_character_get_body_region(mCharacter, static_cast<uint32_t>(now.first_body));
+                    if (first == DD_REGION_LEG_LEFT || first == DD_REGION_LEG_RIGHT)
+                        mObs.legYielded = dragdoll_character_get_region_tension(mCharacter, DD_REGION_LEG_LEFT) == DD_TENSION_RELAXED ||
+                                                  dragdoll_character_get_region_tension(mCharacter, DD_REGION_LEG_RIGHT) == DD_TENSION_RELAXED
+                                              ? 1
+                                              : 0;
+                }
+            }
+            if (mObs.contact >= 0.0 && mObs.brace < 0.0 &&
+                dragdoll_character_get_region_tension(mCharacter, DD_REGION_HEAD_NECK) == DD_TENSION_TENSE)
+                mObs.brace = t;
+            if (mObs.carried < 0.0 && mStatus.rfind("carried", 0) == 0) mObs.carried = t;
+            if (mStatus.rfind("hurt", 0) == 0) { if (mObs.hurtSince < 0.0) mObs.hurtSince = t; }
+            else mObs.hurtSince = -1.0;
+            if (mObs.guard < 0.0 && mStatus.find("guard") != std::string::npos) mObs.guard = t;
+            if (mObs.offVehicle < 0.0 && (mStatus.rfind("airborne", 0) == 0 || mStatus.rfind("landing", 0) == 0 ||
+                                          mStatus.rfind("tumble", 0) == 0))
+                mObs.offVehicle = t;
+        }
+        DdSenses senses{};
+        senses.struct_size = sizeof(DdSenses);
+        if (dragdoll_character_get_senses(mCharacter, &senses) == DD_OK)
+            mObs.onVehicleAtEnd = senses.object_bodies > 0 && senses.carried_by_group == 1;
+        const int head = dragdoll_character_find_body(mCharacter, "head");
+        const int handL = dragdoll_character_find_body(mCharacter, "hand_l"), handR = dragdoll_character_find_body(mCharacter, "hand_r");
+        if (!mParams.limp) mObs.endStatus = mStatus;
+        mObs.gestureError = -1.0f;
+        const int hurtBody = mStatus.rfind("hurt: body ", 0) == 0 ? std::atoi(mStatus.c_str() + 11) : -1;
+        if (hurtBody >= 0 && static_cast<size_t>(hurtBody) < mBodies.size() &&
+            handL >= 0 && handR >= 0)
+        {
+            // Both hands on the part that hurts: each hand's distance to that body's centre, less its half-thickness.
+            const DdRegion region = dragdoll_character_get_body_region(mCharacter, static_cast<uint32_t>(hurtBody));
+            const float half = (region == DD_REGION_HEAD_NECK ? 0.10f : region == DD_REGION_TRUNK ? 0.13f : 0.08f) * mParams.size;
+            const auto gap = [](DdVec3 a, DdVec3 b) { return std::sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y) + (a.z - b.z) * (a.z - b.z)); };
+            DdVec3 centre = mBodies[static_cast<size_t>(hurtBody)].position;
+            if ((region == DD_REGION_LEG_LEFT || region == DD_REGION_LEG_RIGHT) && static_cast<size_t>(hurtBody) + 1 < mBodies.size() &&
+                dragdoll_character_get_body_region(mCharacter, static_cast<uint32_t>(hurtBody + 1)) == region)
+            {
+                const DdVec3 shin = mBodies[static_cast<size_t>(hurtBody) + 1].position; // A leg is held at the knee
+                centre = DdVec3{(centre.x + shin.x) * 0.5f, (centre.y + shin.y) * 0.5f, (centre.z + shin.z) * 0.5f};
+            }
+            mObs.hands[0] = mBodies[static_cast<size_t>(handL)].position;
+            mObs.hands[1] = mBodies[static_cast<size_t>(handR)].position;
+            mObs.handTargets[0] = mObs.handTargets[1] = centre;
+            mObs.gestureError = std::max(0.0f, std::max(gap(mObs.hands[0], centre), gap(mObs.hands[1], centre)) - half);
+            mObs.hurtPart = dragdoll_character_get_body_name(mCharacter, static_cast<uint32_t>(hurtBody));
+        }
+        if (head >= 0 && handL >= 0 && handR >= 0)
+        {
+            const auto distance = [&](int a, int b) {
+                const DdVec3 p = mBodies[static_cast<size_t>(a)].position, q = mBodies[static_cast<size_t>(b)].position;
+                return std::sqrt((p.x - q.x) * (p.x - q.x) + (p.y - q.y) * (p.y - q.y) + (p.z - q.z) * (p.z - q.z));
+            };
+            const DdVec3 l = mBodies[static_cast<size_t>(handL)].position, r = mBodies[static_cast<size_t>(handR)].position,
+                         h = mBodies[static_cast<size_t>(head)].position;
+            const DdVec3 mid{(l.x + r.x) * 0.5f, (l.y + r.y) * 0.5f, (l.z + r.z) * 0.5f};
+            const float toHead = std::sqrt((mid.x - h.x) * (mid.x - h.x) + (mid.y - h.y) * (mid.y - h.y) + (mid.z - h.z) * (mid.z - h.z));
+            // Hands held together on a hurt part are the pain gesture, not "praying".
+            mObs.handsFolded = mStatus.rfind("hurt", 0) != 0 && distance(handL, handR) < 0.12f * mParams.size && toHead < 0.45f * mParams.size;
+        }
+        const int pelvis = dragdoll_character_find_body(mCharacter, "pelvis");
+        if (pelvis >= 0 && static_cast<size_t>(pelvis) < mBodies.size())
+        {
+            const DdVec3 p = mBodies[static_cast<size_t>(pelvis)].position;
+            if (!mHasStart)
+            {
+                mStartPelvis = p;
+                mHasStart = true;
+            }
+            mObs.pelvisBehindFront = (mX + mProfile.length * 0.5f) - p.x;
+            const float local = p.x - mX; // Vehicle space: forward from its centre
+            float top = -1.0f;
+            const auto outline = mProfile.outline(); // front-bottom -> over the top -> rear-bottom
+            for (size_t i = 1; i + 2 < outline.size(); ++i)
+            {
+                const float x0 = outline[i][0], x1 = outline[i + 1][0];
+                if (local <= x0 && local >= x1 && x0 - x1 > 1e-4f)
+                    top = std::max(top, outline[i][1] + (outline[i + 1][1] - outline[i][1]) * (x0 - local) / (x0 - x1));
+            }
+            mObs.pelvisInsideVehicle = std::fabs(p.y) < mProfile.width * 0.5f - 0.1f && top > 0.0f &&
+                                       p.z > mProfile.clearance + 0.1f && p.z < top - 0.05f;
+            mObs.pelvisHeight = p.z;
+            mObs.pelvisMoved = std::hypot(p.x - mStartPelvis.x, p.y - mStartPelvis.y);
+        }
+        (void)world;
+    }
+
+    CrashParams mParams;
+    VehicleProfile mProfile;
+    VehicleMesh mMesh;
+    std::string mNameText, mDescriptionText, mStatus;
+    float mSpeed = 0.0f, mDecel = 0.0f, mContactTime = 1.0f, mX = 0.0f;
+    DdColliderId mCar = DD_INVALID_COLLIDER;
+    DdCharacter* mCharacter = nullptr;
+    std::vector<DdTransform> mBodies, mLast;
+    double mLastT = 0.0;
+    DdVec3 mStartPelvis{};
+    DdTransform mRestRoot{};
+    uint32_t mCount = 0;
+    bool mHasStart = false, mImpactSeen = false;
+    CrashObservations mObs;
+};
+
 using Factory = std::function<std::unique_ptr<Scenario>()>;
 
 const std::vector<std::pair<std::string, Factory>>& registry()
@@ -984,14 +1481,6 @@ const std::vector<std::pair<std::string, Factory>>& registry()
     all.emplace_back("bump_5kmh", [] { return std::make_unique<VehicleHitScenario>("sedan", 5.0f, true, "bump_5kmh"); });
     all.emplace_back("death_drop", [] { return std::make_unique<DeathDropScenario>(true); });
     all.emplace_back("death_drop_limp", [] { return std::make_unique<DeathDropScenario>(false); });
-    all.emplace_back("aware_sedan_40kmh", [] { return std::make_unique<VehicleHitScenario>("sedan", 40.0f, true, "aware_sedan_40kmh", true); });
-    for (const std::string& vehicle : vehicleNames())
-    {
-        all.emplace_back("hit_" + vehicle + "_40kmh", [vehicle] { return std::make_unique<VehicleHitScenario>(vehicle, 40.0f); });
-        all.emplace_back("react_" + vehicle + "_40kmh", [vehicle] {
-            return std::make_unique<VehicleHitScenario>(vehicle, 40.0f, false, nullptr, false, true);
-        });
-    }
     return all;
     }();
     return sRegistry;
@@ -1051,9 +1540,15 @@ PoseError poseError(const DdCharacter* character, const std::vector<DdTransform>
 }
 } // namespace metrics
 
+const CrashObservations* crashObservations(const Scenario& scenario)
+{
+    const auto* crash = dynamic_cast<const CrashScenario*>(&scenario);
+    return crash != nullptr ? &crash->observations() : nullptr;
+}
+
 std::vector<std::string> list()
 {
-    std::vector<std::string> names;
+    std::vector<std::string> names{"crash"};
     for (const auto& entry : registry())
     {
         names.push_back(entry.first);
@@ -1063,6 +1558,13 @@ std::vector<std::string> list()
 
 std::unique_ptr<Scenario> create(const std::string& name)
 {
+    if (name.rfind("crash", 0) == 0)
+    {
+        CrashParams params;
+        std::string error;
+        if (!parseCrashName(name, params, error)) return nullptr;
+        return std::make_unique<CrashScenario>(params);
+    }
     for (const auto& entry : registry())
     {
         if (entry.first == name)

@@ -22,6 +22,7 @@ MuscleParams tensionProfile(DdTension tension)
     case DD_TENSION_RELAXED: return {1.2f, 1.0f, 0.15f};
     case DD_TENSION_TENSE: return {8.0f, 2.0f, 1.0f};
     case DD_TENSION_STUNNED: return {0.6f, 0.3f, 0.3f};
+    case DD_TENSION_BRACED: return {3.0f, 1.0f, 0.5f}; // [ours] between relaxed and tense (task 4.9)
     default: throw std::invalid_argument("unknown tension profile");
     }
 }

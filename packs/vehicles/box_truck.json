@@ -1,0 +1,23 @@
+{
+  "format": "dragdoll-vehicle",
+  "version": 1,
+  "name": "box_truck",
+  "description": "Box truck: cab-over front with a bonnet edge at chest height, steep windscreen, tall cargo box.",
+  "space": "Vehicle space: metres, origin = ground point under the vehicle's centre; forward = driving direction. Angles in degrees: hood_angle = rise of the bonnet towards the windscreen, windshield_angle = from horizontal. brake_decel = emergency braking on a dry road, m/s^2 (own generic values: about 0.7 g for cars, after the 0.7 g used in published reconstructions; less for heavy vehicles).",
+  "sources": "Own generic class dimensions, rounded from aggregate measurements (medians per class) of the vehicles of a game-scale world whose people stand about 1.93 m (ADR-0014, founder decision 2026-11-18). No game data or shapes are included.",
+  "profile": {
+    "length": 6.35,
+    "width": 2.6,
+    "clearance": 0.32,
+    "bumper_height": 0.68,
+    "bonnet_edge_height": 1.61,
+    "bonnet_edge_setback": 0.15,
+    "hood_length": 0.0,
+    "hood_angle": 0,
+    "windshield_angle": 49,
+    "roof_height": 3.13,
+    "roof_length": 4.45,
+    "rear_height": 3.1,
+    "brake_decel": 5.5
+  }
+}

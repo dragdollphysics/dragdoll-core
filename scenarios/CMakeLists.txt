@@ -12,12 +12,21 @@ foreach(file ${DD_VEHICLE_FILES})
 endforeach()
 configure_file(src/builtin_vehicles.cpp.in ${CMAKE_CURRENT_BINARY_DIR}/generated/builtin_vehicles.cpp @ONLY)
 
+# The crash analyzer's rules (packs/analyzer/crash_rules.json), compiled in the same way.
+set(DD_CRASH_RULES_FILE ${PROJECT_SOURCE_DIR}/packs/analyzer/crash_rules.json)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${DD_CRASH_RULES_FILE})
+file(READ ${DD_CRASH_RULES_FILE} DD_CRASH_RULES)
+configure_file(src/builtin_rules.cpp.in ${CMAKE_CURRENT_BINARY_DIR}/generated/builtin_rules.cpp @ONLY)
+
 add_library(dragdoll_scenarios STATIC
     include/dragdoll_scenarios/scenario.hpp
     include/dragdoll_scenarios/vehicles.hpp
+    include/dragdoll_scenarios/crash.hpp
     src/scenarios.cpp
     src/vehicles.cpp
+    src/crash.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/generated/builtin_vehicles.cpp
+    ${CMAKE_CURRENT_BINARY_DIR}/generated/builtin_rules.cpp
 )
 target_include_directories(dragdoll_scenarios PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(dragdoll_scenarios PUBLIC DragDoll::dragdoll PRIVATE nlohmann_json::nlohmann_json)

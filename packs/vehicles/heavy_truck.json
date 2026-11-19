@@ -1,0 +1,23 @@
+{
+  "format": "dragdoll-vehicle",
+  "version": 1,
+  "name": "heavy_truck",
+  "description": "Heavy truck: very high bumper and bonnet edge above head height, near-vertical windscreen.",
+  "space": "Vehicle space: metres, origin = ground point under the vehicle's centre; forward = driving direction. Angles in degrees: hood_angle = rise of the bonnet towards the windscreen, windshield_angle = from horizontal. brake_decel = emergency braking on a dry road, m/s^2 (own generic values: about 0.7 g for cars, after the 0.7 g used in published reconstructions; less for heavy vehicles).",
+  "sources": "Own generic class dimensions, rounded from aggregate measurements (medians per class) of the vehicles of a game-scale world whose people stand about 1.93 m (ADR-0014, founder decision 2026-11-18). No game data or shapes are included.",
+  "profile": {
+    "length": 9.3,
+    "width": 2.95,
+    "clearance": 0.55,
+    "bumper_height": 1.24,
+    "bonnet_edge_height": 2.19,
+    "bonnet_edge_setback": 0.12,
+    "hood_length": 1.6,
+    "hood_angle": 1,
+    "windshield_angle": 70,
+    "roof_height": 3.5,
+    "roof_length": 0.7,
+    "rear_height": 1.3,
+    "brake_decel": 4.5
+  }
+}

@@ -6,6 +6,7 @@
 //       A toggle auto-restart | L joint-limit overlay | Tab next scenario | H help | mouse: left-drag orbit, middle-drag pan, wheel zoom | Esc quit
 
 #include <dragdoll_scenarios/scenario.hpp>
+#include <dragdoll_scenarios/crash.hpp>
 
 #include <raylib.h>
 #include <raymath.h>
@@ -254,6 +255,37 @@ struct App
 {
     std::vector<std::string> names;
     size_t scenarioIndex = 0;
+    // Crash sandbox: the settings in the panel, the list slot that holds the current crash name, and the analyzer's
+    // verdict on the last run that played to its end.
+    dragdoll::scenarios::CrashParams crash;
+    size_t crashSlot = 0;
+    bool crashAnalysed = false;
+    std::string crashAnalysedName;
+    dragdoll::scenarios::CrashAnalysis crashAnalysis;
+    // The crash lab's last table (crashlab/results.csv next to the exe), for the "Crash results" window.
+    struct CrashRow
+    {
+        std::string name, verdict, outcome, vehicle, issues;
+        float kmh = 0.0f, facing = 0.0f, delay = 0.0f, size = 0.0f, throwM = 0.0f;
+        bool brake = false, aware = false;
+    };
+    std::vector<CrashRow> crashRows;
+    std::string crashRowsStatus;
+    bool crashRowsLoaded = false;
+    bool showVerdict[4] = {false, true, true, true}; // PASS, FAIL, OUT OF RANGE, NO REFERENCE
+    std::string rowVehicle;                           // "" = all
+    // The founder's judgement per crash setting (crashlab/feedback.jsonl, one JSON line per click; the last one per
+    // setting counts): "right" / "odd" + a note.
+    struct Judgement
+    {
+        std::string verdict, note;
+    };
+    std::map<std::string, Judgement> judgements;
+    bool judgementsLoaded = false;
+    bool hideJudged = false;
+    char feedbackNote[512] = {};
+    std::string feedbackFor;    // The setting the note box belongs to (cleared when another one plays)
+    std::string feedbackStatus;
     Instance main;
     Instance shadow; // Reference run at a steady 120 Hz (only for rate-independent scenarios)
     bool hasShadow = false;
@@ -611,6 +643,20 @@ void collectThreats(DdWorld* world, std::vector<Line>& lines, std::vector<std::s
     }
 }
 
+bool loadScenario(App& app, size_t index, bool resetCamera);
+// Loads a crash setting ("crash:...") into the list's crash slot.
+bool loadCrash(App& app, const std::string& name, bool resetCamera)
+{
+    std::string error;
+    if (!dragdoll::scenarios::parseCrashName(name, app.crash, error))
+    {
+        app.error = "crash: " + error;
+        return false;
+    }
+    app.names[app.crashSlot] = dragdoll::scenarios::crashName(app.crash);
+    return loadScenario(app, app.crashSlot, resetCamera);
+}
+
 DdWorld* activeWorld(App& app)
 {
     if (app.attachPort > 0) return app.live;
@@ -620,6 +666,9 @@ DdWorld* activeWorld(App& app)
 bool loadScenario(App& app, size_t index, bool resetCamera)
 {
     app.scenarioIndex = index % app.names.size();
+    // The verdict of the last finished run stays while the same setting replays (the auto-restart); a different
+    // setting clears it.
+    if (app.names[app.scenarioIndex] != app.crashAnalysedName) app.crashAnalysed = false;
     app.error.clear();
     app.pushes.clear();
     app.lastPush.clear();
@@ -663,6 +712,295 @@ bool loadScenario(App& app, size_t index, bool resetCamera)
         app.camera.setUp(Vector3Normalize(toRay(desc.up))); // ...the world's up axis follows the scenario, the view stays.
     }
     return true;
+}
+
+void loadJudgements(App& app);
+void saveJudgement(App& app, const std::string& verdict);
+
+// The crash sandbox's settings and the analyzer's verdict on the last run (crash.hpp). "Run" plays the setting; the
+// verdict appears once the run has played to its end.
+void drawCrashPanel(App& app, float w)
+{
+    using namespace dragdoll::scenarios;
+    ImGui::SetNextWindowPos(ImVec2(w - 600.0f, 300.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(300.0f, 520.0f), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Crash sandbox"))
+    {
+        CrashParams& c = app.crash;
+        static const std::vector<std::string> vehicles = crashVehicles();
+        if (ImGui::BeginCombo("vehicle", c.vehicle.c_str()))
+        {
+            for (const std::string& v : vehicles)
+                if (ImGui::Selectable(v.c_str(), v == c.vehicle)) c.vehicle = v;
+            ImGui::EndCombo();
+        }
+        ImGui::SliderFloat("km/h", &c.kmh, 5.0f, 120.0f, "%.0f");
+        bool brake = c.brake;
+        if (ImGui::Checkbox("brakes after the hit", &brake)) c.brake = brake;
+        if (c.brake)
+        {
+            ImGui::SliderFloat("brake delay ms", &c.brakeDelayMs, 0.0f, 1500.0f, "%.0f");
+            ImGui::SliderFloat("decel m/s2", &c.decel, 0.0f, 12.0f, c.decel <= 0.0f ? "vehicle's own" : "%.1f");
+        }
+        ImGui::SliderFloat("facing deg", &c.facing, 0.0f, 359.0f, "%.0f");
+        ImGui::TextDisabled("0 = facing it, 90 = right side, 180 = behind");
+        ImGui::SliderFloat("size", &c.size, 0.8f, 1.3f, "%.2f");
+        ImGui::SameLine();
+        ImGui::TextDisabled("%.2f m", 1.75 * static_cast<double>(c.size));
+        ImGui::SliderFloat("offset m", &c.offset, -1.5f, 1.5f, "%.2f");
+        bool limp = c.limp;
+        if (ImGui::Checkbox("limp (no reactions)", &limp)) c.limp = limp;
+        if (!c.limp && ImGui::BeginCombo("game's reaction", c.start.c_str()))
+        {
+            for (const std::string& st : crashStarts())
+            {
+                char label[64];
+                std::snprintf(label, sizeof(label), "%s (%.0f %% in game)", st.c_str(), 100.0 * static_cast<double>(crashStartShare(st)));
+                if (ImGui::Selectable(label, st == c.start)) c.start = st;
+            }
+            ImGui::EndCombo();
+        }
+        if (!c.limp && (c.start == "step" || c.start == "dive"))
+        {
+            int right = c.side == "right" ? 1 : 0;
+            ImGui::TextUnformatted("goes to the vehicle's");
+            ImGui::SameLine();
+            if (ImGui::RadioButton("left", right == 0)) c.side = "left";
+            ImGui::SameLine();
+            if (ImGui::RadioButton("right", right == 1)) c.side = "right";
+        }
+        if (!c.limp && c.start != "none" && c.start != "run")
+        {
+            ImGui::SliderFloat("reacts ms before", &c.leadMs, 0.0f, 2000.0f, c.leadMs <= 0.0f ? "default" : "%.0f");
+            ImGui::TextDisabled("longer: struck later in it, or it gets clear");
+        }
+        if (ImGui::Button("Run", ImVec2(-1.0f, 0.0f))) loadCrash(app, crashName(c), false);
+        ImGui::Separator();
+        if (app.crashAnalysed)
+        {
+            const CrashAnalysis& a = app.crashAnalysis;
+            const ImVec4 colour = a.overall == Verdict::Pass ? ImVec4(0.4f, 0.9f, 0.4f, 1.0f)
+                                  : a.overall == Verdict::Fail ? ImVec4(1.0f, 0.35f, 0.35f, 1.0f)
+                                  : a.overall == Verdict::OutOfRange ? ImVec4(1.0f, 0.75f, 0.3f, 1.0f)
+                                                                     : ImVec4(0.6f, 0.75f, 1.0f, 1.0f);
+            ImGui::TextColored(colour, "%s - %s", verdictName(a.overall), a.outcome.c_str());
+            ImGui::TextWrapped("%s", app.crashAnalysedName.c_str());
+            for (const RuleResult& r : a.results)
+            {
+                const ImVec4 rc = r.verdict == Verdict::Pass ? ImVec4(0.55f, 0.8f, 0.55f, 1.0f)
+                                  : r.verdict == Verdict::Fail ? ImVec4(1.0f, 0.35f, 0.35f, 1.0f)
+                                  : r.verdict == Verdict::OutOfRange ? ImVec4(1.0f, 0.75f, 0.3f, 1.0f)
+                                                                     : ImVec4(0.6f, 0.75f, 1.0f, 1.0f);
+                ImGui::TextColored(rc, "%s %s", verdictName(r.verdict), r.id.c_str());
+                if (ImGui::IsItemHovered())
+                {
+                    ImGui::SetTooltip("%s\nmeasured: %s\nexpected: %s\nsource: %s", r.text.c_str(), r.measured.c_str(), r.expected.c_str(),
+                                      r.source.c_str());
+                }
+                if (!r.measured.empty() && r.verdict != Verdict::Pass)
+                {
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("%s (%s)", r.measured.c_str(), r.expected.c_str());
+                }
+            }
+        }
+        else if (dragdoll::scenarios::crashObservations(*app.main.scenario) != nullptr)
+        {
+            ImGui::TextDisabled("verdict when the run ends");
+        }
+        if (dragdoll::scenarios::crashObservations(*app.main.scenario) != nullptr)
+        {
+            // Your verdict on what you just watched: saved with the exact setting and the analyzer's verdict.
+            if (!app.judgementsLoaded) loadJudgements(app);
+            const std::string name = app.names[app.scenarioIndex];
+            if (app.feedbackFor != name)
+            {
+                app.feedbackFor = name;
+                const auto it = app.judgements.find(name);
+                std::snprintf(app.feedbackNote, sizeof(app.feedbackNote), "%s", it != app.judgements.end() ? it->second.note.c_str() : "");
+                app.feedbackStatus.clear();
+            }
+            ImGui::Separator();
+            const auto it = app.judgements.find(name);
+            if (it != app.judgements.end()) ImGui::TextDisabled("your verdict: %s", it->second.verdict == "right" ? "looks right" : "looks odd");
+            else ImGui::TextDisabled("your verdict: not given yet");
+            ImGui::InputTextMultiline("##note", app.feedbackNote, sizeof(app.feedbackNote), ImVec2(-1.0f, 54.0f));
+            ImGui::TextDisabled("what you saw (optional)");
+            if (ImGui::Button("Looks right")) saveJudgement(app, "right");
+            ImGui::SameLine();
+            if (ImGui::Button("Looks odd")) saveJudgement(app, "odd");
+            if (!app.feedbackStatus.empty())
+            {
+                ImGui::SameLine();
+                ImGui::TextDisabled("%s", app.feedbackStatus.c_str());
+            }
+        }
+    }
+    ImGui::End();
+}
+
+// The founder's judgements (see App::judgements).
+void loadJudgements(App& app)
+{
+    app.judgements.clear();
+    app.judgementsLoaded = true;
+    std::ifstream in("crashlab/feedback.jsonl");
+    std::string line;
+    while (std::getline(in, line))
+    {
+        const nlohmann::json j = nlohmann::json::parse(line, nullptr, false);
+        if (j.is_discarded() || !j.is_object()) continue;
+        app.judgements[j.value("name", "")] = App::Judgement{j.value("verdict", ""), j.value("note", "")};
+    }
+}
+
+void saveJudgement(App& app, const std::string& verdict)
+{
+    const std::string name = app.names[app.scenarioIndex];
+    std::error_code ec;
+    std::filesystem::create_directories("crashlab", ec);
+    std::ofstream out("crashlab/feedback.jsonl", std::ios::app);
+    if (!out)
+    {
+        app.feedbackStatus = "could not write crashlab/feedback.jsonl";
+        return;
+    }
+    char when[32];
+    const std::time_t now = std::time(nullptr);
+    std::tm local{};
+    localtime_s(&local, &now);
+    std::strftime(when, sizeof(when), "%Y-%m-%d %H:%M:%S", &local);
+    const bool analysed = app.crashAnalysed && app.crashAnalysedName == name;
+    nlohmann::json j = {{"time", when},
+                        {"name", name},
+                        {"verdict", verdict},
+                        {"note", std::string(app.feedbackNote)},
+                        {"analyzer", analysed ? dragdoll::scenarios::verdictName(app.crashAnalysis.overall) : "not finished"},
+                        {"outcome", analysed ? app.crashAnalysis.outcome : ""}};
+    if (analysed)
+    {
+        nlohmann::json issues = nlohmann::json::array();
+        for (const auto& r : app.crashAnalysis.results)
+            if (r.verdict != dragdoll::scenarios::Verdict::Pass)
+                issues.push_back(std::string(dragdoll::scenarios::verdictName(r.verdict)) + " " + r.id + " " + r.measured);
+        j["issues"] = issues;
+    }
+    out << j.dump() << "\n";
+    app.judgements[name] = App::Judgement{verdict, app.feedbackNote};
+    app.feedbackStatus = std::string("saved: ") + (verdict == "right" ? "looks right" : "looks odd");
+}
+
+// Splits one CSV line (fields may be "quoted", commas inside quotes kept).
+std::vector<std::string> csvFields(const std::string& line)
+{
+    std::vector<std::string> out(1);
+    bool quoted = false;
+    for (char ch : line)
+    {
+        if (ch == '"') quoted = !quoted;
+        else if (ch == ',' && !quoted) out.emplace_back();
+        else out.back() += ch;
+    }
+    return out;
+}
+
+void loadCrashRows(App& app)
+{
+    app.crashRows.clear();
+    app.crashRowsLoaded = true;
+    std::ifstream in("crashlab/results.csv");
+    if (!in)
+    {
+        app.crashRowsStatus = "no crashlab/results.csv yet - run dragdoll_crashlab";
+        return;
+    }
+    std::string line;
+    std::getline(in, line); // Header
+    while (std::getline(in, line))
+    {
+        const std::vector<std::string> f = csvFields(line);
+        if (f.size() < 19) continue;
+        App::CrashRow r;
+        r.name = f[0];
+        r.verdict = f[1];
+        r.outcome = f[2];
+        r.vehicle = f[3];
+        r.kmh = std::strtof(f[4].c_str(), nullptr);
+        r.brake = f[5] == "1";
+        r.delay = std::strtof(f[6].c_str(), nullptr);
+        r.facing = std::strtof(f[7].c_str(), nullptr);
+        r.size = std::strtof(f[8].c_str(), nullptr);
+        r.aware = f[9] == "1";
+        r.throwM = std::strtof(f[11].c_str(), nullptr);
+        r.issues = f[18];
+        app.crashRows.push_back(std::move(r));
+    }
+    app.crashRowsStatus = std::to_string(app.crashRows.size()) + " runs";
+}
+
+// The crash lab's table: filter by verdict and vehicle; a click plays that exact setting in the sandbox.
+void drawCrashResults(App& app, float w)
+{
+    ImGui::SetNextWindowPos(ImVec2(w - 1010.0f, 300.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(400.0f, 420.0f), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Crash results"))
+    {
+        if (!app.crashRowsLoaded) loadCrashRows(app);
+        if (!app.judgementsLoaded) loadJudgements(app);
+        if (ImGui::Button("Reload")) loadCrashRows(app);
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s", app.crashRowsStatus.c_str());
+        static const char* kVerdicts[4] = {"PASS", "FAIL", "OUT OF RANGE", "NO REFERENCE"};
+        int counts[4] = {0, 0, 0, 0};
+        for (const App::CrashRow& r : app.crashRows)
+            for (int v = 0; v < 4; ++v)
+                if (r.verdict == kVerdicts[v] && (app.rowVehicle.empty() || r.vehicle == app.rowVehicle)) ++counts[v];
+        for (int v = 0; v < 4; ++v)
+        {
+            char label[48];
+            std::snprintf(label, sizeof(label), "%s %d", kVerdicts[v], counts[v]);
+            ImGui::Checkbox(label, &app.showVerdict[v]);
+            if (v % 2 == 0) ImGui::SameLine();
+        }
+        ImGui::Checkbox("hide the ones you judged", &app.hideJudged);
+        if (ImGui::BeginCombo("vehicle##rows", app.rowVehicle.empty() ? "all" : app.rowVehicle.c_str()))
+        {
+            if (ImGui::Selectable("all", app.rowVehicle.empty())) app.rowVehicle.clear();
+            for (const std::string& v : dragdoll::scenarios::crashVehicles())
+                if (ImGui::Selectable(v.c_str(), v == app.rowVehicle)) app.rowVehicle = v;
+            ImGui::EndCombo();
+        }
+        std::vector<const App::CrashRow*> shown;
+        for (const App::CrashRow& r : app.crashRows)
+        {
+            if (!app.rowVehicle.empty() && r.vehicle != app.rowVehicle) continue;
+            if (app.hideJudged && app.judgements.count(r.name) != 0) continue;
+            for (int v = 0; v < 4; ++v)
+                if (app.showVerdict[v] && r.verdict == kVerdicts[v]) shown.push_back(&r);
+        }
+        if (ImGui::BeginChild("rows"))
+        {
+            ImGuiListClipper clipper;
+            clipper.Begin(static_cast<int>(shown.size()));
+            while (clipper.Step())
+            {
+                for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i)
+                {
+                    const App::CrashRow& r = *shown[static_cast<size_t>(i)];
+                    const auto judged = app.judgements.find(r.name);
+                    const char* mark = judged == app.judgements.end() ? "     " : judged->second.verdict == "right" ? "[ok] " : "[odd]";
+                    char label[220];
+                    std::snprintf(label, sizeof(label), "%s %-12s %s %3.0f km/h %s f%03.0f s%.2f%s - %s##%d", mark, r.verdict.c_str(), r.vehicle.c_str(),
+                                  static_cast<double>(r.kmh), r.brake ? (r.delay > 0.0f ? "brake+delay" : "brake") : "drive on",
+                                  static_cast<double>(r.facing), static_cast<double>(r.size), r.aware ? " aware" : "", r.outcome.c_str(), i);
+                    if (ImGui::Selectable(label, r.name == app.names[app.scenarioIndex])) loadCrash(app, r.name, false);
+                    if (ImGui::IsItemHovered() && !r.issues.empty()) ImGui::SetTooltip("%s", r.issues.c_str());
+                }
+            }
+        }
+        ImGui::EndChild();
+    }
+    ImGui::End();
 }
 
 bool openReplay(App& app, bool resetCamera)
@@ -838,6 +1176,15 @@ void update(App& app, float realDt)
     const bool finished = duration > 0.0 && static_cast<double>(dragdoll_world_get_step_count(app.main.world)) / 120.0 >= duration;
     // Without auto-restart the world keeps running past the scenario's end, so it can still be pushed and inspected
     // (resting bodies sleep, so this costs almost nothing).
+    if (finished && !(app.crashAnalysed && app.crashAnalysedName == app.names[app.scenarioIndex]))
+    {
+        if (const auto* o = dragdoll::scenarios::crashObservations(*app.main.scenario))
+        {
+            app.crashAnalysis = dragdoll::scenarios::analyzeCrash(*o);
+            app.crashAnalysedName = app.names[app.scenarioIndex];
+            app.crashAnalysed = true;
+        }
+    }
     if (finished && app.autoRestart)
     {
         loadScenario(app, app.scenarioIndex, false);
@@ -1315,7 +1662,7 @@ void watchLibrary(App& app)
 // ------------------------------------------------------------------------------------------------
 // Command channel (task 2.7): one text command per line, one JSON reply per command.
 // ------------------------------------------------------------------------------------------------
-const char* const kTensionNames[] = {"limp", "relaxed", "tense", "stunned"};
+const char* const kTensionNames[] = {"limp", "relaxed", "tense", "stunned", "braced"};
 
 // Sets the tension of the live character (logged for hot-reload restore). false if there is none.
 bool setLiveTension(App& app, DdTension tension, float blend)
@@ -1359,6 +1706,11 @@ std::string handleCommand(App& app, BodyMotion& motion, const std::string& line)
         in >> name;
         const auto it = std::find(app.names.begin(), app.names.end(), name);
         if (replaying) return bad("viewer is showing a replay");
+        if (name.rfind("crash", 0) == 0)
+        {
+            if (!loadCrash(app, name, false)) return bad(app.error);
+            return ok({{"scenario", app.names[app.crashSlot]}});
+        }
         if (it == app.names.end()) return bad("unknown scenario: " + name);
         if (!loadScenario(app, static_cast<size_t>(it - app.names.begin()), false)) return bad(app.error);
         return ok({{"scenario", name}});
@@ -1756,7 +2108,7 @@ void applyLiveFrame(App& app, const nlohmann::json& frame)
     app.liveStep = frame["step"].get<uint64_t>();
     ++app.liveFrames;
     static const char* const kStates[] = {"active", "recovering", "settled", "dead", "FAILED"};
-    static const char* const kTension[] = {"limp", "relaxed", "tense", "stunned"};
+    static const char* const kTension[] = {"limp", "relaxed", "tense", "stunned", "braced"};
     app.liveStatus.clear();
     for (const nlohmann::json& c : frame["characters"])
     {
@@ -1783,7 +2135,7 @@ void applyLiveFrame(App& app, const nlohmann::json& frame)
         }
         char line[200];
         std::snprintf(line, sizeof(line), "%s: %s | %s%s | capture point %.1f cm", label.c_str(), kStates[std::min(4, c["state"].get<int>())],
-                      kTension[std::min(3, c["tension"].get<int>())], c["balance"].get<int>() != 0 ? " + balance" : "",
+                      kTension[std::min(4, c["tension"].get<int>())], c["balance"].get<int>() != 0 ? " + balance" : "",
                       c["balance_error"].get<float>() * 100.0f);
         std::string status = line;
         if (c.value("ttc", -1.0f) >= 0.0f) // The host's own perception and behaviour stage
@@ -2090,7 +2442,7 @@ void drawLivePanel(App& app)
             ImGui::SameLine();
             if (ImGui::Checkbox("invert Y", &app.mouseInvertY)) saveSettings(app);
         }
-        static const char* const kTensions[] = {"limp", "relaxed", "tense", "stunned"};
+        static const char* const kTensions[] = {"limp", "relaxed", "tense", "stunned", "braced"};
         for (App::LiveCharacter& entry : app.liveList)
         {
             ImGui::PushID(static_cast<int>(entry.id));
@@ -2211,10 +2563,12 @@ void drawPanels(App& app, BodyMotion& motion)
         {
             for (size_t i = 0; i < app.names.size(); ++i)
             {
-                if (ImGui::Selectable(app.names[i].c_str(), i == app.scenarioIndex)) loadScenario(app, i, false);
+                if (ImGui::Selectable(i == app.crashSlot ? "crash (sandbox)" : app.names[i].c_str(), i == app.scenarioIndex)) loadScenario(app, i, false);
             }
         }
         ImGui::End();
+        drawCrashPanel(app, w);
+        drawCrashResults(app, w);
     }
 
     measureMotion(activeWorld(app), motion);
@@ -2334,10 +2688,25 @@ int main(int argc, char** argv)
     size_t index = 0;
     for (size_t i = 0; i < app.names.size(); ++i)
     {
+        if (app.names[i] == "crash") app.crashSlot = i;
+    }
+    app.names[app.crashSlot] = dragdoll::scenarios::crashName(app.crash);
+    for (size_t i = 0; i < app.names.size(); ++i)
+    {
         if (app.names[i] == start)
         {
             index = i;
         }
+    }
+    if (start.rfind("crash", 0) == 0)
+    {
+        std::string crashError;
+        if (dragdoll::scenarios::parseCrashName(start, app.crash, crashError))
+        {
+            app.names[app.crashSlot] = dragdoll::scenarios::crashName(app.crash);
+            index = app.crashSlot;
+        }
+        else std::fprintf(stderr, "crash: %s\n", crashError.c_str());
     }
 
     SetTraceLogLevel(LOG_WARNING);

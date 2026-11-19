@@ -2,7 +2,9 @@
 // "car_hit": the reaction chain for a pedestrian struck by a vehicle (ADR-0025). Stages so far:
 //   Watch      — nothing; the body keeps whatever the host set.
 //   Anticipate — Startle: once the character has been aware of the threat for the reflex latency, the whole body
-//                tenses. Shield (fend): after the voluntary latency, both hands go towards the vehicle, elbows
+//                tenses in a short burst (startle.burst) with a slight crouch, then eases into a braced tone
+//                (startle.ease): on guard, not locked rigid (task 4.9; founder's reviews 2026-11-17 and 2026-11-19:
+//                "too stiff", "falls over like a block"). Shield (fend): after the voluntary latency, both hands go towards the vehicle, elbows
 //                slightly flexed (the "hands raised towards the vehicle" posture of the volunteer studies).
 //   Recover    — the threat went by without contact: tension eases back to what it was.
 //   Impact     — first contact with the vehicle (task 4.6). At once: a tensed struck leg yields (its muscles are
@@ -17,17 +19,26 @@
 //                arrive with the pelvis, Hsiao & Robinovitch). Without: Guard if it was guarding.
 //   Landing    — ground due within landing.lead or touched: keep reaching until a body touches; then the arms yield
 //                (soft landing, DeGoede & Ashton-Miller) and the body stays relaxed so it rolls on.
-//   Tumble     — on the ground: relaxed, forearms loosely near the head, never fighting the slide; a bounce into the
+//   Tumble     — on the ground: relaxed, forearms loosely near the head while it still slides, never fighting the
+//                slide; once the body has stopped (every body still) it goes to Hurt; a bounce into the
 //                air goes back to Airborne.
 //   Any fall (not only after a vehicle): a body that is physics-driven, off any vehicle and either airborne or
 //                tipped over (upright < fall.upright) with the head dropping starts the reflex clock and goes to
 //                Airborne: after the reflex latency the hands reach for the ground (founder, 2026-11-17: "instinct"
 //                reactions - landing on the hands, covering the face - are what reads as natural).
+//   Hurt       — alive, on the ground and stopped: a person in pain (founder, 2026-11-19, with reference photos): knees
+//                and hips drawn up, trunk curled, head tucked (pose "hurt"); struck from behind on the trunk or head it
+//                arches back instead (pose "hurt_back"). Both hands go to where it hurts most (founder, 2026-11-19:
+//                "focus on where the hands end, the arms follow"): the non-arm body with the largest velocity change
+//                since the hit, on the side it was struck from (the contact normal then, kept in that body's frame),
+//                side by side. Arms tense to hold, the rest braced so the curl / arch really happens. (Replaces a version where the arms just let go:
+//                "looks bad"; before that the guard stayed on: hands folded at the face, "praying".)
 //   Limp       — vitality 0: nothing left to react with.
 // Includes only the behaviour SDK (ADR-0013).
 #include <dragdoll/behaviour_sdk.h>
 
 #include <cmath>
+#include <cstdio>
 
 namespace
 {
@@ -46,6 +57,9 @@ public:
         mClock.reflexLatency = mImpactClock.reflexLatency = p.number("reaction.reflex", 0.1f);
         mClock.voluntaryLatency = mImpactClock.voluntaryLatency = p.number("reaction.voluntary", 0.5f);
         mStartleBlend = p.number("startle.blend", 0.08f);
+        mStartleBurst = p.number("startle.burst", 0.3f);
+        mStartleEase = p.number("startle.ease", 0.3f);
+        mStartleCrouch = p.number("startle.crouch", 1.0f) > 0.5f;
         mShieldReach = p.number("shield.reach", 0.55f);
         mShieldRaise = p.number("shield.raise", 0.15f);
         mShieldExtension = p.number("shield.extension", 0.85f);
@@ -73,6 +87,9 @@ public:
         mLandingLead = p.number("landing.lead", 0.12f);
         mLandingYield = p.number("landing.yield", 0.08f);
         mTumbleExtension = p.number("tumble.extension", 0.4f);
+        mHurtBlend = p.number("hurt.blend", 0.6f);
+        mHurtHold = p.number("hurt.hold", 0.95f);
+        mHurtSpread = p.number("hurt.spread", 0.06f);
     }
 
     void update(const Percept& s, Command& out) override
@@ -87,6 +104,7 @@ public:
             return;
         }
         trackHead(s);
+        trackHurt(s);
         const bool threat = s.threat.collider != DD_INVALID_COLLIDER;
         if (threat)
         {
@@ -126,6 +144,7 @@ public:
                 mClock.clear();
                 mClock.stimulus();
                 mStartled = false;
+                mEased = false;
                 mShielding = false;
                 mStage = Stage::Anticipate;
             }
@@ -134,8 +153,19 @@ public:
             mClock.tick(s.dt);
             if (!mStartled && mClock.reflex())
             {
-                out.setTensionAll(DD_TENSION_TENSE, mStartleBlend); // Startle: whole-body co-contraction
+                out.setTensionAll(DD_TENSION_TENSE, mStartleBlend); // Startle: whole-body co-contraction (a burst)
+                if (mStartleCrouch) out.usePose("brace", kCurlRegions); // Knees and hips give a little, trunk leans in
                 mStartled = true;
+                mSinceStartle = 0.0f;
+            }
+            if (mStartled && !mEased)
+            {
+                mSinceStartle += s.dt;
+                if (mSinceStartle >= mStartleBurst)
+                {
+                    out.setTensionAll(DD_TENSION_BRACED, mStartleEase); // The burst eases into a braced stance
+                    mEased = true;
+                }
             }
             if (threat && mStartled && mClock.voluntary())
             {
@@ -242,6 +272,7 @@ public:
                 out.setTension(DD_REGION_ARM_RIGHT, DD_TENSION_RELAXED, mLandingYield);
                 mReaching = false;
                 mGuarding = false;
+                mArmsDown = false; // A new stretch on the ground: guard while it slides
                 mStage = Stage::Tumble;
             }
             else if (mReaching)
@@ -254,10 +285,35 @@ public:
             if (s.senses.airborne != 0 && s.senses.landing_seconds >= mReachMinTime)
             {
                 mStage = Stage::Airborne; // Bounced up
+                mArmsDown = false;
+            }
+            else if (s.stillSeconds > 0.0f && !mArmsDown)
+            {
+                // Stopped: nothing left to protect the head from - now it hurts. Struck from behind on the trunk or head:
+                // it arches back; otherwise it curls up.
+                mHurtBack = hurtFromBehind(s);
+                out.usePose(mHurtBack ? "hurt_back" : "hurt", kCurlRegions | DD_REGION_BIT(DD_REGION_HEAD_NECK));
+                for (const DdRegion r : {DD_REGION_TRUNK, DD_REGION_LEG_LEFT, DD_REGION_LEG_RIGHT, DD_REGION_HEAD_NECK})
+                    out.setTension(r, DD_TENSION_BRACED, mHurtBlend);
+                out.setTension(DD_REGION_ARM_LEFT, DD_TENSION_TENSE, mHurtBlend);
+                out.setTension(DD_REGION_ARM_RIGHT, DD_TENSION_TENSE, mHurtBlend);
+                mArmsDown = true;
+                mStage = Stage::Hurt;
+            }
+            else if (!mArmsDown)
+            {
+                looseGuard(s, out); // Still sliding (once settled, a nudge does not bring the guard back)
+            }
+            break;
+        case Stage::Hurt:
+            if (s.senses.airborne != 0 && s.senses.landing_seconds >= mReachMinTime)
+            {
+                mArmsDown = false;
+                mStage = Stage::Airborne; // Thrown again (another hit)
             }
             else
             {
-                looseGuard(s, out);
+                holdHurt(s, out);
             }
             break;
         case Stage::Limp:
@@ -278,13 +334,14 @@ public:
         case Stage::Airborne: return mReaching ? "airborne: reach" : mGuarding ? "airborne: guard" : "airborne";
         case Stage::Landing: return "landing";
         case Stage::Tumble: return "tumble";
+        case Stage::Hurt: return mHurtText;
         case Stage::Limp: return "limp";
         }
         return "";
     }
 
 private:
-    enum class Stage { Watch, Anticipate, Recover, Impact, Carried, Airborne, Landing, Tumble, Limp };
+    enum class Stage { Watch, Anticipate, Recover, Impact, Carried, Airborne, Landing, Tumble, Hurt, Limp };
 
     // Supported by the vehicle and not by the ground.
     static bool carried(const Percept& s) { return s.senses.carried_by != DD_INVALID_COLLIDER && s.senses.ground_bodies == 0; }
@@ -293,6 +350,8 @@ private:
 
     void enterImpact(const Percept& s, Command& out)
     {
+        mHurtBody = -1;
+        mHurtDv = 0.0f;
         mReaching = false;
         mPrimed = mStartled; // It saw the car coming and was already braced: its protective reflexes are ready
         mGuarding = false;
@@ -305,7 +364,7 @@ private:
         {
             const DdRegion region = s.bodyRegion[i];
             if ((s.contacts[i].flags & DD_CONTACT_OBJECT) != 0 && (region == DD_REGION_LEG_LEFT || region == DD_REGION_LEG_RIGHT) &&
-                s.tension[region] == DD_TENSION_TENSE)
+                (s.tension[region] == DD_TENSION_TENSE || s.tension[region] == DD_TENSION_BRACED))
             {
                 out.setTension(region, DD_TENSION_RELAXED, mYieldBlend);
             }
@@ -329,6 +388,7 @@ private:
         {
             out.usePose("curl", kCurlRegions); // Tucked in the air
         }
+        mArmsDown = false;
         mStage = s.senses.airborne != 0 ? Stage::Airborne : Stage::Tumble;
     }
 
@@ -397,6 +457,105 @@ private:
     // The head is coming down to the ground: close to it and dropping.
     bool headFalling() const { return mHeadHeight < mApproachHeight && mHeadDrop > mApproachSpeed; }
 
+    // The first body of a region in rig order (an arm's upper arm, the trunk's pelvis).
+    int32_t firstBody(const Percept& s, DdRegion region) const
+    {
+        for (uint32_t i = 0; i < s.bodyCount && i < kMaxBodies; ++i)
+            if (s.bodyRegion[i] == region) return static_cast<int32_t>(i);
+        return -1;
+    }
+
+    static DdVec3 rotate(DdQuat q, DdVec3 v)
+    {
+        // v' = v + 2w (q x v) + 2 q x (q x v)
+        const DdVec3 u{q.x, q.y, q.z};
+        const auto cross = [](DdVec3 a, DdVec3 b) { return DdVec3{a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x}; };
+        const DdVec3 t = cross(u, v), tt = cross(u, t);
+        return DdVec3{v.x + 2.0f * (q.w * t.x + tt.x), v.y + 2.0f * (q.w * t.y + tt.y), v.z + 2.0f * (q.w * t.z + tt.z)};
+    }
+
+    // Where it hurts: the non-arm body with the largest velocity change since the hit (the arms do the holding), and the
+    // side it was struck from (the contact normal points from the other thing into the body), kept in that body's
+    // frame so it turns with it.
+    void trackHurt(const Percept& s)
+    {
+        if (s.kinematic || s.contacts == nullptr || s.bodies == nullptr) return;
+        for (uint32_t i = 0; i < s.bodyCount && i < kMaxBodies; ++i)
+        {
+            const DdRegion r = s.bodyRegion[i];
+            if (r == DD_REGION_ARM_LEFT || r == DD_REGION_ARM_RIGHT || s.contacts[i].flags == 0) continue;
+            if (s.contacts[i].delta_v > mHurtDv)
+            {
+                // A leg is held at the knee (both hands on the thigh): a shin or foot blow included - the hands cannot
+                // reach the foot of a body curled up on the ground.
+                int32_t held = static_cast<int32_t>(i);
+                if (r == DD_REGION_LEG_LEFT || r == DD_REGION_LEG_RIGHT) held = firstBody(s, r);
+                if (held < 0) continue;
+                mHurtDv = s.contacts[i].delta_v;
+                mHurtBody = held;
+                const DdQuat q = s.bodies[held].rotation;
+                mHurtNormalLocal = rotate(DdQuat{-q.x, -q.y, -q.z, q.w}, s.contacts[i].normal);
+            }
+        }
+    }
+
+    // Struck from behind: the hurt part is the trunk or the head and the blow pushed it forwards.
+    bool hurtFromBehind(const Percept& s) const
+    {
+        if (mHurtBody < 0 || static_cast<uint32_t>(mHurtBody) >= s.bodyCount || s.bodies == nullptr) return false;
+        const DdRegion r = s.bodyRegion[mHurtBody];
+        if (r != DD_REGION_TRUNK && r != DD_REGION_HEAD_NECK) return false;
+        const DdVec3 n = rotate(s.bodies[mHurtBody].rotation, mHurtNormalLocal);
+        return n.x * s.trunkForward.x + n.y * s.trunkForward.y + n.z * s.trunkForward.z > 0.4f;
+    }
+
+    // Hurt: both hands on the struck side of the part that hurts most, side by side (aimed at one spot the hands
+    // collide and push each other away).
+    void holdHurt(const Percept& s, Command& out)
+    {
+        if (s.bodies == nullptr) return;
+        int32_t body = mHurtBody;
+        if (body < 0 || static_cast<uint32_t>(body) >= s.bodyCount)
+        {
+            body = firstBody(s, DD_REGION_TRUNK) >= 0 ? firstBody(s, DD_REGION_TRUNK) + 1 : -1; // Nothing recorded: the belly
+            if (body < 0 || static_cast<uint32_t>(body) >= s.bodyCount) return;
+        }
+        const DdRegion region = s.bodyRegion[body];
+        DdVec3 n = mHurtBody == body ? rotate(s.bodies[body].rotation, mHurtNormalLocal) : DdVec3{-s.trunkForward.x, -s.trunkForward.y, -s.trunkForward.z};
+        const float len = std::sqrt(n.x * n.x + n.y * n.y + n.z * n.z);
+        if (len < 1e-4f) return;
+        n = DdVec3{n.x / len, n.y / len, n.z / len};
+        // The surface where it was struck (the normal points into the body), plus the hand's own thickness. A struck side
+        // that faces the ground (most blows are the landing's) cannot be held - the body lies on it: the hands go to
+        // the top of that part instead (the face or forehead of a head lying on its back, the top of a thigh).
+        const float depth = region == DD_REGION_HEAD_NECK ? 0.13f : region == DD_REGION_TRUNK ? 0.16f : 0.11f;
+        DdVec3 c = s.bodies[body].position;
+        if ((region == DD_REGION_LEG_LEFT || region == DD_REGION_LEG_RIGHT) && static_cast<uint32_t>(body) + 1 < s.bodyCount &&
+            s.bodyRegion[body + 1] == region)
+        {
+            // A leg is held at the knee (between the thigh's and the shin's centres): drawn up towards the chest, both
+            // hands reach it.
+            const DdVec3 shin = s.bodies[body + 1].position;
+            c = DdVec3{(c.x + shin.x) * 0.5f, (c.y + shin.y) * 0.5f, (c.z + shin.z) * 0.5f};
+        }
+        if (-(n.x * s.up.x + n.y * s.up.y + n.z * s.up.z) < 0.0f) n = DdVec3{-s.up.x, -s.up.y, -s.up.z};
+        const DdVec3 spot{c.x - n.x * depth, c.y - n.y * depth, c.z - n.z * depth};
+        // Side by side across the struck surface.
+        DdVec3 t{n.y * s.up.z - n.z * s.up.y, n.z * s.up.x - n.x * s.up.z, n.x * s.up.y - n.y * s.up.x};
+        float tl = std::sqrt(t.x * t.x + t.y * t.y + t.z * t.z);
+        if (tl < 0.3f)
+        {
+            t = s.trunkLeft;
+            tl = 1.0f;
+        }
+        t = DdVec3{t.x / tl * mHurtSpread, t.y / tl * mHurtSpread, t.z / tl * mHurtSpread};
+        const bool leftOnPlus = t.x * s.trunkLeft.x + t.y * s.trunkLeft.y + t.z * s.trunkLeft.z >= 0.0f;
+        const DdVec3 a{spot.x + t.x, spot.y + t.y, spot.z + t.z}, b{spot.x - t.x, spot.y - t.y, spot.z - t.z};
+        out.aimAt(DD_REGION_ARM_LEFT, leftOnPlus ? a : b, mHurtHold);
+        out.aimAt(DD_REGION_ARM_RIGHT, leftOnPlus ? b : a, mHurtHold);
+        std::snprintf(mHurtText, sizeof(mHurtText), "hurt: body %d, %s", body, mHurtBack ? "back" : "front");
+    }
+
     // On the ground: the forearms loosely between the head and the ground (relaxed arms: it does not fight the slide).
     void looseGuard(const Percept& s, Command& out)
     {
@@ -464,6 +623,13 @@ private:
     float mShieldReach = 0.55f, mShieldRaise = 0.15f, mShieldExtension = 0.85f;
     DdTension mBefore[DD_REGION_COUNT] = {};
     float mAnticipateTime = 1.2f, mAwarenessNeeded = 0.5f, mStartleBlend = 0.08f, mRecoverDelay = 0.6f, mRecoverBlend = 0.5f;
+    float mStartleBurst = 0.3f, mStartleEase = 0.3f, mSinceStartle = 0.0f;
+    bool mStartleCrouch = true, mEased = false, mArmsDown = false;
+    float mHurtBlend = 0.6f, mHurtHold = 0.95f, mHurtSpread = 0.06f, mHurtDv = 0.0f;
+    int32_t mHurtBody = -1;
+    DdVec3 mHurtNormalLocal{};
+    bool mHurtBack = false;
+    char mHurtText[48] = "hurt";
     float mYieldBlend = 0.02f, mBraceBlend = 0.05f, mCarriedRelax = 0.5f, mReleaseSeconds = 0.1f;
     float mGuardOffset = 0.12f, mGuardExtension = 0.5f, mGuardUnaware = 0.1f, mGuardBlend = 0.3f, mAfterBlend = 0.3f;
     DdTension mAfterTension = DD_TENSION_RELAXED;
