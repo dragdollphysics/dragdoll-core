@@ -41,7 +41,7 @@ struct Scene
     {
         DdCharacterDesc cd;
         dragdoll_character_desc_default(&cd);
-        cd.rig_json = dragdoll_get_builtin_rig("humanoid16");
+        cd.rig_json = dragdoll_get_builtin_rig("humanoid18");
         cd.transform.position = DdVec3{x, 0, 1.0f};
         DdCharacter* c = nullptr;
         REQUIRE(dragdoll_character_create(world, &cd, &c) == DD_OK);
@@ -95,8 +95,8 @@ TEST_CASE("failed: a forced NaN ends in FAILED, never a crash; the host gets the
     CHECK(finite(frozen));
     CHECK(frozen[0].position.z == doctest::Approx(before[0].position.z).epsilon(0.05));
     DdTransform root;
-    std::vector<DdQuat> joints(16);
-    CHECK(dragdoll_character_get_pose(broken, 0, joints.data(), 16, &root) == DD_OK);
+    std::vector<DdQuat> joints(18);
+    CHECK(dragdoll_character_get_pose(broken, 0, joints.data(), 18, &root) == DD_OK);
 
     // Commands are refused with a clear message.
     CHECK(dragdoll_character_apply_impulse(broken, 0, DdVec3{1, 0, 0}, nullptr) == DD_ERROR_INVALID_ARGUMENT);

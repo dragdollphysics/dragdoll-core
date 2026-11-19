@@ -763,7 +763,7 @@ DdCharacter* World::createCharacter(const DdCharacterDesc& desc)
     }
     if (desc.rig_json == nullptr)
     {
-        throw std::invalid_argument("rig_json is required (e.g. dragdoll_get_builtin_rig(\"humanoid16\"))");
+        throw std::invalid_argument("rig_json is required (e.g. dragdoll_get_builtin_rig(\"humanoid18\"))");
     }
     if (!isFinite(desc.transform.position))
     {

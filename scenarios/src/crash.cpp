@@ -93,14 +93,27 @@ Value measure(const std::string& name, const CrashObservations& o)
     if (name == "guard_on_vehicle")
     {
         if (o.guard < 0.0) return Value::of(-1); // Never guarded (e.g. never lay on the vehicle)
-        const bool onVehicle = o.carried >= 0.0 && o.guard - o.carried <= 0.01 && (o.offVehicle < 0.0 || o.guard < o.offVehicle);
+        // The stage it began in (the startle at the hit holds the arms for a moment, so the guard may start a little
+        // after the body landed on the vehicle - but never in the air).
+        const bool onVehicle = o.guardStartedCarried && (o.offVehicle < 0.0 || o.guard < o.offVehicle);
         return Value::of(onVehicle ? 1 : 0);
     }
     if (name == "on_vehicle_at_end") return Value::of(o.onVehicleAtEnd ? 1 : 0);
     if (name == "inside_vehicle") return Value::of(o.pelvisInsideVehicle ? 1 : 0);
     if (name == "hands_folded") return Value::of(o.handsFolded ? 1 : 0);
+    if (name == "in_pain") return o.report.valid ? Value::of(o.endStatus.rfind("hurt", 0) == 0 ? 1 : 0) : Value{};
     if (name == "gesture_m") return o.gestureError >= 0.0f ? Value::of(o.gestureError) : Value{};
     if (name == "pelvis_moved_m") return Value::of(o.pelvisMoved);
+    // The first landing (task 4.11a). The first hand: the earlier of the two that landed.
+    const int firstHand = o.landHand[0] < 0.0 ? (o.landHand[1] < 0.0 ? -1 : 1) : (o.landHand[1] < 0.0 || o.landHand[0] <= o.landHand[1] ? 0 : 1);
+    if (name == "hand_trunk_ms")
+        return firstHand >= 0 && o.landTrunk >= 0.0 ? Value::of((o.landHand[firstHand] - o.landTrunk) * 1000.0) : Value{};
+    if (name == "both_hands")
+        return o.landFirst >= 0.0 ? Value::of(o.landHand[0] >= 0.0 && o.landHand[1] >= 0.0 && std::fabs(o.landHand[0] - o.landHand[1]) <= 0.25 ? 1 : 0)
+                                  : Value{};
+    if (name == "hand_contact_ratio")
+        return firstHand >= 0 && o.landHandRatio[firstHand] >= 0.0f ? Value::of(o.landHandRatio[firstHand]) : Value{};
+    if (name == "head_first") return o.landFirst >= 0.0 ? Value::of(o.landHeadFirst ? 1 : 0) : Value{};
     if (!r.valid) return Value{};
     if (name == "class") return Value::word(trajectoryName(r.measured));
     if (name == "head_zone") return r.head_strike_zone != DD_ZONE_NONE ? Value::word(zoneName(r.head_strike_zone)) : Value{};
@@ -130,7 +143,8 @@ bool applies(const nlohmann::json& when, const CrashObservations& o)
     for (const auto& [key, v] : when.items())
     {
         if (key == "mode" && (v.get<std::string>() == "game") == o.limp) return false;
-        if (key == "aware" && v.get<bool>() != (o.aware || (!o.start.empty() && o.start != "none"))) return false;
+        if (key == "outcome" && (o.limp || v.get<std::string>() != o.outcome)) return false;
+        if (key == "aware" && v.get<bool>() != o.aware) return false;
         if (key == "drive" && (v.get<std::string>() == "brake") != o.brake) return false;
         if (key == "kmh" && (o.kmh < v[0].get<float>() || o.kmh > v[1].get<float>())) return false;
         if (key == "front" && (v.get<std::string>() == "low") != (o.bonnetEdgeHeight < 0.57f * o.stature)) return false;
@@ -184,7 +198,7 @@ const nlohmann::json& rules()
 
 std::string crashName(const CrashParams& p)
 {
-    return "crash:vehicle=" + p.vehicle + ",kmh=" + number(p.kmh) + ",limp=" + (p.limp ? "1" : "0") + ",aware=" +
+    return "crash:vehicle=" + p.vehicle + ",kmh=" + number(p.kmh) + ",limp=" + (p.limp ? "1" : "0") + ",outcome=" + p.outcome + ",aware=" +
            (p.aware ? "1" : "0") + ",start=" + p.start + ",side=" + p.side + ",lead_ms=" + number(p.leadMs) + ",brake=" + (p.brake ? "1" : "0") + ",delay_ms=" + number(p.brakeDelayMs) +
            ",decel=" + number(p.decel) + ",facing=" + number(p.facing) + ",size=" + number(p.size) + ",offset=" + number(p.offset);
 }
@@ -221,6 +235,16 @@ bool parseCrashName(const std::string& name, CrashParams& p, std::string& error)
             p.vehicle = value;
             continue;
         }
+        if (key == "outcome")
+        {
+            if (value != "alive" && value != "dead")
+            {
+                error = "outcome must be alive or dead";
+                return false;
+            }
+            p.outcome = value;
+            continue;
+        }
         if (key == "side")
         {
             if (value != "left" && value != "right")
@@ -250,6 +274,7 @@ bool parseCrashName(const std::string& name, CrashParams& p, std::string& error)
         if (key == "kmh" && f >= 1.0f && f <= 200.0f) p.kmh = f;
         else if (key == "limp") p.limp = f != 0.0f;
         else if (key == "aware") p.aware = f != 0.0f;
+        else if (key == "prehit") continue; // Retired setting (old feedback names)
         else if (key == "brake") p.brake = f != 0.0f;
         else if (key == "delay_ms" && f >= 0.0f && f <= 5000.0f) p.brakeDelayMs = f;
         else if (key == "lead_ms" && f >= 0.0f && f <= 3000.0f) p.leadMs = f;
@@ -269,6 +294,11 @@ bool parseCrashName(const std::string& name, CrashParams& p, std::string& error)
 std::vector<std::string> crashVehicles()
 {
     return vehicleNames();
+}
+
+bool crashOutcomePlausible(const std::string& outcome, float kmh)
+{
+    return outcome == "dead" ? kmh >= 30.0f : kmh <= 40.0f;
 }
 
 std::vector<std::string> crashStarts()
@@ -311,7 +341,12 @@ CrashAnalysis analyzeCrash(const CrashObservations& o)
         res.kind = rule.value("kind", "");
         res.text = rule.value("text", "");
         res.source = rule.value("source", "");
-        const Verdict miss = res.kind == "corridor" ? Verdict::OutOfRange : res.kind == "reference" ? Verdict::NoReference : Verdict::Fail;
+        res.share = rule.value("share", -1.0);
+        // population: a published share of people (e.g. 72 % of falls); a single run outside it is no defect, so it never
+        // changes the run's verdict - the crash lab compares the share of runs inside it with the published one.
+        const Verdict miss = res.kind == "corridor" || res.kind == "population" ? Verdict::OutOfRange
+                             : res.kind == "reference"                          ? Verdict::NoReference
+                                                                                : Verdict::Fail;
         if (res.kind == "corridor") ++a.corridorRulesApplied;
         if (!rule.contains("measure"))
         {
@@ -320,6 +355,7 @@ CrashAnalysis analyzeCrash(const CrashObservations& o)
             continue;
         }
         const Value v = measure(rule["measure"].get<std::string>(), o);
+        if (!v.present && (res.kind == "contract" || res.kind == "sanity" || res.kind == "population")) continue; // Nothing to judge (e.g. never touched)
         res.measured = v.show();
         bool ok = false;
         if (rule.contains("one_of"))
@@ -371,7 +407,9 @@ CrashAnalysis analyzeCrash(const CrashObservations& o)
         note.verdict = Verdict::NoReference;
         a.results.push_back(note);
     }
-    const auto any = [&](Verdict v) { return std::any_of(a.results.begin(), a.results.end(), [&](const RuleResult& r) { return r.verdict == v; }); };
+    const auto any = [&](Verdict v) {
+        return std::any_of(a.results.begin(), a.results.end(), [&](const RuleResult& r) { return r.kind != "population" && r.verdict == v; });
+    };
     a.overall = any(Verdict::Fail) ? Verdict::Fail : any(Verdict::OutOfRange) ? Verdict::OutOfRange
                                                    : any(Verdict::NoReference) ? Verdict::NoReference : Verdict::Pass;
     return a;

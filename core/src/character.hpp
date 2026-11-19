@@ -178,8 +178,9 @@ void setRegionTension(DdCharacter& character, DdRegion region, DdTension tension
 void assignRegions(DdCharacter& character);
 // Points a limb (arm or leg region) at a world position: sets the targets of its two main joints so that its end
 // (hand / foot centre) lies towards `target`, `extension` (0..1) of the limb's length away at most. False if the
-// region is not a two-joint limb.
-bool aimLimb(DdCharacter& character, DdRegion region, JPH::RVec3Arg target, float extension);
+// region is not a two-joint limb. `palm` (arms, optional): a world direction the palm turns to face (wrist target);
+// without it the wrist goes back to rest.
+bool aimLimb(DdCharacter& character, DdRegion region, JPH::RVec3Arg target, float extension, const JPH::Vec3* palm = nullptr);
 
 // Advances the blend by one fixed step and pushes the muscle state into the joint motors when it changed.
 void updateMuscles(DdCharacter& character, float dt);

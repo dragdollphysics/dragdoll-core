@@ -46,7 +46,7 @@ struct Scene
         REQUIRE(dragdoll_world_add_colliders(world, &box, 1, &ground) == DD_OK);
         DdCharacterDesc cd;
         dragdoll_character_desc_default(&cd);
-        cd.rig_json = dragdoll_get_builtin_rig("humanoid16");
+        cd.rig_json = dragdoll_get_builtin_rig("humanoid18");
         cd.transform.position = DdVec3{0, 0, height};
         REQUIRE(dragdoll_character_create(world, &cd, &human) == DD_OK);
     }

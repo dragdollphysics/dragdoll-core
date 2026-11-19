@@ -19,9 +19,13 @@ struct CrashParams
     std::string vehicle = "sedan"; // A vehicle pack (packs/vehicles)
     float kmh = 40.0f;             // Speed at the contact
     bool limp = false;             // false: as in a game - host-animated, car_hit behaviour, handed over at contact
+    std::string outcome = "alive"; // The game's decision at the hit (game mode): "alive" (reacts, pain on the ground) or
+                                   // "dead" (dying: reflexes in the air, relaxed once stopped, frozen at rest - as the mod)
     bool aware = false;            // Game mode only: DragDoll's own anticipation (general profile; SA takes `start`)
+    // (No "prehit" any more: the game's reaction no longer makes DragDoll aware - its before-the-hit stage could not
+    // show while the host animates, and it cost the impact stage (founder, 2026-11-19). Old names' prehit= is ignored.)
     // What the game had the pedestrian doing as the vehicle arrived (SA, measured over 1 133 hits: none 52 %, evasive
-    // step 25 %, dive 18 %, running 2 %, hands up 2 %). Any reaction = aware (the game decided it noticed).
+    // step 25 %, dive 18 %, running 2 %, hands up 2 %). Only the host's animation: DragDoll's part starts at the hit.
     std::string start = "none";    // none / step / dive / handsup / run (step and dive turn to their own direction across the vehicle's path)
     std::string side = "left";     // Which way a dodge / dive goes: to the vehicle's "left" or "right" - independent of
                                    // where the pedestrian stands, so it can also dive across the path, into the bonnet
@@ -37,7 +41,7 @@ struct CrashParams
     float offset = 0.0f;           // m sideways from the vehicle's centre line (+ = the vehicle's left)
 };
 
-// "crash:vehicle=sedan,kmh=40,limp=0,aware=0,start=none,side=left,lead_ms=0,brake=0,delay_ms=0,decel=0,facing=90,size=1.1,offset=0".
+// "crash:vehicle=sedan,kmh=40,limp=0,outcome=alive,aware=0,start=none,side=left,lead_ms=0,brake=0,delay_ms=0,decel=0,facing=90,size=1.1,offset=0".
 std::string crashName(const CrashParams& params);
 // Accepts any subset of the keys after "crash" (the rest keep their defaults). False + error on a bad name.
 bool parseCrashName(const std::string& name, CrashParams& params, std::string& error);
@@ -45,6 +49,10 @@ bool parseCrashName(const std::string& name, CrashParams& params, std::string& e
 std::vector<std::string> crashVehicles();
 // The starting states (what the game had the pedestrian doing), and how often each occurred in game (0..1).
 std::vector<std::string> crashStarts();
+// Whether the game produces this outcome at this speed (SA, 289 measured hits: the game kills at impulse 12; by speed
+// nobody died below 25 km/h, both happen at 30-40, survivors above 40 km/h are rare glancing hits): alive up to 40
+// km/h, dead from 30 km/h.
+bool crashOutcomePlausible(const std::string& outcome, float kmh);
 float crashStartShare(const std::string& start);
 
 // What a crash run recorded, filled every host frame by the scenario (times in s from the start of the run).
@@ -54,7 +62,8 @@ struct CrashObservations
     std::string vehicle;
     float kmh = 0.0f;
     bool limp = false, aware = false, brake = false;
-    std::string start;
+    std::string start, outcome;
+    bool frozen = false;           // Dead: frozen kinematic once the physics put it to sleep (as the SA mod)
     float facing = 0.0f, offset = 0.0f;
     float stature = 1.75f;         // m (1.75 x size)
     float bonnetEdgeHeight = 0.0f; // m, from the vehicle pack
@@ -67,6 +76,7 @@ struct CrashObservations
     bool failed = false;           // The character reached its FAILED state
     // Contract (game mode)
     double handover = -1.0, contact = -1.0, brace = -1.0, carried = -1.0, guard = -1.0, offVehicle = -1.0;
+    bool guardStartedCarried = false; // The guard began while the body lay on the vehicle (stage "carried")
     int legYielded = -1;           // At the impact: 1 = every leg touching the vehicle has given, 0 = one stayed tense,
                                    // -1 = no leg touched it then
     // The end of the run
@@ -84,6 +94,13 @@ struct CrashObservations
     double hurtSince = -1.0;       // When the behaviour entered its Hurt stage (s from the start; -1 = never) // At the end: how much the belly / the left side faces up (1 = straight up)
     bool handsFolded = false;      // At the end both hands touch (< 0.12 m apart) within 0.45 m of the head (x size):
                                    // folded at the face / chest ("praying"); holding the head from both sides is not
+    // The first landing (task 4.11a; Hsiao & Robinovitch 1998): after the hit, the first ground contact of any body
+    // above the legs, and within 0.5 s of it when each hand and the pelvis landed as the study counted (within 10 cm
+    // of the road; s from the start; -1 = none). A hand's speed ratio: its downward speed then / its peak downward
+    // speed since the hit.
+    double landFirst = -1.0, landHand[2] = {-1.0, -1.0}, landTrunk = -1.0;
+    bool landHeadFirst = false;
+    float landHandRatio[2] = {-1.0f, -1.0f};
     // DragDoll's impact report at the end (valid = touched)
     DdImpactReport report{};
 };
@@ -106,6 +123,7 @@ struct RuleResult
     std::string measured; // The measured value, as text
     std::string expected; // The expected range, as text
     Verdict verdict = Verdict::Pass;
+    double share = -1.0;  // Population rules: the published share of people inside (0..1)
 };
 
 struct CrashAnalysis
@@ -120,6 +138,11 @@ struct CrashAnalysis
 CrashAnalysis analyzeCrash(const CrashObservations& observations);
 // The observations of a crash scenario instance (nullptr if the scenario is not a crash).
 const CrashObservations* crashObservations(const Scenario& scenario);
+// Viewer only: a surviving pedestrian (alive, game mode) is stood up by "the game" where it lies, facing where its head
+// points - the game's get-up: 0.9 s after the hit plus 1.1 s on the floor (measured: 2.03 s median from the hit; a
+// body carried on the vehicle waits until it is down). Off in the crash lab, whose measures run to the end of the
+// physics. No effect on other scenarios.
+void crashGameGetUp(Scenario& scenario, bool enabled);
 // Runs one crash headless to its end (60 host frames a second, as most games) and analyses it.
 // False + error if the setting is invalid.
 bool runCrash(const CrashParams& params, CrashObservations& observations, CrashAnalysis& analysis, std::string& error);

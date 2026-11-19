@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // DdCharacterDesc.size_scale: one rig matched to a host's character proportions (San Andreas people are ~9 % taller
-// than humanoid16). Lengths scale, mass scales with the cube, and the body still stands and balances.
+// than humanoid18). Lengths scale, mass scales with the cube, and the body still stands and balances.
 #include <dragdoll/dragdoll.h>
 
 #include <doctest/doctest.h>
@@ -40,7 +40,7 @@ struct Standing
         DdCharacterDesc cd;
         dragdoll_character_desc_default(&cd);
         CHECK(cd.size_scale == 1.0f);
-        cd.rig_json = dragdoll_get_builtin_rig("humanoid16");
+        cd.rig_json = dragdoll_get_builtin_rig("humanoid18");
         cd.transform.position = DdVec3{0, 0, 0.005f};
         cd.size_scale = size;
         REQUIRE(dragdoll_character_create(world, &cd, &c) == DD_OK);
@@ -84,7 +84,7 @@ TEST_CASE("label: the host's note on a character is kept, cut to 63 bytes, and r
         REQUIRE(dragdoll_world_create(&desc, &world) == DD_OK);
         DdCharacterDesc cd;
         dragdoll_character_desc_default(&cd);
-        cd.rig_json = dragdoll_get_builtin_rig("humanoid16");
+        cd.rig_json = dragdoll_get_builtin_rig("humanoid18");
         cd.size_scale = 1.09f;
         DdCharacter* c = nullptr;
         REQUIRE(dragdoll_character_create(world, &cd, &c) == DD_OK);

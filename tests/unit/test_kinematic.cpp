@@ -39,7 +39,7 @@ struct Scene
     {
         DdCharacterDesc cd;
         dragdoll_character_desc_default(&cd);
-        cd.rig_json = dragdoll_get_builtin_rig("humanoid16");
+        cd.rig_json = dragdoll_get_builtin_rig("humanoid18");
         cd.transform.position = at;
         DdCharacter* c = nullptr;
         REQUIRE(dragdoll_character_create(world, &cd, &c) == DD_OK);

@@ -50,7 +50,7 @@ struct Scene
         REQUIRE(dragdoll_world_add_colliders(world, &ground, 1, &id) == DD_OK);
         DdCharacterDesc cd;
         dragdoll_character_desc_default(&cd);
-        cd.rig_json = dragdoll_get_builtin_rig("humanoid16");
+        cd.rig_json = dragdoll_get_builtin_rig("humanoid18");
         cd.transform.position = DdVec3{0, 0, 0.01f};
         const float half = yawDegrees * 3.14159265f / 360.0f;
         cd.transform.rotation = DdQuat{0, 0, std::sin(half), std::cos(half)};
@@ -160,7 +160,7 @@ TEST_CASE("regions: a tensed arm holds its pose under a push that swings the lim
     REQUIRE(dragdoll_world_create(&desc, &world) == DD_OK);
     DdCharacterDesc cd;
     dragdoll_character_desc_default(&cd);
-    cd.rig_json = dragdoll_get_builtin_rig("humanoid16");
+    cd.rig_json = dragdoll_get_builtin_rig("humanoid18");
     cd.transform.position = DdVec3{0, 0, 5.0f};
     DdCharacter* c = nullptr;
     REQUIRE(dragdoll_character_create(world, &cd, &c) == DD_OK);
@@ -446,7 +446,7 @@ TEST_CASE("vehicle pass-through: an animated character walking over a lying body
         // The walker: a kinematic standing character, posed by the host, coming along +X through the lying body.
         DdCharacterDesc wd;
         dragdoll_character_desc_default(&wd);
-        wd.rig_json = dragdoll_get_builtin_rig("humanoid16");
+        wd.rig_json = dragdoll_get_builtin_rig("humanoid18");
         wd.transform.position = DdVec3{-4.0f, 0.3f, 0.01f};
         wd.transform.rotation = DdQuat{0, 0, 0, 1};
         DdCharacter* walker = nullptr;

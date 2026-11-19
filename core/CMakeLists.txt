@@ -11,9 +11,9 @@ set(JSON_Install OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(nlohmann_json)
 
 # Built-in rigs: packs/rigs/*.json compiled into the library (re-generated when the JSON changes).
-set(DD_RIG_FILE ${PROJECT_SOURCE_DIR}/packs/rigs/humanoid16.json)
+set(DD_RIG_FILE ${PROJECT_SOURCE_DIR}/packs/rigs/humanoid18.json)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${DD_RIG_FILE})
-file(READ ${DD_RIG_FILE} DD_RIG_HUMANOID16)
+file(READ ${DD_RIG_FILE} DD_RIG_HUMANOID18)
 set(DD_SKELETON_SA_PED_FILE ${PROJECT_SOURCE_DIR}/packs/skeletons/sa_ped.json)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${DD_SKELETON_SA_PED_FILE})
 file(READ ${DD_SKELETON_SA_PED_FILE} DD_SKELETON_SA_PED)

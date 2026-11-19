@@ -50,15 +50,20 @@ private:
     const DdDebugDrawCallbacks& mCallbacks;
 };
 
-// Skips static bodies (DD_DRAW_SKIP_STATIC) and the bodies of characters hidden with set_debug_draw(0).
+// Skips static bodies (DD_DRAW_SKIP_STATIC), the bodies of characters hidden with set_debug_draw(0), and moving bodies
+// that are no character's (DD_DRAW_SKIP_OBJECTS) or everything else (DD_DRAW_ONLY_OBJECTS).
 class DrawFilter final : public JPH::BodyDrawFilter
 {
 public:
-    bool skipStatic = false;
-    std::unordered_set<uint32_t> hidden; // Body id values
+    bool skipStatic = false, skipObjects = false, onlyObjects = false;
+    std::unordered_set<uint32_t> hidden;     // Body id values
+    std::unordered_set<uint32_t> characters; // Every character's bodies (for the object flags)
     bool ShouldDraw(const JPH::Body& body) const override
     {
-        return !(skipStatic && body.IsStatic()) && hidden.count(body.GetID().GetIndexAndSequenceNumber()) == 0;
+        const uint32_t id = body.GetID().GetIndexAndSequenceNumber();
+        const bool object = !body.IsStatic() && characters.count(id) == 0;
+        if ((skipObjects && object) || (onlyObjects && !object)) return false;
+        return !(skipStatic && body.IsStatic()) && hidden.count(id) == 0;
     }
 };
 } // namespace
@@ -90,16 +95,20 @@ DD_API DdResult DD_CALL dragdoll_world_debug_draw(DdWorld* world, const DdDebugD
         settings.mDrawShapeWireframe = false;
         DrawFilter filter;
         filter.skipStatic = (flags & DD_DRAW_SKIP_STATIC) != 0;
+        filter.skipObjects = (flags & DD_DRAW_SKIP_OBJECTS) != 0;
+        filter.onlyObjects = (flags & DD_DRAW_ONLY_OBJECTS) != 0;
         for (uint32_t i = 0; i < world->world.characterCount(); ++i)
         {
             const DdCharacter* c = world->world.characterAt(i);
-            if (c->debugVisible) continue;
             for (int b = 0; b < static_cast<int>(c->currPosition.size()); ++b)
             {
-                filter.hidden.insert(c->ragdoll->GetBodyID(b).GetIndexAndSequenceNumber());
+                const uint32_t id = c->ragdoll->GetBodyID(b).GetIndexAndSequenceNumber();
+                filter.characters.insert(id);
+                if (!c->debugVisible) filter.hidden.insert(id);
             }
         }
-        world->world.physics().DrawBodies(settings, &renderer, filter.skipStatic || !filter.hidden.empty() ? &filter : nullptr);
+        const bool filtered = filter.skipStatic || filter.skipObjects || filter.onlyObjects || !filter.hidden.empty();
+        world->world.physics().DrawBodies(settings, &renderer, filtered ? &filter : nullptr);
     }
     if ((flags & DD_DRAW_CONSTRAINTS) != 0)
     {

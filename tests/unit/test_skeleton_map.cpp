@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Skeleton maps (Phase 3, task 3.4): a mock SA ped skeleton (SA bone IDs and hierarchy, our own proportions, a T-pose
-// bind with arbitrary bone frames) maps to/from humanoid16 poses. Acceptance: round trip through DragDoll < 0.5 deg.
+// bind with arbitrary bone frames) maps to/from humanoid18 poses. Acceptance: round trip through DragDoll < 0.5 deg.
 #include <dragdoll/dragdoll.h>
 
 #include <doctest/doctest.h>
@@ -93,7 +93,7 @@ struct Fixture
         REQUIRE(dragdoll_world_create(&desc, &world) == DD_OK);
         DdCharacterDesc cd;
         dragdoll_character_desc_default(&cd);
-        cd.rig_json = dragdoll_get_builtin_rig("humanoid16");
+        cd.rig_json = dragdoll_get_builtin_rig("humanoid18");
         REQUIRE(dragdoll_character_create(world, &cd, &c) == DD_OK);
         const char* json = dragdoll_get_builtin_skeleton_map("sa_ped");
         REQUIRE(json != nullptr);
@@ -117,11 +117,11 @@ struct Fixture
 TEST_CASE("skeleton map: a T-pose bind maps to arms straight out, every other joint at rest")
 {
     Fixture f;
-    std::vector<DdQuat> joints(16);
+    std::vector<DdQuat> joints(18);
     DdTransform root{};
     const std::vector<DdQuat> bind = f.bindRotations();
     REQUIRE(dragdoll_skeleton_map_to_pose(f.map, bind.data(), static_cast<uint32_t>(bind.size()), nullptr, &f.modelToWorld, &root,
-                                          joints.data(), 16) == DD_OK);
+                                          joints.data(), 18) == DD_OK);
     // Rig axes: +X = the character's left. The left upper arm hangs along -Y at rest; out to the side = +X.
     const DdVec3 left = rotate(joints[f.body("upper_arm_l")], DdVec3{0, -1, 0});
     const DdVec3 right = rotate(joints[f.body("upper_arm_r")], DdVec3{0, -1, 0});
@@ -140,13 +140,13 @@ TEST_CASE("skeleton map: a T-pose bind maps to arms straight out, every other jo
 TEST_CASE("skeleton map: the rig's rest pose maps to the host with the arms hanging down")
 {
     Fixture f;
-    std::vector<DdQuat> joints(16), out(f.bones.size());
+    std::vector<DdQuat> joints(18), out(f.bones.size());
     DdTransform root{};
     const std::vector<DdQuat> bind = f.bindRotations();
     REQUIRE(dragdoll_skeleton_map_to_pose(f.map, bind.data(), static_cast<uint32_t>(bind.size()), nullptr, &f.modelToWorld, &root,
-                                          joints.data(), 16) == DD_OK);
-    const std::vector<DdQuat> rest(16, DdQuat{0, 0, 0, 1});
-    REQUIRE(dragdoll_skeleton_map_from_pose(f.map, &root, rest.data(), 16, &f.modelToWorld, out.data(),
+                                          joints.data(), 18) == DD_OK);
+    const std::vector<DdQuat> rest(18, DdQuat{0, 0, 0, 1});
+    REQUIRE(dragdoll_skeleton_map_from_pose(f.map, &root, rest.data(), 18, &f.modelToWorld, out.data(),
                                             static_cast<uint32_t>(out.size())) == DD_OK);
     // Host upper arm direction now = H * B^-1 * (bind direction); in the T-pose bind the left arm points along -X.
     const int arm = boneIndex(f.bones, 32);
@@ -163,11 +163,11 @@ TEST_CASE("skeleton map: host pose -> DragDoll (activate, get_pose) -> host roun
 {
     Fixture f;
     // A lively host pose: bind, then a DragDoll pose mapped back to the host (knee, elbow, spine, head, hip, arm).
-    std::vector<DdQuat> poseIn(16, DdQuat{0, 0, 0, 1}), joints(16), hostPose(f.bones.size()), back(f.bones.size());
+    std::vector<DdQuat> poseIn(18, DdQuat{0, 0, 0, 1}), joints(18), hostPose(f.bones.size()), back(f.bones.size());
     DdTransform root{};
     const std::vector<DdQuat> bind = f.bindRotations();
     REQUIRE(dragdoll_skeleton_map_to_pose(f.map, bind.data(), static_cast<uint32_t>(bind.size()), nullptr, &f.modelToWorld, &root,
-                                          joints.data(), 16) == DD_OK);
+                                          joints.data(), 18) == DD_OK);
     poseIn[f.body("shin_l")] = axisAngle(1, 0, 0, 70);
     poseIn[f.body("forearm_r")] = axisAngle(-1, 0, 0, 90);
     poseIn[f.body("lower_spine")] = axisAngle(1, 0.2f, 0, 20);
@@ -175,18 +175,18 @@ TEST_CASE("skeleton map: host pose -> DragDoll (activate, get_pose) -> host roun
     poseIn[f.body("thigh_r")] = axisAngle(1, 0, 0.2f, -50);
     poseIn[f.body("upper_arm_l")] = axisAngle(0.3f, 0, 1, 60);
     f.modelToWorld = DdTransform{{3, -2, 0.5f}, axisAngle(0, 0, 1, 130)}; // The ped stands somewhere, turned
-    REQUIRE(dragdoll_skeleton_map_from_pose(f.map, &root, poseIn.data(), 16, &f.modelToWorld, hostPose.data(),
+    REQUIRE(dragdoll_skeleton_map_from_pose(f.map, &root, poseIn.data(), 18, &f.modelToWorld, hostPose.data(),
                                             static_cast<uint32_t>(hostPose.size())) == DD_OK);
 
     // The host hands that pose to DragDoll, which places the body; then the pose is read back for the host.
     DdTransform dRoot{};
-    std::vector<DdQuat> dJoints(16), readJoints(16);
+    std::vector<DdQuat> dJoints(18), readJoints(18);
     REQUIRE(dragdoll_skeleton_map_to_pose(f.map, hostPose.data(), static_cast<uint32_t>(hostPose.size()), nullptr, &f.modelToWorld,
-                                          &dRoot, dJoints.data(), 16) == DD_OK);
-    REQUIRE(dragdoll_character_activate(f.c, nullptr, nullptr, &dRoot, dJoints.data(), 16, 0.0f) == DD_OK);
+                                          &dRoot, dJoints.data(), 18) == DD_OK);
+    REQUIRE(dragdoll_character_activate(f.c, nullptr, nullptr, &dRoot, dJoints.data(), 18, 0.0f) == DD_OK);
     DdTransform readRoot{};
-    REQUIRE(dragdoll_character_get_pose(f.c, 0, readJoints.data(), 16, &readRoot) == DD_OK);
-    REQUIRE(dragdoll_skeleton_map_from_pose(f.map, &readRoot, readJoints.data(), 16, &f.modelToWorld, back.data(),
+    REQUIRE(dragdoll_character_get_pose(f.c, 0, readJoints.data(), 18, &readRoot) == DD_OK);
+    REQUIRE(dragdoll_skeleton_map_from_pose(f.map, &readRoot, readJoints.data(), 18, &f.modelToWorld, back.data(),
                                             static_cast<uint32_t>(back.size())) == DD_OK);
     float worst = 0.0f;
     for (size_t k = 0; k < back.size(); ++k)

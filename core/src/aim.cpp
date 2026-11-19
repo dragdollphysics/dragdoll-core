@@ -24,7 +24,7 @@ float angleBetween(JPH::Vec3Arg a, JPH::Vec3Arg b)
 }
 } // namespace
 
-bool aimLimb(DdCharacter& c, DdRegion region, JPH::RVec3Arg target, float extension)
+bool aimLimb(DdCharacter& c, DdRegion region, JPH::RVec3Arg target, float extension, const JPH::Vec3* palm)
 {
     // The limb: its first body (upper arm / thigh), the next one (forearm / shin) and the last (hand / foot).
     int root = -1, mid = -1, tip = -1;
@@ -38,6 +38,18 @@ bool aimLimb(DdCharacter& c, DdRegion region, JPH::RVec3Arg target, float extens
             break;
         }
     }
+    // A shoulder girdle (clavicle) heads the arm's chain: the limb is the last three bodies of the chain (upper arm,
+    // forearm, hand); the girdle keeps its own target.
+    std::vector<int> chain;
+    for (int body = root; body >= 0 && chain.size() < 8;)
+    {
+        chain.push_back(body);
+        int next = -1;
+        for (int i = 0; i < count && next < 0; ++i)
+            if (c.parent[static_cast<size_t>(i)] == body && c.region[static_cast<size_t>(i)] == region) next = i;
+        body = next;
+    }
+    if (chain.size() >= 4) root = chain[chain.size() - 3];
     for (int i = 0; i < count && root >= 0 && mid < 0; ++i)
     {
         if (c.parent[static_cast<size_t>(i)] == root && c.region[static_cast<size_t>(i)] == region) mid = i;
@@ -145,6 +157,23 @@ bool aimLimb(DdCharacter& c, DdRegion region, JPH::RVec3Arg target, float extens
     }
     c.targetPose[r] = shoulder.Normalized();
     c.targetPose[m] = JPH::Quat::sRotation(axis, bend);
+    // Wrist: turn the hand so that its palm faces `palm` (catching a fall: the palms meet the ground first, founder
+    // 2026-11-19). Measured from where the forearm is now; the wrist's own limits cap it. The palm is the hand's
+    // side that faces the body at rest (rig +X is left, so a left hand's palm faces -X).
+    const size_t h = static_cast<size_t>(tip);
+    if (palm != nullptr && arm && tip != mid && palm->LengthSq() > 1e-8f)
+    {
+        const JPH::Vec3 palmRig(c.pivotRig[r].GetX() >= 0.0f ? -1.0f : 1.0f, 0.0f, 0.0f);
+        const JPH::Quat fore = c.currRotation[m] * c.restRig[m].Conjugated(); // The forearm carrying the rig's axes
+        const JPH::Quat turn = JPH::Quat::sFromTo(fore * palmRig, palm->Normalized());
+        c.targetPose[h] = (fore.Conjugated() * turn * fore).Normalized(); // Offset from rest, rig axes
+    }
+    else if (arm && tip != mid)
+    {
+        // No palm direction: the wrist goes back to rest (a turn left from an earlier aim - the palms-down landing -
+        // otherwise stayed in the next gesture: hands holding the hurt spot twisted 85-90 deg, founder 2026-11-19).
+        c.targetPose[h] = JPH::Quat::sIdentity();
+    }
     c.musclesDirty = true;
     c.ragdoll->Activate(); // A body at rest is asleep and would ignore the new targets
     return true;

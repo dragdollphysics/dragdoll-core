@@ -236,13 +236,13 @@ typedef struct DdCharacter DdCharacter;
 DD_API uint32_t DD_CALL dragdoll_world_get_character_count(const DdWorld* world);
 DD_API DdCharacter* DD_CALL dragdoll_world_get_character(DdWorld* world, uint32_t index); /* NULL if out of range */
 
-/* Rig JSON compiled into the library (e.g. "humanoid16"), or NULL if unknown. Owned by DragDoll. */
+/* Rig JSON compiled into the library (e.g. "humanoid18"), or NULL if unknown. Owned by DragDoll. */
 DD_API const char* DD_CALL dragdoll_get_builtin_rig(const char* name);
 
 typedef struct DdCharacterDesc
 {
     uint32_t struct_size;  /* = sizeof(DdCharacterDesc) */
-    const char* rig_json;  /* NUL-terminated rig JSON (see packs/rigs/), e.g. dragdoll_get_builtin_rig("humanoid16") */
+    const char* rig_json;  /* NUL-terminated rig JSON (see packs/rigs/), e.g. dragdoll_get_builtin_rig("humanoid18") */
     DdTransform transform; /* Where the rig origin (ground point between the feet) goes. The rig's +Y is first aligned
                               with the world up axis, then `rotation` is applied (e.g. a heading about up). */
     float mass_scale;      /* Multiplies the rig mass. <= 0 means 1. */
@@ -262,7 +262,7 @@ DD_API DdResult DD_CALL dragdoll_character_create(DdWorld* world, const DdCharac
 /* Removes the character from its world. Safe with NULL. */
 DD_API void DD_CALL dragdoll_character_destroy(DdCharacter* character);
 
-/* Number of bodies (16 for humanoid16); body indices follow the rig's order. */
+/* Number of bodies (18 for humanoid18); body indices follow the rig's order. */
 DD_API uint32_t DD_CALL dragdoll_character_get_body_count(const DdCharacter* character);
 
 /* Name of a body ("pelvis", "shin_l", ...), or NULL if the index is out of range. Owned by DragDoll. */
@@ -760,6 +760,8 @@ DD_API void DD_CALL dragdoll_replay_close(DdReplay* replay);
 #define DD_DRAW_CONSTRAINT_LIMITS 0x4u /* Joint limits: where each joint may bend. */
 #define DD_DRAW_SKIP_STATIC 0x8u       /* Leave out static bodies (proxy level geometry the host already renders). */
 #define DD_DRAW_CAMERA_LOD 0x10u       /* Coarser detail for distant shapes, from camera_position (much faster). */
+#define DD_DRAW_SKIP_OBJECTS 0x20u     /* Leave out moving bodies that are no character's (vehicles, props). */
+#define DD_DRAW_ONLY_OBJECTS 0x40u     /* Only those (e.g. to draw vehicles see-through in a second pass). */
 
 typedef struct DdDebugDrawCallbacks
 {

@@ -328,7 +328,9 @@ void updateBehaviour(DdCharacter& c, World& world, float dt)
         if (aim.active && std::isfinite(aim.target.x) && std::isfinite(aim.target.y) && std::isfinite(aim.target.z) &&
             std::isfinite(aim.extension))
         {
-            aimLimb(c, static_cast<DdRegion>(r), JPH::RVec3(aim.target.x, aim.target.y, aim.target.z), aim.extension);
+            const JPH::Vec3 palm(aim.palm.x, aim.palm.y, aim.palm.z);
+            const bool usePalm = std::isfinite(aim.palm.x) && std::isfinite(aim.palm.y) && std::isfinite(aim.palm.z) && palm.LengthSq() > 1e-8f;
+            aimLimb(c, static_cast<DdRegion>(r), JPH::RVec3(aim.target.x, aim.target.y, aim.target.z), aim.extension, usePalm ? &palm : nullptr);
         }
     }
     if (command.balance >= 0)

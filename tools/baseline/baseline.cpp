@@ -31,7 +31,7 @@ constexpr float kBrake = 7.0f; // m/s^2, emergency braking on a dry road
 float gCarFriction = 0.6f;     // Vehicle surface (Jolt combines it with the body's 0.8 as the geometric mean)
 float gCarRestitution = 0.0f; // --car-restitution: spring-back of the vehicle surface (Jolt takes the larger of the two)
 DdTension gTension = DD_TENSION_LIMP;
-std::string gRig; // --rig file: a rig JSON instead of the built-in humanoid16
+std::string gRig; // --rig file: a rig JSON instead of the built-in humanoid18
 std::string gParams; // --params file: a behaviour pack JSON replacing the built-in one for --behaviour
 bool gTrace = false;
 bool gMomentum = false; // --momentum: centre-of-mass and rotation trace for the first 0.8 s
@@ -117,7 +117,7 @@ Run simulate(const std::string& vehicle, float kmh, float headingDegrees, float 
 
     DdCharacterDesc cd;
     dragdoll_character_desc_default(&cd);
-    cd.rig_json = gRig.empty() ? dragdoll_get_builtin_rig("humanoid16") : gRig.c_str();
+    cd.rig_json = gRig.empty() ? dragdoll_get_builtin_rig("humanoid18") : gRig.c_str();
     const float half = headingDegrees * 3.14159265f / 360.0f;
     cd.transform.position = DdVec3{0, offset, 0.005f};
     cd.transform.rotation = DdQuat{0, 0, std::sin(half), std::cos(half)};
@@ -338,7 +338,7 @@ void kick()
     dragdoll_world_create(&desc, &world);
     DdCharacterDesc cd;
     dragdoll_character_desc_default(&cd);
-    cd.rig_json = gRig.empty() ? dragdoll_get_builtin_rig("humanoid16") : gRig.c_str();
+    cd.rig_json = gRig.empty() ? dragdoll_get_builtin_rig("humanoid18") : gRig.c_str();
     cd.transform.position = DdVec3{0, 0, 5};
     DdCharacter* c = nullptr;
     dragdoll_character_create(world, &cd, &c);

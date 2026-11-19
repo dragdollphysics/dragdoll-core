@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Characters: rig loading, the humanoid16 ragdoll, joint limits and determinism.
+// Characters: rig loading, the humanoid18 ragdoll, joint limits and determinism.
 
 #include <dragdoll_scenarios/scenario.hpp>
 
@@ -39,7 +39,7 @@ DdCharacter* makeCharacter(DdWorld* world, DdVec3 position)
 {
     DdCharacterDesc desc;
     dragdoll_character_desc_default(&desc);
-    desc.rig_json = dragdoll_get_builtin_rig("humanoid16");
+    desc.rig_json = dragdoll_get_builtin_rig("humanoid18");
     desc.transform.position = position;
     DdCharacter* character = nullptr;
     REQUIRE_MESSAGE(dragdoll_character_create(world, &desc, &character) == DD_OK, dragdoll_last_error_message());
@@ -72,7 +72,7 @@ uint64_t hashOf(DdWorld* world)
     return h;
 }
 
-// How deep (m) an upper-arm capsule reaches into the chest box. Geometry from packs/rigs/humanoid16.json:
+// How deep (m) an upper-arm capsule reaches into the chest box. Geometry from packs/rigs/humanoid18.json:
 // upper arm = capsule radius 0.048, total length 0.28 along local +Y; chest = box half extents (0.15, 0.095, 0.105).
 float armIntoChest(const DdTransform& arm, const DdTransform& chest)
 {
@@ -113,20 +113,20 @@ Hinges hingesOf(DdCharacter* c)
 }
 } // namespace
 
-TEST_CASE("rig: built-in humanoid16 loads with 16 named bodies and a de Leva mass of about 75 kg")
+TEST_CASE("rig: built-in humanoid18 loads with 18 named bodies and a de Leva mass of about 75 kg")
 {
     Library lib;
-    CHECK(dragdoll_get_builtin_rig("humanoid16") != nullptr);
+    CHECK(dragdoll_get_builtin_rig("humanoid18") != nullptr);
     CHECK(dragdoll_get_builtin_rig("nope") == nullptr);
     CHECK(dragdoll_get_builtin_rig(nullptr) == nullptr);
 
     World world(defaultDesc());
     DdCharacter* c = makeCharacter(world, DdVec3{0, 0, 0});
-    REQUIRE(dragdoll_character_get_body_count(c) == 16);
+    REQUIRE(dragdoll_character_get_body_count(c) == 18);
     CHECK(std::string(dragdoll_character_get_body_name(c, 0)) == "pelvis");
-    CHECK(dragdoll_character_get_body_name(c, 16) == nullptr);
-    for (const char* name : {"pelvis", "lower_spine", "upper_spine", "head", "upper_arm_l", "forearm_l", "hand_l",
-                             "upper_arm_r", "forearm_r", "hand_r", "thigh_l", "shin_l", "foot_l", "thigh_r", "shin_r", "foot_r"})
+    CHECK(dragdoll_character_get_body_name(c, 18) == nullptr);
+    for (const char* name : {"pelvis", "lower_spine", "upper_spine", "head", "clavicle_l", "upper_arm_l", "forearm_l", "hand_l",
+                             "clavicle_r", "upper_arm_r", "forearm_r", "hand_r", "thigh_l", "shin_l", "foot_l", "thigh_r", "shin_r", "foot_r"})
     {
         CAPTURE(name);
         CHECK(dragdoll_character_find_body(c, name) >= 0);
@@ -137,12 +137,13 @@ TEST_CASE("rig: built-in humanoid16 loads with 16 named bodies and a de Leva mas
 
     // Rest pose (Y-up world): head on top at ~1.6 m, feet at the bottom, knees and elbows straight.
     const std::vector<DdTransform> rest = bodiesOf(c);
-    CHECK(rest[3].position.y == doctest::Approx(1.63f).epsilon(0.03));          // head
-    CHECK(rest[12].position.y < 0.1f);                                           // foot_l
-    CHECK(rest[12].position.z > 0.0f);                                           // feet point forward (+Z)
-    CHECK(std::fabs(hingeBendDegrees(rest[10], rest[11])) < 0.5f);               // knee straight
-    CHECK(std::fabs(hingeBendDegrees(rest[4], rest[5])) < 0.5f);                 // elbow straight
-    CHECK(rest[4].position.x > 0.0f);                                            // "_l" is on the character's left (+X)
+    const auto at = [&](const char* name) { return rest[static_cast<size_t>(dragdoll_character_find_body(c, name))]; };
+    CHECK(at("head").position.y == doctest::Approx(1.63f).epsilon(0.03));          // head
+    CHECK(at("foot_l").position.y < 0.1f);                                       // foot_l
+    CHECK(at("foot_l").position.z > 0.0f);                                       // feet point forward (+Z)
+    CHECK(std::fabs(hingeBendDegrees(at("thigh_l"), at("shin_l"))) < 0.5f);               // knee straight
+    CHECK(std::fabs(hingeBendDegrees(at("upper_arm_l"), at("forearm_l"))) < 0.5f);               // elbow straight
+    CHECK(at("upper_arm_l").position.x > 0.0f);                                          // "_l" is on the character's left (+X)
 }
 
 TEST_CASE("rig: invalid rigs are rejected with a precise message")
@@ -164,7 +165,7 @@ TEST_CASE("rig: invalid rigs are rejected with a precise message")
     CHECK(std::string(dragdoll_last_error_message()).find("parent \"zzz\"") != std::string::npos);
     CHECK(c == nullptr);
     desc.struct_size = 8;
-    desc.rig_json = dragdoll_get_builtin_rig("humanoid16");
+    desc.rig_json = dragdoll_get_builtin_rig("humanoid18");
     CHECK(dragdoll_character_create(world, &desc, &c) == DD_ERROR_INVALID_ARGUMENT);
 }
 
@@ -276,7 +277,7 @@ TEST_CASE("characters: impulses, destroy mid-simulation, world teardown")
     DdCharacter* second = makeCharacter(world, DdVec3{3, 0, 0});
     dragdoll_character_destroy(c);
     REQUIRE(dragdoll_world_step_fixed(world, 10) == DD_OK);
-    CHECK(dragdoll_character_get_body_count(second) == 16);
+    CHECK(dragdoll_character_get_body_count(second) == 18);
     dragdoll_character_destroy(nullptr);
     // `second` is destroyed together with the world.
 }

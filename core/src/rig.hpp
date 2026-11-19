@@ -24,7 +24,7 @@ struct RigShape
     JPH::Vec3 halfExtents = JPH::Vec3::sZero(); // Box
     JPH::Vec3 from = JPH::Vec3::sZero();        // Capsule: proximal end (overall extent)
     JPH::Vec3 to = JPH::Vec3::sZero();          // Capsule: distal end (overall extent)
-    float radius = 0.0f;                        // Capsule
+    float radius = 0.0f;                        // Capsule; Box: corner rounding (0 = sharp)
 };
 
 struct RigJoint

@@ -43,7 +43,7 @@ struct Scene
         REQUIRE(dragdoll_world_add_colliders(world, &ground, 1, &id) == DD_OK);
         DdCharacterDesc cd;
         dragdoll_character_desc_default(&cd);
-        cd.rig_json = dragdoll_get_builtin_rig("humanoid16");
+        cd.rig_json = dragdoll_get_builtin_rig("humanoid18");
         cd.transform.position = DdVec3{0, 0, 0.01f}; // The rig's origin is between the feet
         REQUIRE(dragdoll_character_create(world, &cd, &human) == DD_OK);
         REQUIRE(dragdoll_character_set_kinematic(human, 1) == DD_OK);
@@ -303,7 +303,7 @@ TEST_CASE("perception: on a slope the probe tilts with the vehicle, and the silh
     REQUIRE(dragdoll_world_add_colliders(world, &ramp, 1, &rampId) == DD_OK);
     DdCharacterDesc cd;
     dragdoll_character_desc_default(&cd);
-    cd.rig_json = dragdoll_get_builtin_rig("humanoid16");
+    cd.rig_json = dragdoll_get_builtin_rig("humanoid18");
     cd.transform.position = DdVec3{0, 0, 0.01f}; // Standing on the ramp at the origin
     DdCharacter* human = nullptr;
     REQUIRE(dragdoll_character_create(world, &cd, &human) == DD_OK);

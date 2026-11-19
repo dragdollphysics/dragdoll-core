@@ -60,7 +60,7 @@ int main(int argc, char** argv)
     {
         DdCharacterDesc c;
         dragdoll_character_desc_default(&c);
-        c.rig_json = dragdoll_get_builtin_rig("humanoid16");
+        c.rig_json = dragdoll_get_builtin_rig("humanoid18");
         // Close enough that neighbours collide with each other as they fall.
         c.transform.position = DdVec3{static_cast<float>(i % columns) * 0.9f, static_cast<float>(i / columns) * 0.9f, 0.6f + 0.15f * static_cast<float>(i % 5)};
         DdCharacter* handle = nullptr;

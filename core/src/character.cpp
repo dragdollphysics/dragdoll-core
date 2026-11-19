@@ -6,6 +6,7 @@
 #include <Jolt/Physics/Collision/GroupFilterTable.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
+#include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
 #include <Jolt/Physics/Constraints/HingeConstraint.h>
 #include <Jolt/Physics/Constraints/SwingTwistConstraint.h>
 #include <Jolt/Skeleton/Skeleton.h>
@@ -81,7 +82,39 @@ JPH::Ref<JPH::RagdollSettings> buildRagdollSettings(const Rig& rig, JPH::Mat44Ar
             center = toWorld(body.shape.center);
             rotation = rigRotation;
             const float convexRadius = std::min(JPH::cDefaultConvexRadius, body.shape.halfExtents.ReduceMin() * 0.5f);
-            part.SetShape(new JPH::BoxShape(body.shape.halfExtents, convexRadius));
+            if (body.shape.radius > 0.0f)
+            {
+                // Rounded box: the hull of a smaller box swept by a ball (sampled), so it collides and draws rounded.
+                const float r = body.shape.radius;
+                const JPH::Vec3 inner = body.shape.halfExtents - JPH::Vec3::sReplicate(r);
+                JPH::Array<JPH::Vec3> points;
+                constexpr int kRings = 8, kSegments = 16;
+                for (int ring = 0; ring <= kRings; ++ring)
+                {
+                    const float lat = JPH::JPH_PI * (static_cast<float>(ring) / kRings - 0.5f);
+                    for (int j = 0; j < (ring == 0 || ring == kRings ? 1 : kSegments); ++j)
+                    {
+                        const float lon = 2.0f * JPH::JPH_PI * static_cast<float>(j) / kSegments;
+                        const JPH::Vec3 d(std::cos(lat) * std::cos(lon), std::sin(lat), std::cos(lat) * std::sin(lon));
+                        // Each direction samples the ball at the inner box's corner on that side (both corners when on
+                        // a face's plane, so flat faces stay flat).
+                        for (int sx = -1; sx <= 1; sx += 2)
+                            for (int sy = -1; sy <= 1; sy += 2)
+                                for (int sz = -1; sz <= 1; sz += 2)
+                                {
+                                    if (d.GetX() * sx < -1e-4f || d.GetY() * sy < -1e-4f || d.GetZ() * sz < -1e-4f) continue;
+                                    points.push_back(JPH::Vec3(sx * inner.GetX(), sy * inner.GetY(), sz * inner.GetZ()) + r * d);
+                                }
+                    }
+                }
+                JPH::ConvexHullShapeSettings hull(points, std::min(convexRadius, r));
+                const JPH::ShapeSettings::ShapeResult result = hull.Create();
+                part.SetShape(result.IsValid() ? result.Get() : JPH::Ref<JPH::Shape>(new JPH::BoxShape(body.shape.halfExtents, convexRadius)));
+            }
+            else
+            {
+                part.SetShape(new JPH::BoxShape(body.shape.halfExtents, convexRadius));
+            }
         }
         part.mPosition = JPH::RVec3(center);
         part.mRotation = rotation;
@@ -113,9 +146,12 @@ JPH::Ref<JPH::RagdollSettings> buildRagdollSettings(const Rig& rig, JPH::Mat44Ar
             c->mPosition1 = c->mPosition2 = pivot;
             c->mTwistAxis1 = toWorldDir(joint.coneAxis);  // Centre of the allowed swing, fixed to the parent
             c->mTwistAxis2 = toWorldDir(joint.twistAxis); // The child bone at rest
-            // Plane axis = the character's lateral axis: rotation about it is forward/backward swing.
-            c->mPlaneAxis1 = perpendicular(lateral, c->mTwistAxis1, forward);
-            c->mPlaneAxis2 = perpendicular(lateral, c->mTwistAxis2, forward);
+            // Plane axis = the character's lateral axis: rotation about it is forward/backward swing. A bone that runs
+            // sideways (a clavicle) uses the forward axis instead - both sides of the joint must use the same reference,
+            // or their frames start up to 90 deg apart in twist.
+            const JPH::Vec3 reference = std::abs(c->mTwistAxis2.Dot(lateral)) > 0.7f ? forward : lateral;
+            c->mPlaneAxis1 = perpendicular(reference, c->mTwistAxis1, forward);
+            c->mPlaneAxis2 = perpendicular(reference, c->mTwistAxis2, forward);
             c->mPlaneHalfConeAngle = joint.swingFwd;   // About the plane (lateral) axis: forward / backward
             c->mNormalHalfConeAngle = joint.swingSide; // About the normal axis: sideways
             c->mTwistMinAngle = joint.twistMin;
@@ -164,7 +200,7 @@ JPH::Ref<JPH::RagdollSettings> buildRagdollSettings(const Rig& rig, JPH::Mat44Ar
             table->DisableCollision(static_cast<JPH::CollisionGroup::SubGroupID>(i), static_cast<JPH::CollisionGroup::SubGroupID>(other));
         }
     }
-    // No RagdollSettings::Stabilize(): it evens out masses along chains for the solver's sake, and on humanoid16 it
+    // No RagdollSettings::Stabilize(): it evens out masses along chains for the solver's sake, and on humanoid18 it
     // turned a 0.46 kg hand into 3 kg and a 12 kg trunk segment into 6 kg (total unchanged) - a different body. The
     // rig's own mass ratios (at most ~3:1 between neighbours) are well within what Jolt solves at 120 Hz.
     // (Found 2026-11-17 in task 4.3: the late head strike in side-on car hits.)

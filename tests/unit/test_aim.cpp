@@ -55,7 +55,7 @@ struct Floating
         REQUIRE(dragdoll_world_create(&desc, &world) == DD_OK);
         DdCharacterDesc cd;
         dragdoll_character_desc_default(&cd);
-        cd.rig_json = dragdoll_get_builtin_rig("humanoid16");
+        cd.rig_json = dragdoll_get_builtin_rig("humanoid18");
         cd.transform.position = DdVec3{0, 0, 2.0f};
         REQUIRE(dragdoll_character_create(world, &cd, &human) == DD_OK);
         REQUIRE(dragdoll_character_set_tension(human, DD_TENSION_TENSE, 0.0f) == DD_OK);
@@ -193,7 +193,8 @@ TEST_CASE("poses: a named pose from a behaviour pack sets the chosen regions; \"
     const float s = std::sin(-30.0f * 3.14159265f / 180.0f), c = std::cos(-30.0f * 3.14159265f / 180.0f);
     const DdQuat raised{s, 0, 0, c}; // -60 degrees about the rig's X axis
     MESSAGE("upper arm " << degreesBetween(f.joint("upper_arm_l"), raised) << " deg from the pose, elbow bend " << degrees(f.joint("forearm_l"))
-                         << " deg (70 asked), other arm " << degrees(f.joint("upper_arm_r")) << " deg from rest");
+                         << " deg (70 asked), other arm " << degrees(f.joint("upper_arm_r")) << " deg from rest, clavicles "
+                         << degrees(f.joint("clavicle_l")) << " / " << degrees(f.joint("clavicle_r")) << " deg from rest");
     CHECK(degreesBetween(f.joint("upper_arm_l"), raised) < 8.0f);
     CHECK(std::fabs(degrees(f.joint("forearm_l")) - 70.0f) < 8.0f);
     CHECK(degrees(f.joint("upper_arm_r")) < 6.0f);
@@ -222,7 +223,7 @@ TEST_CASE("behaviour: car_hit raises both hands towards the vehicle once the vol
     REQUIRE(dragdoll_world_add_colliders(world, &ground, 1, &groundId) == DD_OK);
     DdCharacterDesc cd;
     dragdoll_character_desc_default(&cd);
-    cd.rig_json = dragdoll_get_builtin_rig("humanoid16");
+    cd.rig_json = dragdoll_get_builtin_rig("humanoid18");
     cd.transform.position = DdVec3{0, 0, 0.005f};
     DdCharacter* human = nullptr;
     REQUIRE(dragdoll_character_create(world, &cd, &human) == DD_OK);

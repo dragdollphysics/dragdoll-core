@@ -11,6 +11,7 @@
 #include <dragdoll_scenarios/crash.hpp>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -57,6 +58,14 @@ std::vector<CrashParams> grid()
                             p.start = start;
                             p.leadMs = lead;
                             p.side = side;
+                            // Only outcomes the game produces at this speed (crashOutcomePlausible: alive up to 40, dead from 30 km/h).
+                            for (const char* outcome : {"alive", "dead"})
+                            {
+                                if (!crashOutcomePlausible(outcome, kmh)) continue;
+                                p.outcome = outcome;
+                                all.push_back(p);
+                            }
+                            continue;
                             all.push_back(p);
                           }
     return all;
@@ -99,15 +108,19 @@ std::string row(const CrashParams& p, const CrashObservations& o, const CrashAna
     std::snprintf(lying, sizeof(lying), "%.2f", o.hurtSince >= 0.0 ? o.duration - o.hurtSince : -1.0);
     return csvField(crashName(p)) + "," + verdictName(a.overall) + "," + csvField(a.outcome) + "," + settings + "," + numbers + "," +
            csvField(issues) + "," + extra + "," + csvField(o.endStatus) + "," + csvField(o.hurtPart) + "," + lying + "," + p.start + "," +
-           number(crashStartShare(p.start));
+           number(crashStartShare(p.start)) + "," + number(o.hurtSince >= 0.0 && o.contact >= 0.0 ? static_cast<float>(o.hurtSince - o.contact) : -1.0f) +
+           "," + number(r.valid && r.ground_time > 0.0f ? r.ground_time : -1.0f);
 }
 
 const char* kHeader = "name,verdict,outcome,vehicle,kmh,brake,brake_delay_ms,facing,size,aware,limp,throw_m,head_strike_ms,"
-                      "wrap_around_m,apex_m,launch_mps,launch_deg,on_vehicle_at_end,issues,peak_head_dv,end_stage,hurt_part,hurt_seconds,start,start_share";
+                      "wrap_around_m,apex_m,launch_mps,launch_deg,on_vehicle_at_end,issues,peak_head_dv,end_stage,hurt_part,hurt_seconds,start,start_share,hurt_after_hit,ground_after_hit";
 
 int runShard(const std::vector<CrashParams>& all, int shard, int shards, const fs::path& out)
 {
     std::ofstream file(out, std::ios::trunc);
+    // Population rules (a published share of people, e.g. Hsiao 1998's falls): per rule, runs it applied to and runs inside.
+    std::map<std::string, std::array<int, 2>> population;
+    std::map<std::string, double> shares;
     for (size_t i = static_cast<size_t>(shard); i < all.size(); i += static_cast<size_t>(shards))
     {
         CrashObservations o;
@@ -119,7 +132,16 @@ int runShard(const std::vector<CrashParams>& all, int shard, int shards, const f
             continue;
         }
         file << row(all[i], o, a) << "\n";
+        for (const RuleResult& r : a.results)
+        {
+            if (r.kind != "population") continue;
+            ++population[r.id][0];
+            if (r.verdict == Verdict::Pass) ++population[r.id][1];
+            shares[r.id] = r.share;
+        }
     }
+    std::ofstream pop(fs::path(out).concat(".population"), std::ios::trunc);
+    for (const auto& [id, n] : population) pop << id << " " << n[0] << " " << n[1] << " " << shares[id] << "\n";
     return 0;
 }
 } // namespace
@@ -128,7 +150,7 @@ int main(int argc, char** argv)
 {
     int sample = 0, jobs = static_cast<int>(std::max(1u, std::thread::hardware_concurrency())), shard = -1, shards = 0;
     unsigned seed = 1;
-    std::string only, shardOut, poseTrace;
+    std::string only, shardOut, poseTrace, bodyTrace;
     for (int i = 1; i < argc; ++i)
     {
         const std::string a = argv[i];
@@ -138,6 +160,7 @@ int main(int argc, char** argv)
         else if (a == "--jobs" && more) jobs = std::max(1, std::atoi(argv[++i]));
         else if (a == "--only" && more) only = argv[++i];
         else if (a == "--pose-trace" && more) poseTrace = argv[++i];
+        else if (a == "--body-trace" && more) bodyTrace = argv[++i];
         else if (a == "--shard" && i + 3 < argc)
         {
             shard = std::atoi(argv[++i]);
@@ -163,7 +186,41 @@ int main(int argc, char** argv)
         all.resize(static_cast<size_t>(sample));
     }
     int code = 0;
-    if (!poseTrace.empty())
+    if (!bodyTrace.empty())
+    {
+        // Every body's world position each host frame for the whole run, plus whether the host still animates it: for
+        // judging what happens around the handover (e.g. arms jumping to a pose the host never showed).
+        Instance instance;
+        std::string error;
+        if (!Instance::make(bodyTrace, instance, error))
+        {
+            std::fprintf(stderr, "%s\n", error.c_str());
+            code = 1;
+        }
+        else
+        {
+            DdCharacter* c = instance.scenario->character();
+            std::vector<DdTransform> bodies(c != nullptr ? dragdoll_character_get_body_count(c) : 0);
+            const double end = instance.scenario->duration();
+            while (c != nullptr && instance.hostTime < end)
+            {
+                instance.hostFrame(1.0f / 60.0f);
+                if (dragdoll_character_get_body_transforms(c, 1, bodies.data(), static_cast<uint32_t>(bodies.size())) != DD_OK) break;
+                std::printf("t %.4f kin %d status %s bodies", instance.hostTime, dragdoll_character_get_kinematic(c),
+                            dragdoll_character_get_behaviour_status(c));
+                for (const DdTransform& b : bodies) std::printf(" %.4f %.4f %.4f", b.position.x, b.position.y, b.position.z);
+                std::vector<DdBodyContact> contacts(bodies.size());
+                dragdoll_character_get_contacts(c, contacts.data(), static_cast<uint32_t>(contacts.size()));
+                std::printf(" rot"); // Every body's rotation (x y z w)
+                for (const DdTransform& b : bodies) std::printf(" %.4f %.4f %.4f %.4f", b.rotation.x, b.rotation.y, b.rotation.z, b.rotation.w);
+                std::printf(" ground"); // Rig indices of the bodies touching the ground
+                for (size_t i = 0; i < contacts.size(); ++i)
+                    if ((contacts[i].flags & DD_CONTACT_GROUND) != 0) std::printf(" %zu", i);
+                std::printf("\n");
+            }
+        }
+    }
+    else if (!poseTrace.empty())
     {
         // The pedestrian's pose each host frame while the host animates it (its starting state): root move and turn
         // relative to the first frame's root (in its own frame) and the 16 joints - the private reaction recordings'
@@ -179,14 +236,18 @@ int main(int argc, char** argv)
         {
             DdCharacter* c = instance.scenario->character();
             DdTransform root0{};
-            std::vector<DdQuat> joints(16);
+            std::vector<DdQuat> joints(c != nullptr ? dragdoll_character_get_body_count(c) : 0);
+            // The recordings' 16 bodies (the rig before its clavicles), by name.
+            const char* const recorded[16] = {"pelvis", "lower_spine", "upper_spine", "head", "upper_arm_l", "forearm_l",
+                                              "hand_l", "upper_arm_r", "forearm_r", "hand_r", "thigh_l", "shin_l",
+                                              "foot_l", "thigh_r", "shin_r", "foot_r"};
             bool first = true;
             const double end = instance.scenario->duration();
             while (instance.hostTime < end && c != nullptr && dragdoll_character_get_kinematic(c) != 0)
             {
                 instance.hostFrame(1.0f / 120.0f);
                 DdTransform root{};
-                if (dragdoll_character_get_pose(c, 0, joints.data(), 16, &root) != DD_OK) break;
+                if (dragdoll_character_get_pose(c, 0, joints.data(), static_cast<uint32_t>(joints.size()), &root) != DD_OK) break;
                 if (first)
                 {
                     root0 = root;
@@ -208,7 +269,12 @@ int main(int argc, char** argv)
                 rotate(inv, dx, dy, dz, local);
                 std::printf("t %.4f move %.4f %.4f %.4f turn %.5f %.5f %.5f %.5f joints", instance.hostTime, local[0], local[1], local[2], turn.x,
                             turn.y, turn.z, turn.w);
-                for (const DdQuat& j : joints) std::printf(" %.5f %.5f %.5f %.5f", j.x, j.y, j.z, j.w);
+                for (const char* name : recorded)
+                {
+                    const int b = dragdoll_character_find_body(c, name);
+                    const DdQuat j = b >= 0 ? joints[static_cast<size_t>(b)] : DdQuat{0, 0, 0, 1};
+                    std::printf(" %.5f %.5f %.5f %.5f", j.x, j.y, j.z, j.w);
+                }
                 std::printf(" world %.4f %.4f %.4f rot %.5f %.5f %.5f %.5f\n", root.position.x, root.position.y, root.position.z, root.rotation.x,
                             root.rotation.y, root.rotation.z, root.rotation.w);
             }
@@ -264,6 +330,8 @@ int main(int argc, char** argv)
         std::ofstream results(dir / "results.csv", std::ios::trunc);
         results << kHeader << "\n";
         std::map<std::string, int> counts;
+        std::map<std::string, std::array<int, 2>> population;
+        std::map<std::string, double> shares;
         for (int j = 0; j < jobs; ++j)
         {
             const fs::path part = dir / ("part_" + std::to_string(j) + ".csv");
@@ -277,10 +345,28 @@ int main(int argc, char** argv)
             }
             in.close();
             fs::remove(part);
+            fs::path popPart = part;
+            popPart.concat(".population");
+            std::ifstream pin(popPart);
+            std::string id;
+            int applied = 0, inside = 0;
+            double share = 0.0;
+            while (pin >> id >> applied >> inside >> share)
+            {
+                population[id][0] += applied;
+                population[id][1] += inside;
+                shares[id] = share;
+            }
+            pin.close();
+            fs::remove(popPart);
         }
         const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
         std::printf("done in %.0f s -> %s\n", seconds, (dir / "results.csv").string().c_str());
         for (const auto& [verdict, n] : counts) std::printf("  %-13s %d\n", verdict.c_str(), n);
+        if (!population.empty()) std::printf("population rules (runs inside, vs people):\n");
+        for (const auto& [id, n] : population)
+            std::printf("  %-24s %5.1f %% of %d runs   people %3.0f %%\n", id.c_str(), n[0] > 0 ? 100.0 * n[1] / n[0] : 0.0, n[0],
+                        100.0 * shares[id]);
         if (failures > 0) code = 1;
     }
     dragdoll_shutdown();

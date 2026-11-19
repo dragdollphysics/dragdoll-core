@@ -32,6 +32,12 @@
       "brace_blend": 0.05,
       "brace": 1
     },
+    "hit_startle": {
+      "on": 1,
+      "hold": 0.25,
+      "blend": 0.04,
+      "ease": 0.3
+    },
     "carried": {
       "relax": 0.5,
       "release": 0.1
@@ -50,15 +56,38 @@
       "min_time": 0.12,
       "extension": 0.9,
       "blend": 0.15,
-      "approach_height": 0.9,
-      "approach_speed": 0.8
+      "approach_height": 1.2,
+      "approach_speed": 0.8,
+      "palms_down": 1,
+      "hover": 1.0,
+      "back": 0.15,
+      "back_side": 0.35,
+      "back_behind": 0.05,
+      "back_hover": 0.5,
+      "back_extension": 0.9,
+      "back_across": 0.3,
+      "back_across_side": 0.15,
+      "back_across_front": 0.2,
+      "brake_height": 0.4,
+      "brake_extension": 0.7,
+      "brake_speed": 0.5
+    },
+    "turn": {
+      "on": 1,
+      "side": 0.7,
+      "max_roll": 3.0,
+      "lead": 0.35,
+      "blend": 0.1
     },
     "landing": {
       "lead": 0.12,
-      "yield": 0.08
+      "yield": 0.08,
+      "second_hand": 0,
+      "give_tension": 1
     },
     "tumble": {
-      "extension": 0.4
+      "extension": 0.4,
+      "reach": 1
     },
     "fall": {
       "upright": 0.8,
@@ -70,10 +99,125 @@
     "hurt": {
       "blend": 0.6,
       "hold": 0.95,
-      "spread": 0.06
+      "spread": 0.06,
+      "start_speed": 2.0,
+      "guard": 1,
+      "supine_up": 0.5,
+      "hold_band": 0.3,
+      "arm_tension": 4
+    },
+    "rub": {
+      "amplitude": 0.035,
+      "frequency": 0.9,
+      "delay": 0.4,
+      "ease": 0.5
+    },
+    "wince": {
+      "min": 3.0,
+      "max": 6.0,
+      "hold": 0.25
+    },
+    "breath": {
+      "rate": 0.45,
+      "in_share": 0.4,
+      "sigh_every": 5,
+      "delay": 0.3
+    },
+    "dying": {
+      "vitality": 0.5
     }
   },
   "poses": {
+    "turn_left": {
+      "head": [25, 30, 0],
+      "lower_spine": [0, 20, 0],
+      "upper_spine": [0, 25, 0]
+    },
+    "turn_right": {
+      "head": [25, -30, 0],
+      "lower_spine": [0, -20, 0],
+      "upper_spine": [0, -25, 0]
+    },
+    "hurt_supine": {
+      "head": [20, 0, 0],
+      "lower_spine": [25, 0, 0],
+      "upper_spine": [20, 0, 0],
+      "thigh_l": [-35, 0, 0],
+      "thigh_r": [-30, 0, 0],
+      "shin_l": [80, 0, 0],
+      "shin_r": [75, 0, 0]
+    },
+    "hurt_back_supine": {
+      "head": [-25, 0, 0],
+      "lower_spine": [-20, 0, 0],
+      "upper_spine": [-15, 0, 0],
+      "thigh_l": [-35, 0, 0],
+      "thigh_r": [-30, 0, 0],
+      "shin_l": [80, 0, 0],
+      "shin_r": [75, 0, 0]
+    },
+    "hurt_wince": {
+      "head": [28, 0, 0],
+      "lower_spine": [30, 0, 0],
+      "upper_spine": [27, 0, 0],
+      "clavicle_l": [0, -6, 10],
+      "clavicle_r": [0, 6, -10]
+    },
+    "hurt_back_wince": {
+      "head": [-30, 0, 0],
+      "lower_spine": [-25, 0, 0],
+      "upper_spine": [-21, 0, 0],
+      "clavicle_l": [0, -6, 10],
+      "clavicle_r": [0, 6, -10]
+    },
+    "hurt_in": {
+      "head": [20, 0, 0],
+      "lower_spine": [21, 0, 0],
+      "upper_spine": [14, 0, 0],
+      "clavicle_l": [0, 0, 6],
+      "clavicle_r": [0, 0, -6]
+    },
+    "hurt_out": {
+      "head": [20, 0, 0],
+      "lower_spine": [25, 0, 0],
+      "upper_spine": [20, 0, 0]
+    },
+    "hurt_sigh": {
+      "head": [20, 0, 0],
+      "lower_spine": [16, 0, 0],
+      "upper_spine": [7, 0, 0],
+      "clavicle_l": [0, 0, 12],
+      "clavicle_r": [0, 0, -12]
+    },
+    "hurt_back_in": {
+      "head": [-25, 0, 0],
+      "lower_spine": [-23, 0, 0],
+      "upper_spine": [-19, 0, 0],
+      "clavicle_l": [0, 0, 6],
+      "clavicle_r": [0, 0, -6]
+    },
+    "hurt_back_out": {
+      "head": [-25, 0, 0],
+      "lower_spine": [-20, 0, 0],
+      "upper_spine": [-15, 0, 0]
+    },
+    "hurt_back_sigh": {
+      "head": [-25, 0, 0],
+      "lower_spine": [-26, 0, 0],
+      "upper_spine": [-24, 0, 0],
+      "clavicle_l": [0, 0, 12],
+      "clavicle_r": [0, 0, -12]
+    },
+    "startle_hit": {
+      "head": [20, 0, 0],
+      "upper_spine": [8, 0, 0],
+      "clavicle_l": [0, -10, 20],
+      "clavicle_r": [0, 10, -20],
+      "upper_arm_l": [-35, 0, -10],
+      "upper_arm_r": [-35, 0, 10],
+      "forearm_l": [-100, 0, 0],
+      "forearm_r": [-100, 0, 0]
+    },
     "guard": {
       "head": [
         25,
@@ -215,5 +359,5 @@
       ]
     }
   },
-  "poses_note": "Joint offsets from the rest pose in rig axes, degrees about [x, y, z]; x = the character's left axis: + bends a spine / neck forward, + bends a knee, - flexes a hip."
+  "poses_note": "Joint offsets from the rest pose in rig axes, degrees about [x, y, z]; x = the character's left axis: + bends a spine / neck forward, + bends a knee, - flexes a hip; a clavicle: + z raises the left one (shrug), - z the right one, - y / + y brings the left / right one forward."
 }

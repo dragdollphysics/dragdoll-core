@@ -77,7 +77,7 @@ DdWorld* makeWorld(uint16_t port)
     REQUIRE(dragdoll_world_add_colliders(w, &ground, 1, &id) == DD_OK);
     DdCharacterDesc cd;
     dragdoll_character_desc_default(&cd);
-    cd.rig_json = dragdoll_get_builtin_rig("humanoid16");
+    cd.rig_json = dragdoll_get_builtin_rig("humanoid18");
     cd.transform.position = DdVec3{0, 0, 1};
     DdCharacter* c = nullptr;
     REQUIRE(dragdoll_character_create(w, &cd, &c) == DD_OK);

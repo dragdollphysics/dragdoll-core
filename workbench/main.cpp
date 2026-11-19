@@ -248,6 +248,133 @@ void drawGeometry(const Geometry& geometry, unsigned char alpha = 255, const Vec
     rlEnableBackfaceCulling();
 }
 
+// The palm side of each hand drawn black (founder, 2026-11-19: "so I know where they are"). The palm is the hand box's
+// side that faces the body at rest: the body's local -X for a left hand, +X for a right one (rig +X = left). The box's
+// size follows the character's size (hand-to-forearm distance against the rig's 0.185 m).
+void addPalms(DdWorld* world, Geometry& geometry)
+{
+    const auto rot = [](const DdQuat& q, Vector3 v) {
+        const float tx = 2.0f * (q.y * v.z - q.z * v.y), ty = 2.0f * (q.z * v.x - q.x * v.z), tz = 2.0f * (q.x * v.y - q.y * v.x);
+        return Vector3{v.x + q.w * tx + (q.y * tz - q.z * ty), v.y + q.w * ty + (q.z * tx - q.x * tz), v.z + q.w * tz + (q.x * ty - q.y * tx)};
+    };
+    for (uint32_t ci = 0; ci < dragdoll_world_get_character_count(world); ++ci)
+    {
+        DdCharacter* c = dragdoll_world_get_character(world, ci);
+        if (c == nullptr || dragdoll_character_get_debug_draw(c) == 0) continue;
+        std::vector<DdTransform> bodies(dragdoll_character_get_body_count(c));
+        if (bodies.empty() || dragdoll_character_get_body_transforms(c, 0, bodies.data(), static_cast<uint32_t>(bodies.size())) != DD_OK) // Physics positions, as the debug draw
+            continue;
+        const char* const hands[2][2] = {{"hand_l", "forearm_l"}, {"hand_r", "forearm_r"}};
+        for (int k = 0; k < 2; ++k)
+        {
+            const int h = dragdoll_character_find_body(c, hands[k][0]), f = dragdoll_character_find_body(c, hands[k][1]);
+            if (h < 0 || f < 0) continue;
+            const DdTransform& t = bodies[static_cast<size_t>(h)];
+            const DdVec3 fp = bodies[static_cast<size_t>(f)].position;
+            const Vector3 centre{t.position.x, t.position.y, t.position.z};
+            const float scale = Vector3Length(Vector3Subtract(centre, Vector3{fp.x, fp.y, fp.z})) / 0.185f;
+            const Vector3 n = rot(t.rotation, Vector3{k == 0 ? -1.0f : 1.0f, 0.0f, 0.0f});
+            const Vector3 along = Vector3Scale(rot(t.rotation, Vector3{0.0f, 1.0f, 0.0f}), 0.047f * scale);
+            const Vector3 across = Vector3Scale(rot(t.rotation, Vector3{0.0f, 0.0f, 1.0f}), 0.039f * scale);
+            const Vector3 mid = Vector3Add(centre, Vector3Scale(n, 0.021f * scale + 0.002f));
+            const Vector3 a = Vector3Add(mid, Vector3Add(along, across)), b = Vector3Add(mid, Vector3Subtract(along, across));
+            const Vector3 cc = Vector3Subtract(mid, Vector3Add(along, across)), d = Vector3Subtract(mid, Vector3Subtract(along, across));
+            const Color black{12, 12, 12, 255};
+            geometry.tris.push_back(Tri{a, b, cc, black});
+            geometry.tris.push_back(Tri{a, cc, d, black});
+        }
+    }
+}
+
+// Where the vehicle touched each body (founder, 2026-11-19: see which parts were hit and where, keeping the parts' own
+// colours): every fixed step a body keeps one contact point (its deepest) with the direction it was pushed from and its
+// velocity change; each point the vehicle touched becomes a dot stuck to that body's surface (kept in the body's own
+// frame), coloured by the hardest hit there - light yellow (gentle) through orange to red (10 m/s or more). Only real
+// hits count (a velocity change of at least kMarkMinDeltaV: the founder's first look was "full of little dots" - every
+// slide over the bonnet and every near touch left one), points within kMarkMerge of an earlier dot on the same body merge
+// into it, and a body keeps its kMarkMax hardest. Cleared when the world restarts.
+constexpr float kMarkMinDeltaV = 1.5f; // m/s
+constexpr float kMarkMerge = 0.06f;    // m
+constexpr size_t kMarkMax = 3;
+struct ContactMark
+{
+    Vector3 local, normal; // In the body's frame: the point, and the outward direction of the surface there
+    float deltaV = 0.0f;   // m/s: the hardest hit at this spot
+};
+struct ContactMarks
+{
+    const DdWorld* world = nullptr;
+    uint64_t lastStep = 0;
+    std::map<std::pair<const DdCharacter*, int>, std::vector<ContactMark>> marks;
+};
+
+void addContactMarks(DdWorld* world, Geometry& geometry, bool show)
+{
+    static ContactMarks m;
+    const uint64_t step = dragdoll_world_get_step_count(world);
+    if (world != m.world || step < m.lastStep) m = ContactMarks{world, step, {}}; // A new run: start clean
+    m.lastStep = step;
+    const auto rot = [](const DdQuat& q, Vector3 v) {
+        const float tx = 2.0f * (q.y * v.z - q.z * v.y), ty = 2.0f * (q.z * v.x - q.x * v.z), tz = 2.0f * (q.x * v.y - q.y * v.x);
+        return Vector3{v.x + q.w * tx + (q.y * tz - q.z * ty), v.y + q.w * ty + (q.z * tx - q.x * tz), v.z + q.w * tz + (q.x * ty - q.y * tx)};
+    };
+    for (uint32_t ci = 0; ci < dragdoll_world_get_character_count(world); ++ci)
+    {
+        DdCharacter* c = dragdoll_world_get_character(world, ci);
+        if (c == nullptr) continue;
+        const uint32_t n = dragdoll_character_get_body_count(c);
+        std::vector<DdTransform> bodies(n);
+        std::vector<DdBodyContact> contacts(n);
+        if (n == 0 || dragdoll_character_get_body_transforms(c, 0, bodies.data(), n) != DD_OK) continue;
+        dragdoll_character_get_contacts(c, contacts.data(), n);
+        for (uint32_t b = 0; b < n; ++b)
+        {
+            const DdTransform& t = bodies[b];
+            const DdQuat inv{-t.rotation.x, -t.rotation.y, -t.rotation.z, t.rotation.w};
+            std::vector<ContactMark>& list = m.marks[{c, static_cast<int>(b)}];
+            if ((contacts[b].flags & DD_CONTACT_OBJECT) != 0 && contacts[b].delta_v >= kMarkMinDeltaV)
+            {
+                const DdBodyContact& k = contacts[b];
+                const Vector3 local = rot(inv, Vector3{k.point.x - t.position.x, k.point.y - t.position.y, k.point.z - t.position.z});
+                const Vector3 outward = rot(inv, Vector3{-k.normal.x, -k.normal.y, -k.normal.z}); // The normal points into the body
+                ContactMark* near = nullptr;
+                for (ContactMark& mark : list)
+                    if (Vector3Distance(mark.local, local) < kMarkMerge) near = &mark;
+                if (near != nullptr) near->deltaV = std::max(near->deltaV, k.delta_v);
+                else list.push_back(ContactMark{local, Vector3Normalize(outward), k.delta_v});
+                if (list.size() > kMarkMax) // Keep the hardest
+                {
+                    std::sort(list.begin(), list.end(), [](const ContactMark& a, const ContactMark& z) { return a.deltaV > z.deltaV; });
+                    list.resize(kMarkMax);
+                }
+            }
+            if (!show) continue;
+            for (const ContactMark& mark : list)
+            {
+                // A small disc on the surface, facing out, 2 mm proud of it.
+                const Vector3 normal = rot(t.rotation, mark.normal);
+                const Vector3 centre = Vector3Add(Vector3Add(Vector3{t.position.x, t.position.y, t.position.z}, rot(t.rotation, mark.local)),
+                                                  Vector3Scale(normal, 0.002f));
+                const Vector3 side = Vector3Normalize(std::fabs(normal.z) < 0.9f ? Vector3CrossProduct(normal, Vector3{0, 0, 1})
+                                                                                  : Vector3CrossProduct(normal, Vector3{1, 0, 0}));
+                const Vector3 other = Vector3CrossProduct(normal, side);
+                const float k = std::clamp(mark.deltaV / 10.0f, 0.0f, 1.0f);
+                const Color colour = k < 0.5f ? Color{255, static_cast<unsigned char>(240 - 180 * k), static_cast<unsigned char>(140 - 240 * k), 255}
+                                              : Color{static_cast<unsigned char>(255 - 70 * (k - 0.5f)), static_cast<unsigned char>(150 - 260 * (k - 0.5f)), 20, 255};
+                constexpr int kSides = 8;
+                constexpr float kRadius = 0.02f;
+                for (int i = 0; i < kSides; ++i)
+                {
+                    const float a0 = 6.2831853f * i / kSides, a1 = 6.2831853f * (i + 1) / kSides;
+                    const Vector3 p0 = Vector3Add(centre, Vector3Add(Vector3Scale(side, std::cos(a0) * kRadius), Vector3Scale(other, std::sin(a0) * kRadius)));
+                    const Vector3 p1 = Vector3Add(centre, Vector3Add(Vector3Scale(side, std::cos(a1) * kRadius), Vector3Scale(other, std::sin(a1) * kRadius)));
+                    geometry.tris.push_back(Tri{centre, p0, p1, colour});
+                }
+            }
+        }
+    }
+}
+
 // ------------------------------------------------------------------------------------------------
 // App state
 // ------------------------------------------------------------------------------------------------
@@ -283,6 +410,9 @@ struct App
     std::map<std::string, Judgement> judgements;
     bool judgementsLoaded = false;
     bool hideJudged = false;
+    int rowOutcome = 0; // Crash results: 0 all, 1 alive, 2 dead
+    bool standUp = false; // Crash sandbox: a survivor stands up after its down time, as the game (founder: off by default)
+    bool contactMarks = true; // Dots where the vehicle touched each body
     char feedbackNote[512] = {};
     std::string feedbackFor;    // The setting the note box belongs to (cleared when another one plays)
     std::string feedbackStatus;
@@ -748,8 +878,23 @@ void drawCrashPanel(App& app, float w)
         ImGui::SameLine();
         ImGui::TextDisabled("%.2f m", 1.75 * static_cast<double>(c.size));
         ImGui::SliderFloat("offset m", &c.offset, -1.5f, 1.5f, "%.2f");
+        ImGui::Checkbox("dots where the vehicle touched", &app.contactMarks);
+        ImGui::SameLine();
+        ImGui::TextDisabled("yellow gentle .. red hard");
         bool limp = c.limp;
         if (ImGui::Checkbox("limp (no reactions)", &limp)) c.limp = limp;
+        if (!c.limp)
+        {
+            ImGui::TextUnformatted("the game decides:");
+            ImGui::SameLine();
+            if (ImGui::RadioButton("alive", c.outcome == "alive")) c.outcome = "alive";
+            ImGui::SameLine();
+            if (ImGui::RadioButton("dead", c.outcome == "dead")) c.outcome = "dead";
+            if (c.outcome == "alive") ImGui::Checkbox("stands up after about 2 s (as the game)", &app.standUp);
+            if (!crashOutcomePlausible(c.outcome, c.kmh))
+                ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), c.outcome == "dead" ? "the game does not kill at this speed (< 30 km/h)"
+                                                                                       : "the game kills at this speed (> 40 km/h)");
+        }
         if (!c.limp && ImGui::BeginCombo("game's reaction", c.start.c_str()))
         {
             for (const std::string& st : crashStarts())
@@ -890,6 +1035,15 @@ void saveJudgement(App& app, const std::string& verdict)
     app.feedbackStatus = std::string("saved: ") + (verdict == "right" ? "looks right" : "looks odd");
 }
 
+// A surviving crash pedestrian is stood up by "the game" once its down time has run on the floor (about 2 s after the
+// hit): kinematic again, so it shows in the same green as the vehicle and a host-animated pedestrian (founder,
+// 2026-11-19). Only while the panel's "stands up" box is ticked (off by default); the crash lab leaves it off.
+void enableGameGetUp(App& app)
+{
+    if (app.replay != nullptr || app.attachPort > 0 || !app.main.scenario) return;
+    dragdoll::scenarios::crashGameGetUp(*app.main.scenario, app.standUp);
+}
+
 // Splits one CSV line (fields may be "quoted", commas inside quotes kept).
 std::vector<std::string> csvFields(const std::string& line)
 {
@@ -954,7 +1108,9 @@ void drawCrashResults(App& app, float w)
         int counts[4] = {0, 0, 0, 0};
         for (const App::CrashRow& r : app.crashRows)
             for (int v = 0; v < 4; ++v)
-                if (r.verdict == kVerdicts[v] && (app.rowVehicle.empty() || r.vehicle == app.rowVehicle)) ++counts[v];
+                if (r.verdict == kVerdicts[v] && (app.rowVehicle.empty() || r.vehicle == app.rowVehicle) &&
+                    (app.rowOutcome == 0 || (app.rowOutcome == 2) == (r.name.find("outcome=dead") != std::string::npos)))
+                    ++counts[v];
         for (int v = 0; v < 4; ++v)
         {
             char label[48];
@@ -963,6 +1119,13 @@ void drawCrashResults(App& app, float w)
             if (v % 2 == 0) ImGui::SameLine();
         }
         ImGui::Checkbox("hide the ones you judged", &app.hideJudged);
+        ImGui::TextUnformatted("outcome:");
+        ImGui::SameLine();
+        ImGui::RadioButton("all##outcome", &app.rowOutcome, 0);
+        ImGui::SameLine();
+        ImGui::RadioButton("alive##outcome", &app.rowOutcome, 1);
+        ImGui::SameLine();
+        ImGui::RadioButton("dead##outcome", &app.rowOutcome, 2);
         if (ImGui::BeginCombo("vehicle##rows", app.rowVehicle.empty() ? "all" : app.rowVehicle.c_str()))
         {
             if (ImGui::Selectable("all", app.rowVehicle.empty())) app.rowVehicle.clear();
@@ -975,6 +1138,8 @@ void drawCrashResults(App& app, float w)
         {
             if (!app.rowVehicle.empty() && r.vehicle != app.rowVehicle) continue;
             if (app.hideJudged && app.judgements.count(r.name) != 0) continue;
+            const bool dead = r.name.find("outcome=dead") != std::string::npos;
+            if ((app.rowOutcome == 1 && dead) || (app.rowOutcome == 2 && !dead)) continue;
             for (int v = 0; v < 4; ++v)
                 if (app.showVerdict[v] && r.verdict == kVerdicts[v]) shown.push_back(&r);
         }
@@ -1044,7 +1209,7 @@ bool focusCharacter(App& app)
         return false;
     }
     std::vector<DdTransform> bodies(dragdoll_character_get_body_count(c)); // The call fills all bodies or none
-    if (bodies.empty() || dragdoll_character_get_body_transforms(c, 1, bodies.data(), static_cast<uint32_t>(bodies.size())) != DD_OK)
+    if (bodies.empty() || dragdoll_character_get_body_transforms(c, 0, bodies.data(), static_cast<uint32_t>(bodies.size())) != DD_OK) // Physics positions, as the debug draw
     {
         return false;
     }
@@ -2743,6 +2908,7 @@ int main(int argc, char** argv)
     const DdDebugDrawCallbacks callbacks{sizeof(DdDebugDrawCallbacks), nullptr, &onLine, &onTriangle};
     Geometry geometry;
     Geometry overlay; // Joint limits, drawn translucent on top
+    Geometry objects; // Vehicles and props: drawn half see-through after everything solid
     BodyMotion motion;
     while (!WindowShouldClose() && !(IsKeyPressed(KEY_ESCAPE) && !app.noteEditing && !app.controlling))
     {
@@ -2832,6 +2998,8 @@ int main(int argc, char** argv)
         geometry.lines.clear();
         overlay.tris.clear();
         overlay.lines.clear();
+        objects.tris.clear();
+        objects.lines.clear();
         DdResult drawResult = DD_ERROR_NOT_INITIALIZED;
         std::vector<Line> overlayLines;
         std::vector<std::string> threatText;
@@ -2839,10 +3007,20 @@ int main(int argc, char** argv)
         {
             DdDebugDrawCallbacks cb = callbacks;
             cb.user = &geometry;
-            cb.flags = DD_DRAW_SHAPES | DD_DRAW_CAMERA_LOD;
+            cb.flags = DD_DRAW_SHAPES | DD_DRAW_CAMERA_LOD | DD_DRAW_SKIP_OBJECTS;
             const Camera3D eye = app.camera.build();
             cb.camera_position = DdVec3{eye.position.x, eye.position.y, eye.position.z};
             drawResult = dragdoll_world_debug_draw(world, &cb);
+            if (drawResult == DD_OK) addPalms(world, geometry);
+            if (drawResult == DD_OK) addContactMarks(world, geometry, app.contactMarks);
+            if (drawResult == DD_OK)
+            {
+                // Vehicles and props in their own pass: drawn half see-through, so they never hide the pedestrian
+                // (founder, 2026-11-19).
+                cb.user = &objects;
+                cb.flags = DD_DRAW_SHAPES | DD_DRAW_CAMERA_LOD | DD_DRAW_ONLY_OBJECTS;
+                dragdoll_world_debug_draw(world, &cb);
+            }
             if (app.showLimits && drawResult == DD_OK)
             {
                 cb.user = &overlay;
@@ -2881,7 +3059,15 @@ int main(int argc, char** argv)
         gFloorHeight = (app.replay != nullptr || app.attachPort > 0) ? gridHeight + 0.04f : 0.0f;
         const Camera3D view = app.camera.build();
         const bool cameraBelowFloor = !levelIsFloor && Vector3DotProduct(view.position, app.camera.up) < gFloorHeight;
+        enableGameGetUp(app);
         drawGeometry(geometry, 255, cameraBelowFloor ? &app.camera.up : nullptr);
+        if (!objects.tris.empty() || !objects.lines.empty())
+        {
+            rlDrawRenderBatchActive();
+            rlDisableDepthMask(); // See-through: nothing behind it is hidden by its depth
+            drawGeometry(objects, 128, cameraBelowFloor ? &app.camera.up : nullptr);
+            rlEnableDepthMask();
+        }
         if (!overlay.tris.empty() || !overlay.lines.empty())
         {
             rlDrawRenderBatchActive();

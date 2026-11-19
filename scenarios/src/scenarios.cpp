@@ -290,7 +290,7 @@ private:
 };
 
 // ------------------------------------------------------------------------------------------------
-// Characters: the humanoid16 rig as a limp ragdoll (no muscles yet).
+// Characters: the humanoid18 rig as a limp ragdoll (no muscles yet).
 // ------------------------------------------------------------------------------------------------
 DdQuat mul(DdQuat a, DdQuat b)
 {
@@ -953,8 +953,12 @@ struct StartKey
     float t;
     float move[3]; // away from the vehicle's path, up, along its travel
     int turn[3];
-    int joints[16][3];
+    int joints[16][3]; // In the order of kStartKeyBodies (the rig before its clavicles)
 };
+// The bodies of StartKey::joints, by name (recorded with the 16-body rig; a clavicle stays at rest).
+const char* const kStartKeyBodies[16] = {"pelvis", "lower_spine", "upper_spine", "head", "upper_arm_l", "forearm_l",
+                                         "hand_l", "upper_arm_r", "forearm_r", "hand_r", "thigh_l", "shin_l",
+                                         "foot_l", "thigh_r", "shin_r", "foot_r"};
 // Dodge: 28 measurements; faces -80 deg from the vehicle's travel (+ = away from its path); triggered 1.14 s before the vehicle arrives (n=28)
 constexpr float kStepFacing = -80.0f;
 const StartKey kStepKeys[] = {
@@ -1036,6 +1040,7 @@ public:
         mObs.limp = p.limp;
         mObs.aware = p.aware;
         mObs.start = p.start;
+        mObs.outcome = p.outcome;
         mObs.brake = p.brake;
         mObs.facing = p.facing;
         mObs.offset = p.offset;
@@ -1059,6 +1064,7 @@ public:
     DdVec3 cameraTarget() const override { return DdVec3{1.5f, 0.0f, 0.8f}; }
     float cameraDistance() const override { return mProfile.length > 8.0f ? 16.0f : 9.0f; }
     const CrashObservations& observations() const { return mObs; }
+    void setGameGetUp(bool enabled) { mGetUp = enabled; }
 
     void build(DdWorld* world) override
     {
@@ -1092,9 +1098,9 @@ public:
             dragdoll_character_set_kinematic(mCharacter, 1); // Host-animated standing until the handover
             dragdoll_character_set_tension(mCharacter, DD_TENSION_RELAXED, 0.0f);
             dragdoll_character_set_behaviour(mCharacter, "car_hit");
-            // Aware: DragDoll's own anticipation (general profile), or the game made the pedestrian react (SA: the
-            // starting state - the game decided it noticed the vehicle).
-            dragdoll_character_set_awareness(mCharacter, mParams.aware || mParams.start != "none" ? 1.0f : 0.0f);
+            // Aware only for DragDoll's own anticipation (general profile). A starting state is the host's animation:
+            // as in the SA mod, DragDoll's part starts at the hit (founder, 2026-11-19).
+            dragdoll_character_set_awareness(mCharacter, mParams.aware ? 1.0f : 0.0f);
             dragdoll_character_get_pose(mCharacter, 0, nullptr, 0, &mRestRoot);
             mCount = dragdoll_character_get_body_count(mCharacter);
             // No predictive handover: as in the game, the pedestrian becomes a ragdoll when the vehicle's body actually
@@ -1119,7 +1125,9 @@ public:
     {
         observe(world, hostTime - dt);
         // The game animates the pedestrian's reaction until the handover (activation from motion carries it on).
-        if (!mParams.limp && mParams.start != "none" && mCharacter != nullptr && dragdoll_character_get_kinematic(mCharacter) != 0)
+        // Once handed over it is physics' for good: a frozen corpse is kinematic again but no longer the host's animation.
+        if (mCharacter != nullptr && dragdoll_character_get_kinematic(mCharacter) == 0) mHandedOver = true;
+        if (!mParams.limp && mParams.start != "none" && mCharacter != nullptr && !mHandedOver && dragdoll_character_get_kinematic(mCharacter) != 0)
         {
             DdTransform before, now;
             std::vector<DdQuat> jointsBefore, jointsNow;
@@ -1135,7 +1143,7 @@ public:
         mX += mSpeed * dt;
         // The game's hit: the vehicle's body reaches a body of the pedestrian (inside its length and width, below its
         // roof) - the host hands it over to physics then (ADR-0027), a frame ahead of DragDoll's own contact.
-        if (!mParams.limp && mCharacter != nullptr && dragdoll_character_get_kinematic(mCharacter) != 0)
+        if (!mParams.limp && mCharacter != nullptr && !mHandedOver && dragdoll_character_get_kinematic(mCharacter) != 0)
         {
             const float front = mX + mProfile.length * 0.5f, rear = mX - mProfile.length * 0.5f;
             for (const DdTransform& b : mBodies)
@@ -1148,6 +1156,7 @@ public:
                 }
             }
         }
+        gameGetUp(hostTime, dt);
         const DdTransform target{{mX, 0.0f, 0.0f}, {0, 0, 0, 1}};
         dragdoll_world_set_kinematic_targets(world, &mCar, &target, 1);
     }
@@ -1164,6 +1173,45 @@ public:
     }
 
 private:
+    // The game takes a survivor back and stands it up where it lies (viewer only, see crashGameGetUp). As the game's
+    // fall: its knock-down (about 0.9 s from the hit) has to end, then it counts its down time (about 1.1 s) only while
+    // the pedestrian lies on the floor - one carried on the bonnet waits until it is down (founder, 2026-11-19). Struck
+    // and down at once, that is the measured 2.03 s from the hit to the get-up.
+    void gameGetUp(double hostTime, float dt)
+    {
+        if (!mGetUp || mParams.limp || mParams.outcome != "alive" || mCharacter == nullptr || mObs.contact < 0.0 || mBodies.empty())
+            return;
+        if (!mStoodUp)
+        {
+            if (hostTime - mObs.contact < 0.9) return;
+            DdSenses senses{};
+            senses.struct_size = sizeof(DdSenses);
+            const bool onFloor = dragdoll_character_get_senses(mCharacter, &senses) == DD_OK && senses.ground_bodies > 0 &&
+                                 senses.object_bodies == 0;
+            if (onFloor) mDownSeconds += dt;
+            if (mDownSeconds < 1.1f) return;
+            mStoodUp = true;
+            mStand = mRestRoot;
+            mStand.position.x = mBodies[0].position.x;
+            mStand.position.y = mBodies[0].position.y;
+            // Facing: where the head points from the pelvis (it gets up towards its head).
+            const int head = dragdoll_character_find_body(mCharacter, "head");
+            if (head >= 0)
+            {
+                const float hx = mBodies[static_cast<size_t>(head)].position.x - mBodies[0].position.x;
+                const float hy = mBodies[static_cast<size_t>(head)].position.y - mBodies[0].position.y;
+                if (hx * hx + hy * hy > 0.01f)
+                {
+                    const DdVec3 f0 = metrics::rotate(mRestRoot.rotation, DdVec3{0.0f, 0.0f, 1.0f});
+                    const float turn = (std::atan2(hy, hx) - std::atan2(f0.y, f0.x)) * 57.2958f;
+                    mStand.rotation = mul(axisAngle(DdVec3{0, 0, 1}, turn), mRestRoot.rotation);
+                }
+            }
+            dragdoll_character_set_kinematic(mCharacter, 1);
+        }
+        dragdoll_character_activate(mCharacter, &mStand, nullptr, &mStand, nullptr, 0, std::max(dt, 1e-3f));
+    }
+
     // How long before the contact the game's reaction began (how far into it the pedestrian is struck).
     static float startLead(const CrashParams& p)
     {
@@ -1229,15 +1277,19 @@ private:
             const DdQuat facing = mul(axisAngle(DdVec3{0, 0, 1}, turnTo), mRestRoot.rotation);
             const DdQuat react = mul(facing, nlerp(fromRotationVector(k0.turn), fromRotationVector(k1.turn), k));
             root.rotation = u < 0.2f ? nlerp(mRestRoot.rotation, react, u / 0.2f) : react; // The game turns it within 0.2 s
-            for (size_t j = 1; j < mCount && j < 16; ++j)
-                joints[j] = nlerp(fromRotationVector(k0.joints[j]), fromRotationVector(k1.joints[j]), k);
+            for (size_t j = 1; j < 16; ++j)
+            {
+                const int b = dragdoll_character_find_body(mCharacter, kStartKeyBodies[j]);
+                if (b >= 0 && static_cast<size_t>(b) < mCount)
+                    joints[static_cast<size_t>(b)] = nlerp(fromRotationVector(k0.joints[j]), fromRotationVector(k1.joints[j]), k);
+            }
             // After the dodge the pedestrian stands again where it got to (0.4 s back to standing), facing as it was set.
             if (s == "step" && u > keys[n - 1].t)
             {
                 const float settle = std::min(1.0f, (u - keys[n - 1].t) / 0.4f);
                 root.position.z = mRestRoot.position.z + up * (1.0f - settle);
                 root.rotation = nlerp(react, facing, settle);
-                for (size_t j = 1; j < mCount && j < 16; ++j) joints[j] = nlerp(joints[j], DdQuat{0, 0, 0, 1}, settle);
+                for (size_t j = 1; j < mCount; ++j) joints[j] = nlerp(joints[j], DdQuat{0, 0, 0, 1}, settle);
             }
         }
         else if (s == "run")
@@ -1281,6 +1333,7 @@ private:
         if (dragdoll_character_get_body_transforms(mCharacter, 0, mBodies.data(), static_cast<uint32_t>(mBodies.size())) == DD_OK)
         {
             const double dt = t - mLastT;
+            mVzNow.assign(mBodies.size(), 0.0f);
             for (size_t i = 0; i < mBodies.size(); ++i)
             {
                 const DdVec3 p = mBodies[i].position;
@@ -1293,6 +1346,7 @@ private:
                     const float v = std::sqrt((p.x - q.x) * (p.x - q.x) + (p.y - q.y) * (p.y - q.y) + (p.z - q.z) * (p.z - q.z)) /
                                     static_cast<float>(dt);
                     mObs.fastestBody = std::max(mObs.fastestBody, v);
+                    mVzNow[i] = (p.z - q.z) / static_cast<float>(dt);
                 }
             }
             mLast = mBodies;
@@ -1300,6 +1354,22 @@ private:
         }
         dragdoll_character_get_impact_report(mCharacter, &mObs.report);
         if (mObs.contact < 0.0 && mObs.report.valid) mObs.contact = t;
+        if (!mParams.limp && mObs.contact >= 0.0) observeLanding(t);
+        mVzPrev = mVzNow;
+        if (!mParams.limp && mParams.outcome == "dead")
+        {
+            // The game's decision at the hit: dying (reflexes only). At rest the body is frozen like the mod's corpses.
+            if (!mDying && dragdoll_character_get_kinematic(mCharacter) == 0)
+            {
+                dragdoll_character_set_vitality(mCharacter, 0.2f);
+                mDying = true;
+            }
+            if (mDying && !mObs.frozen && info.asleep != 0)
+            {
+                dragdoll_character_set_kinematic(mCharacter, 1);
+                mObs.frozen = true;
+            }
+        }
         if (!mParams.limp)
         {
             if (mObs.handover < 0.0 && dragdoll_character_get_kinematic(mCharacter) == 0) mObs.handover = t;
@@ -1322,13 +1392,19 @@ private:
                                               : 0;
                 }
             }
-            if (mObs.contact >= 0.0 && mObs.brace < 0.0 &&
+            // The impact's reflex, not the Hurt stage's guard of a hurt head (task 4.11f; the impact may hand over to
+            // Carried in the same step, so any stage before Hurt counts).
+            if (mObs.contact >= 0.0 && mObs.brace < 0.0 && mStatus.rfind("hurt", 0) != 0 &&
                 dragdoll_character_get_region_tension(mCharacter, DD_REGION_HEAD_NECK) == DD_TENSION_TENSE)
                 mObs.brace = t;
             if (mObs.carried < 0.0 && mStatus.rfind("carried", 0) == 0) mObs.carried = t;
             if (mStatus.rfind("hurt", 0) == 0) { if (mObs.hurtSince < 0.0) mObs.hurtSince = t; }
             else mObs.hurtSince = -1.0;
-            if (mObs.guard < 0.0 && mStatus.find("guard") != std::string::npos) mObs.guard = t;
+            if (mObs.guard < 0.0 && mStatus.find("guard") != std::string::npos)
+            {
+                mObs.guard = t;
+                mObs.guardStartedCarried = mStatus.rfind("carried", 0) == 0;
+            }
             if (mObs.offVehicle < 0.0 && (mStatus.rfind("airborne", 0) == 0 || mStatus.rfind("landing", 0) == 0 ||
                                           mStatus.rfind("tumble", 0) == 0))
                 mObs.offVehicle = t;
@@ -1402,6 +1478,58 @@ private:
         (void)world;
     }
 
+    // The first landing after the hit (task 4.11a): which body touches the ground first, when the hands and the trunk
+    // follow, and how much each hand has slowed before it touches (Hsiao & Robinovitch 1998: the wrist brakes just before
+    // contact, landing at about 2/3 of its peak downward speed; the pelvis keeps falling).
+    void observeLanding(double t)
+    {
+        const size_t n = mBodies.size();
+        if (n == 0 || mVzNow.size() != n || dragdoll_character_get_kinematic(mCharacter) != 0) return;
+        if (mPeakDown.size() != n)
+        {
+            mPeakDown.assign(n, 0.0f);
+            mTouched.assign(n, 0);
+        }
+        if (mVzPrev.size() != n) mVzPrev.assign(n, 0.0f);
+        std::vector<DdBodyContact> contacts(n);
+        if (dragdoll_character_get_contacts(mCharacter, contacts.data(), static_cast<uint32_t>(n)) != static_cast<uint32_t>(n)) return;
+        const int head = dragdoll_character_find_body(mCharacter, "head");
+        const int hands[2] = {dragdoll_character_find_body(mCharacter, "hand_l"), dragdoll_character_find_body(mCharacter, "hand_r")};
+        // As the falls study counted (Hsiao & Robinovitch 1998, section 2.3): a part has landed once its skin marker
+        // passes 100 mm above the surface - a wrist marker on the back of the wrist, pelvis markers on the hip bones and
+        // the sacrum. Here: a hand once its centre is within 0.10 m of the road, the pelvis once its centre is within
+        // 0.10 m plus its half-thickness (0.10 m), both scaled with the pedestrian's size; the first landing itself (and
+        // whether the head led) stays the first real ground contact above the legs.
+        const int pelvis = dragdoll_character_find_body(mCharacter, "pelvis");
+        const float size = mParams.size;
+        for (size_t i = 0; i < n; ++i)
+        {
+            const bool ground = (contacts[i].flags & DD_CONTACT_GROUND) != 0;
+            if (!mTouched[i] && !ground) mPeakDown[i] = std::max(mPeakDown[i], -mVzNow[i]);
+            if (!mTouched[i] && ground)
+            {
+                mTouched[i] = 1; // First ground contact of this body since the hit
+                const DdRegion region = dragdoll_character_get_body_region(mCharacter, static_cast<uint32_t>(i));
+                if (region != DD_REGION_LEG_LEFT && region != DD_REGION_LEG_RIGHT && mObs.landFirst < 0.0)
+                {
+                    mObs.landFirst = t;
+                    mObs.landHeadFirst = static_cast<int>(i) == head;
+                }
+            }
+        }
+        if (mObs.landFirst < 0.0 || t > mObs.landFirst + 0.5) return; // Only the first landing
+        if (pelvis >= 0 && mObs.landTrunk < 0.0 && mBodies[static_cast<size_t>(pelvis)].position.z < 0.20f * size) mObs.landTrunk = t;
+        for (int k = 0; k < 2; ++k)
+        {
+            const int i = hands[k];
+            if (i < 0 || mObs.landHand[k] >= 0.0 || mBodies[static_cast<size_t>(i)].position.z >= 0.10f * size) continue;
+            mObs.landHand[k] = t;
+            // Its speed over the previous frame, against its top falling speed since the hit.
+            if (mPeakDown[static_cast<size_t>(i)] > 0.3f)
+                mObs.landHandRatio[k] = std::max(0.0f, -mVzPrev[static_cast<size_t>(i)]) / mPeakDown[static_cast<size_t>(i)];
+        }
+    }
+
     CrashParams mParams;
     VehicleProfile mProfile;
     VehicleMesh mMesh;
@@ -1411,10 +1539,14 @@ private:
     DdCharacter* mCharacter = nullptr;
     std::vector<DdTransform> mBodies, mLast;
     double mLastT = 0.0;
+    std::vector<float> mVzNow, mVzPrev, mPeakDown; // Per body: vertical speed over the last / previous frame, peak drop
+    std::vector<char> mTouched;                     // Per body: has touched the ground since the hit
     DdVec3 mStartPelvis{};
     DdTransform mRestRoot{};
     uint32_t mCount = 0;
-    bool mHasStart = false, mImpactSeen = false;
+    bool mHasStart = false, mImpactSeen = false, mDying = false, mHandedOver = false, mGetUp = false, mStoodUp = false;
+    DdTransform mStand{};
+    float mDownSeconds = 0.0f; // The game's down time counted so far (on the floor)
     CrashObservations mObs;
 };
 
@@ -1454,7 +1586,7 @@ const std::vector<std::pair<std::string, Factory>>& registry()
         {"drop_from_1m",
          [] {
              return std::make_unique<RagdollScenario>(
-                 "drop_from_1m", "A limp 75 kg humanoid (16 bodies) is dropped feet-first from 1 m. Judge: proportions, "
+                 "drop_from_1m", "A limp 75 kg humanoid (18 bodies) is dropped feet-first from 1 m. Judge: proportions, "
                  "joints bending only the natural way (knees back, elbows forward), a calm landing without jitter.",
                  DdVec3{0.0f, 0.0f, 1.0f}, DdQuat{0, 0, 0, 1});
          }},
@@ -1544,6 +1676,11 @@ const CrashObservations* crashObservations(const Scenario& scenario)
 {
     const auto* crash = dynamic_cast<const CrashScenario*>(&scenario);
     return crash != nullptr ? &crash->observations() : nullptr;
+}
+
+void crashGameGetUp(Scenario& scenario, bool enabled)
+{
+    if (auto* crash = dynamic_cast<CrashScenario*>(&scenario)) crash->setGameGetUp(enabled);
 }
 
 std::vector<std::string> list()
@@ -1646,7 +1783,7 @@ void setRigOverride(std::string json)
 
 const char* rigJson()
 {
-    return rigOverride().empty() ? dragdoll_get_builtin_rig("humanoid16") : rigOverride().c_str();
+    return rigOverride().empty() ? dragdoll_get_builtin_rig("humanoid18") : rigOverride().c_str();
 }
 
 } // namespace dragdoll::scenarios

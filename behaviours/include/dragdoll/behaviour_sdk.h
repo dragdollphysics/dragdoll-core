@@ -88,6 +88,7 @@ struct Command
         bool active = false;
         DdVec3 target{};
         float extension = 1.0f;
+        DdVec3 palm{}; // Arms: world direction the palm turns to face (zero: leave the wrist alone)
     };
     Aim aim[DD_REGION_COUNT] = {};
 
@@ -98,11 +99,12 @@ struct Command
         poseName = name;
         poseRegions = regions;
     }
-    void aimAt(DdRegion region, DdVec3 worldTarget, float extension)
+    void aimAt(DdRegion region, DdVec3 worldTarget, float extension, DdVec3 palm = {})
     {
         aim[region].active = true;
         aim[region].target = worldTarget;
         aim[region].extension = extension;
+        aim[region].palm = palm;
     }
 
     void setTension(DdRegion region, DdTension value, float blend)

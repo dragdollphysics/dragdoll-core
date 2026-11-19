@@ -199,6 +199,15 @@ Rig Rig::parse(std::string_view text)
             {
                 error(where + " shape", "\"half_extents\" must all be > 0");
             }
+            // Optional: rounded edges and corners (m) - the box with a ball rolled over it.
+            if (shape.contains("rounding"))
+            {
+                body.shape.radius = number(shape, "rounding", where + " shape");
+                if (!(body.shape.radius >= 0.0f) || body.shape.radius > body.shape.halfExtents.ReduceMin())
+                {
+                    error(where + " shape", "\"rounding\" must be 0 .. the smallest half extent");
+                }
+            }
         }
         else if (type == "capsule")
         {

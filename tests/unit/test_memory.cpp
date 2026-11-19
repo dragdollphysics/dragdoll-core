@@ -96,7 +96,7 @@ TEST_CASE("memory: 8 simultaneous ragdolls on streamed level geometry stay under
         {
             DdCharacterDesc character;
             dragdoll_character_desc_default(&character);
-            character.rig_json = dragdoll_get_builtin_rig("humanoid16");
+            character.rig_json = dragdoll_get_builtin_rig("humanoid18");
             character.transform.position = DdVec3{static_cast<float>(i % 4) * 0.7f, static_cast<float>(i / 4) * 0.7f, 1.0f + 0.3f * static_cast<float>(i)};
             DdCharacter* c = nullptr;
             REQUIRE(dragdoll_character_create(world, &character, &c) == DD_OK);

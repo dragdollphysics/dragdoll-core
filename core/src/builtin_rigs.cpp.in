@@ -7,8 +7,8 @@ namespace dragdoll
 {
 const char* builtinRig(std::string_view name)
 {
-    static const char* const kHumanoid16 = R"DDRIG(@DD_RIG_HUMANOID16@)DDRIG";
-    if (name == "humanoid16")
+    static const char* const kHumanoid16 = R"DDRIG(@DD_RIG_HUMANOID18@)DDRIG";
+    if (name == "humanoid18")
     {
         return kHumanoid16;
     }

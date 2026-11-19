@@ -53,7 +53,7 @@ struct Body
         }
         DdCharacterDesc cd;
         dragdoll_character_desc_default(&cd);
-        cd.rig_json = dragdoll_get_builtin_rig("humanoid16");
+        cd.rig_json = dragdoll_get_builtin_rig("humanoid18");
         cd.transform.position = at;
         cd.transform.rotation = rotation;
         REQUIRE(dragdoll_character_create(world, &cd, &c) == DD_OK);
@@ -77,9 +77,9 @@ TEST_CASE("pose: at rest every joint rotation is identity, and the root is the p
     {
         CHECK(angleBetween(q, DdQuat{0, 0, 0, 1}) < 0.05f);
     }
-    DdTransform root{}, pelvis[16];
+    DdTransform root{}, pelvis[18];
     REQUIRE(dragdoll_character_get_pose(b.c, 0, nullptr, 0, &root) == DD_OK);
-    REQUIRE(dragdoll_character_get_body_transforms(b.c, 0, pelvis, 16) == DD_OK);
+    REQUIRE(dragdoll_character_get_body_transforms(b.c, 0, pelvis, 18) == DD_OK);
     CHECK(root.position.z == doctest::Approx(pelvis[0].position.z));
 }
 
@@ -124,13 +124,13 @@ TEST_CASE("pose: input validation, NULL resets to rest, blend weights are 1")
 {
     Library lib;
     Body b(0.0f);
-    std::vector<DdQuat> target(16, DdQuat{0, 0, 0, 1});
-    CHECK(dragdoll_character_set_target_pose(b.c, target.data(), 15) == DD_ERROR_INVALID_ARGUMENT);
+    std::vector<DdQuat> target(18, DdQuat{0, 0, 0, 1});
+    CHECK(dragdoll_character_set_target_pose(b.c, target.data(), 17) == DD_ERROR_INVALID_ARGUMENT);
     target[3] = DdQuat{0, 0, 0, 0};
-    CHECK(dragdoll_character_set_target_pose(b.c, target.data(), 16) == DD_ERROR_INVALID_ARGUMENT);
+    CHECK(dragdoll_character_set_target_pose(b.c, target.data(), 18) == DD_ERROR_INVALID_ARGUMENT);
     target[3] = DdQuat{0, 0, 0, 1};
     target[b.index("shin_l")] = axisAngle(1, 0, 0, 60);
-    REQUIRE(dragdoll_character_set_target_pose(b.c, target.data(), 16) == DD_OK);
+    REQUIRE(dragdoll_character_set_target_pose(b.c, target.data(), 18) == DD_OK);
     REQUIRE(dragdoll_character_set_tension(b.c, DD_TENSION_TENSE, 0.0f) == DD_OK);
     dragdoll_world_step_fixed(b.world, 240);
     CHECK(angleBetween(b.pose()[b.index("shin_l")], target[b.index("shin_l")]) < 3.0f);
@@ -138,10 +138,10 @@ TEST_CASE("pose: input validation, NULL resets to rest, blend weights are 1")
     dragdoll_world_step_fixed(b.world, 240);
     CHECK(angleBetween(b.pose()[b.index("shin_l")], DdQuat{0, 0, 0, 1}) < 3.0f);
 
-    float weights[16];
-    REQUIRE(dragdoll_character_get_blend_weights(b.c, weights, 16) == DD_OK);
+    float weights[18];
+    REQUIRE(dragdoll_character_get_blend_weights(b.c, weights, 18) == DD_OK);
     for (float w : weights) CHECK(w == 1.0f);
-    CHECK(dragdoll_character_get_blend_weights(b.c, weights, 15) == DD_ERROR_INVALID_ARGUMENT);
+    CHECK(dragdoll_character_get_blend_weights(b.c, weights, 17) == DD_ERROR_INVALID_ARGUMENT);
 }
 
 TEST_CASE("pose: state goes active -> settled, with facing and head direction for the host's get-up choice")
