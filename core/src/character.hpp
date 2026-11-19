@@ -87,6 +87,8 @@ struct DdCharacter
     bool kinematic = false;         // Host-animated: moved only by activate
     float autoHandover = 0.0f;      // s: turn dynamic when the threat is due within this (0 = off)
     bool vehiclePassThrough = false; // Once landed after a hit, moving colliders pass through (ADR-0026)
+    bool asleep = false;             // Physics-driven and put to sleep by the physics engine (at rest)
+    bool downSinceHandover = false;  // Since it became physics-driven, its trunk or head has touched the ground (ADR-0026)
     bool debugCorrupt = false;      // Test hook: inject NaN on the next capture
 
     // Standing balance (ADR-0023)

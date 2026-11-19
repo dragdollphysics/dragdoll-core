@@ -13,9 +13,15 @@ Games still play the same canned "fall down" clip whether you're hit by a scoote
 ## 0. First Main Goal — DragDoll SA v1
 **A GTA San Andreas (PC classic 1.0 US) mod in which DragDoll takes over pedestrians hit by vehicles.**
 
-> **Scope: one animation slot.** v1 replaces only the game's "hit by a vehicle" animations: DragDoll starts from the ped's pose at the hit and ends in the game's own lying pose, then the ragdoll is destroyed and the game carries on (founder, 2026-11-16). No ragdoll outlives its crash.
+> **Scope: one animation slot.** v1 replaces only the game's "hit by a vehicle" animations (founder, 2026-11-16).
+> **Contract (ADR-0027, 2026-11-18): the game decides, DragDoll draws.** The ragdoll starts inside the game's own hit
+> (its hit function, after the game ran it) and ends on the game's own next step: a survivor is released on the game's
+> get-up (its front / back choice shown how the body lies); a dead body stays a ragdoll - reactions in the air, relaxed
+> once stopped on the road, **frozen kinematic** when the physics engine puts it to sleep - until the game revives,
+> despawns or the player leaves it. While ragdolled the mod writes only drawn bones, position, heading and speed, plus
+> the named exceptions in ADR-0027 (no push-back on the hitting car, get-up facing, no second get-up after a dive).
 >
-> When an NPC is hit by a vehicle, DragDoll takes over: **pre-impact** (brace/dive if aware) → **impact** → **wrap / roof-vault / forward projection** (depending on vehicle front shape and speed) → **airborne** → **landing** → **ground settle** → **hand back** to the game (death or get-up).
+> When an NPC is hit by a vehicle, DragDoll takes over: **pre-impact** (brace/dive if aware) → **impact** → **wrap / roof-vault / forward projection** (depending on vehicle front shape and speed) → **airborne** → **landing** → **ground** (cars and the player pass through a body down on the road, ADR-0026) → **release** on the game's get-up, or a **frozen corpse**.
 
 **Ship criteria**
 * Preferred over existing SA ragdoll mods in side-by-side comparison videos.
@@ -77,6 +83,7 @@ One page each in `docs/decisions/`. Changed only by a new ADR. **Planning rule:*
 | D18 | Mission | A game-agnostic **Integration Workflow** (`docs/integration/`) is a first-class deliverable; SA is its first reference integration. |
 | D19 | Governance | Org-owned, copyright "The DragDoll contributors", DCO, founder as initial steward, ≥ 2 org owners after v1, `GOVERNANCE.md` at launch. |
 | D20 | C++ conventions | Never throw across the ABI (noexcept + catch-all → `DdResult`), `/fp:precise`, RAII, caller-owned output buffers, no global ctors, no host callbacks from worker threads, Jolt-style naming. |
+| D21–D27 | Later decisions | See `docs/decisions/README.md`. For the SA integration above all: **0025** reaction chain, **0026** vehicles and bodies on the ground (pass-through once down; ignores every host-driven body), **0027** the game decides, DragDoll draws (start in the game's hit, release on its next step, frozen corpses, named exceptions). |
 
 ---
 
@@ -225,7 +232,7 @@ Tasks in dependency order (model hint per task: F = Fable, O = Opus, S = Sonnet)
   * [x] **4.5b** (done 2026-11-17): **aim** (`dragdoll_character_aim`, `Command::aimAt`): an arm or leg pointed at a world position with a chosen extension — analytic two-bone solve into the limb's two joint targets, elbow / knee inside its hinge limits, first joint by the shortest arc from rest; **pose library** (`"poses"` in a behaviour pack: per body, degrees about the rig's X, Y, Z; `dragdoll_character_apply_pose`, `Command::usePose`, `"rest"` built in); both recorded. `car_hit` gained **Shield (fend)**: after the voluntary latency both hands aim towards the vehicle. Scenario `aware_sedan_40kmh`. The live tap streams each character's time to collision, expected class and behaviour stage; dragdoll-sa attaches `car_hit` to its puppets (they watch).
 * [x] **4.6 Impact + Carried + Guard** (~8 h, F): the handover (kinematic -> dynamic), struck-leg yield, co-contraction, Guard and Curl layers; scenarios per vehicle class; metric: head Δv and head-strike zone vs the passive baseline. Done 2026-11-17: core auto handover (`dragdoll_character_set_auto_handover`, recorded, format 5); car_hit Impact (struck-leg yield, brace after the reflex latency), Carried (Guard: chin tuck + forearms between head and car, mild Curl; starts only on the car, arms ease in over 0.3 s), After (relaxed, Guard kept; placeholder for 4.7), Limp at vitality 0; `react_<vehicle>_40kmh` scenarios; runner `--behaviour`/`--aware`. Metric: unaware ~ passive (brace lands just before the head strike), aware: slower head strike (sedan 0.71 vs 0.87 x v). Founder: "the doll covers its face, looks very cool". Forward projections (bus / SUV / van) have no Carried stage, so no Guard yet: it comes in the air with 4.7.
 * [x] **4.7 Airborne + Landing + Tumble** (~9 h, F): Reach, tuck / extend from angular momentum and time to ground, break-fall, roll-on; metric: first ground contact is a limb, not the head, in >= X % of runs (X set from the baseline); `death_drop` scenario as a cheap landing test (ideas.md). Done 2026-11-17: Airborne (Reach to where the head meets the ground, chin tuck), Landing (arms yield on contact), Tumble (relaxed, loose guard), head-falling reach while sliding off the car; any fall starts the reflexes; `death_drop` / `death_drop_limp`. Metric: head-first ground contact 13-14 % vs 11.5 % for a living body without reactions (within noise; limp 5.5 %). Tuck / extend left to Phase 5. Founder: react_suv "looks quite right", death_drop "more natural" than limp.
-* [ ] **4.8 Settle + Handback** (~5 h, O): `set_rest_poses` (host's floor poses: face up / face down); Settle eases into the one matching the body's facing, by vitality; settle detection; facing hints checked on slopes and kerbs; metric: pose error at handback (flat ground, alive) small enough for a short blend; the character is destroyed at handback for every outcome (ADR-0025 §3a).
+* [x] ~~**4.8 Settle + Handback**~~ — **replaced by ADR-0027** (2026-11-18). Tried in game: easing a body into the game's floor pose and handing it back - 7 of 10 corpses lay face up / down the other way round from the game's dead pose (chosen at the hit, mid-air) and visibly flipped. Instead: survivors are released on the game's own get-up (its front / back choice shown the body's facing); the dead stay ragdolls - reactions until down and stopped on the road, then relaxed holding that pose, then **frozen kinematic** on Jolt's sleep (`DdCharacterInfo.asleep`). Core additions: pass-through also from a host-side handover with no DragDoll impact, and against every kinematic body (ADR-0026 amended). Open idea kept: let the game pick its floor-death pose after landing (would allow a hand-back).
 * [ ] **4.9 Anticipate** (~6 h, O): Startle and Shield with the two latencies; aware vs unaware runs differ as ADR-0025 predicts. Founder review of `aware_sedan_40kmh` (2026-11-17): arms look interesting, **the rest of the body looks stiff** — the startle holds the whole body at TENSE (the "locks to its pose" profile) until the impact. To fix here: the startle as a brief burst (about 0.3 s) that eases into a softer braced level (a profile between relaxed and tense), with a small crouch, raised shoulders, the head and trunk turning towards the vehicle (pose library), and the far arm joining once the trunk has turned.
 * [ ] **4.10 Acceptance sweep + founder review** (~8 h, O/S): randomized runs, success rates, review notes; workplan + devlog; Phase 4 retrospective.
 * **Acceptance:** sedan at 30 km/h produces a wrap with correct contact order in ≥ 90 % of randomized runs; SUV/van produce forward projection; bus never produces a roof vault; head strike 50–140 ms after first contact with a wrap-around distance of 1.5–2.3 m (sedan, adult); flight + slide inside the throw corridor for the measured launch speed (ADR-0024 §5); no instability 5–120 km/h; aware vs unaware vs killed visibly different; human review notes recorded.
@@ -240,14 +247,14 @@ Tasks in dependency order (model hint per task: F = Fable, O = Opus, S = Sonnet)
 
 ### Phase 6 — dragdoll-sa Plugin (~100 h, can interleave with Phase 5)
 **Goal:** the mod.
-* [ ] **Triggers:** the game's vehicle-hits-pedestrian path + animation-name table (data file, e.g. `KD_left/right`, `KO_skid_front/back`, `KO_spin_L/R`) with handoff delay.
-* [ ] **Rig mapping JSON** for the SA 32-bone skeleton (IDs from research notes).
+* [x] **Trigger** (2026-11-18): a hook on the game's own hit function (`CPed::KillPedWithCar`): after the game ran it, if it hurt the ped (its knock-down or kill branch), DragDoll takes over in the same call from the previous frame's motion. No animation table needed. The game's pipeline is mapped in private notes (`research/sa-car-hit-pipeline.md`, workspace) and measured with the pipeline tracer (`dragdoll-sa/src/tracer.cpp`).
+* [x] **Rig mapping JSON** for the SA 32-bone skeleton (`packs/skeletons/sa_ped.json`, bridge 3.7).
 * [~] **Collider streaming:** nearby COL meshes → static proxies; vehicles → kinematic proxies from their COL data with velocity. (Done live in 3.7: buildings + cars; left: dynamic map objects, smooth car hull for sliding bodies.)
-* [ ] **Pose override:** write local bone rotations into the RpHAnim hierarchy after the game's animation update; per-bone weights.
-* [ ] **Root sync:** ped position follows DragDoll root; game physics for that ped suspended while active.
-* [ ] **Handback** (ADR-0025 §3a): read the game's two floor poses from its own animations at runtime and pass them as rest poses; when settled, move the ped to the ragdoll's root, put the game's hit animation at its end (lying face up / down), blend the remainder, destroy the ragdoll; the game then continues by itself (dead or get-up).
+* [x] **Pose override:** bone matrices rebuilt from the ragdoll just before the game draws the ped (plugin-sdk ped render event); the root bone kept at its rest offset from the pelvis (model 13's spike); a short drawing blend at the release. Per-bone weights: later.
+* [x] **Root sync:** the ped follows the body (origin on the game's floor at the model's height while lying), speed zeroed; its collision is never touched (the game ignores the hitting car and turns a corpse's collision off itself).
+* [x] **Handback → release (ADR-0027):** survivors on the game's get-up (facing shown to the game, a waiting dive task ended), dead bodies frozen in place (see 4.8). The game's car push-back is skipped (35-41 % of the car's speed per ped, measured).
 * [ ] **Tracy profiler zones** (moved from Phase 2, task 2.7): step, solver, character update, collider streaming; first tool for the 1 ms / 8-ragdoll target. Founder installs the Tracy viewer app.
-* [ ] **Outcome tiers + ragdoll budget manager** (founder's idea, 2026-11-12): the host tells DragDoll the outcome when it activates a ped (`DD_OUTCOME_KILLED` / `DD_OUTCOME_SURVIVES`; SA knows the ped's health after the hit).
+* [ ] **Outcome tiers + ragdoll budget manager** (founder's idea, 2026-11-12): the host tells DragDoll the outcome when it activates a ped (`DD_OUTCOME_KILLED` / `DD_OUTCOME_SURVIVES`; SA knows the ped's health after the hit). *Partly there (2026-11-18):* dead bodies freeze kinematic at rest (≈ zero cost); the game's health is known inside the hit function.
   * **Killed → limp tier (cheapest):** no muscles, no perception/behaviour work, fewer solver iterations, early sleep; once settled the pose is frozen/handed back as a corpse (≈ zero cost afterwards).
   * **Survives → active tier:** full behaviour chain (anticipate, guard, curl, land), then hand back to the game's get-up animation as soon as recovered (short active lifetime).
   * **Budget manager:** cap on awake ragdolls (configurable, default ~12), priority by outcome (survivors first), distance and visibility; extras fall back to the game's own animation (`failed` path). Far ragdolls get fewer solver iterations / earlier sleep.
@@ -258,6 +265,12 @@ Tasks in dependency order (model hint per task: F = Fable, O = Opus, S = Sonnet)
 * [ ] **[SA] Fallback:** on `failed`, hand the ped back to the game's own animation.
 * [ ] Packaging: single static-CRT ASI + ini + data. Never touches `main.scm`, `ped.ifp`, or game scripts.
 * [ ] **Integration Workflow v1** (`docs/integration/`, ADR-0018): the 8 steps (trigger → skeleton → world → pose → root → handback → compatibility → verify), each with the SA implementation as worked example, plus templates (trigger table, rig mapping JSON, ini skeleton, verification checklist).
+* **Parked (from the 2026-11-17/18 sessions):**
+  * [ ] Riders: the game's knock-off-bike path is not hooked - riders are never ragdolled (the rider grace / own-vehicle rule comes back with it).
+  * [ ] A moving ragdoll can still push a dead body that has stopped but is not yet frozen (relaxed, awake) - small.
+  * [ ] The soft-collision hook (`CPhysical::ApplySoftCollision`, two bodies) crashes the game when hooked; cause unknown (tracer only).
+  * [ ] Let the game pick its floor-death pose (face up / down) after the body has landed - would allow handing corpses back to the game.
+  * [ ] The pipeline tracer stays a dev tool: strip or gate it for the release build.
 * **Acceptance:** all ship criteria in §0.
 
 ### Phase 7 — v1 Release & Launch (~30 h)

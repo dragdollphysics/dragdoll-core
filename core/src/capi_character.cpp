@@ -650,6 +650,7 @@ DD_API DdResult DD_CALL dragdoll_character_get_info(const DdCharacter* character
     out->head_direction = DdVec3{direction.GetX(), direction.GetY(), direction.GetZ()};
     out->failure = character->failure;
     out->balance_error = character->balanceError;
+    out->asleep = character->asleep ? 1 : 0;
     return DD_OK;
     DD_GUARD_END(DD_ERROR_INTERNAL)
 }

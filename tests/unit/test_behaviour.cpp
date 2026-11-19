@@ -461,3 +461,159 @@ TEST_CASE("vehicle pass-through: a car driving over a landed body does not launc
     CHECK(fastest[0] > 3.0f);  // Colliding, the car shoves the body (the in-game launches)
     CHECK(fastest[1] < 0.5f);  // Passing through, the body stays where it lies
 }
+
+TEST_CASE("vehicle pass-through: an animated character walking over a lying body does not move it (ADR-0026)")
+{
+    // San Andreas: the player on foot is a kinematic puppet; walking over a corpse shoved it (the game: a corpse's
+    // collision is off). Once down, a pass-through body ignores every host-driven (kinematic) body.
+    const float facing = yawFacing(DdVec3{-1, 0, 0}); // Before Library: it initialises the library itself
+    Library lib;
+    float fastest[2] = {0.0f, 0.0f};
+    for (int pass = 0; pass < 2; ++pass)
+    {
+        CAPTURE(pass);
+        Scene scene(facing + 90.0f);
+        REQUIRE(dragdoll_character_set_vehicle_pass_through(scene.human, pass) == DD_OK);
+        REQUIRE(dragdoll_character_set_tension(scene.human, DD_TENSION_LIMP, 0.0f) == DD_OK);
+        REQUIRE(dragdoll_character_set_kinematic(scene.human, 0) == DD_OK);
+        const uint32_t top = dragdoll_character_get_body_count(scene.human) - 1u;
+        REQUIRE(dragdoll_character_apply_impulse(scene.human, top, DdVec3{0, 40, 0}, nullptr) == DD_OK); // Onto its side
+        // The walker: a kinematic standing character, posed by the host, coming along +X through the lying body.
+        DdCharacterDesc wd;
+        dragdoll_character_desc_default(&wd);
+        wd.rig_json = dragdoll_get_builtin_rig("humanoid16");
+        wd.transform.position = DdVec3{-4.0f, 0.3f, 0.01f};
+        wd.transform.rotation = DdQuat{0, 0, 0, 1};
+        DdCharacter* walker = nullptr;
+        REQUIRE(dragdoll_character_create(scene.world, &wd, &walker) == DD_OK);
+        REQUIRE(dragdoll_character_set_kinematic(walker, 1) == DD_OK);
+        std::vector<DdQuat> rest(dragdoll_character_get_body_count(walker), DdQuat{0, 0, 0, 1});
+        DdTransform walkerRoot{};
+        REQUIRE(dragdoll_character_get_pose(walker, 0, nullptr, 0, &walkerRoot) == DD_OK);
+        DdVec3 last{};
+        bool haveLast = false;
+        for (int f = 0; f < 10 * 120; ++f)
+        {
+            const float t = f / 120.0f;
+            DdTransform previous = walkerRoot;
+            if (t > 3.0f) walkerRoot.position.x += 1.5f / 120.0f; // Walks through from 3 s on
+            REQUIRE(dragdoll_character_activate(walker, &previous, rest.data(), &walkerRoot, rest.data(), static_cast<uint32_t>(rest.size()),
+                                                1.0f / 120.0f) == DD_OK);
+            REQUIRE(dragdoll_world_step(scene.world, 1.0f / 120.0f, nullptr) == DD_OK);
+            DdTransform root{};
+            REQUIRE(dragdoll_character_get_pose(scene.human, 0, nullptr, 0, &root) == DD_OK);
+            if (f == 359) CHECK(root.position.z < 0.4f); // Lying on the road before the walker comes
+            if (t > 3.0f && haveLast && std::fabs(walkerRoot.position.x - root.position.x) < 1.5f)
+            {
+                const float dx = root.position.x - last.x, dy = root.position.y - last.y, dz = root.position.z - last.z;
+                fastest[pass] = std::fmax(fastest[pass], std::sqrt(dx * dx + dy * dy + dz * dz) * 120.0f);
+            }
+            last = root.position;
+            haveLast = true;
+        }
+    }
+    MESSAGE("fastest pelvis while the walker is over the body: " << fastest[0] << " m/s colliding, " << fastest[1] << " m/s passing through");
+    CHECK(fastest[0] > 0.5f); // Colliding, the walker's legs shove it
+    CHECK(fastest[1] < 0.2f); // Passing through, it stays where it lies
+}
+
+TEST_CASE("asleep: the info reports the physics engine's sleep; a body frozen kinematic then is not moved by a car")
+{
+    // San Andreas freezes a dead body at rest (Jolt's own deactivation) in its last pose: cars pass (kinematic bodies
+    // never collide with each other). No pass-through needed.
+    const float facing = yawFacing(DdVec3{-1, 0, 0}); // Before Library: it initialises the library itself
+    Library lib;
+    Scene scene(facing + 90.0f);
+    REQUIRE(dragdoll_character_set_tension(scene.human, DD_TENSION_LIMP, 0.0f) == DD_OK);
+    REQUIRE(dragdoll_character_set_kinematic(scene.human, 0) == DD_OK);
+    const uint32_t top = dragdoll_character_get_body_count(scene.human) - 1u;
+    REQUIRE(dragdoll_character_apply_impulse(scene.human, top, DdVec3{0, 40, 0}, nullptr) == DD_OK);
+    DdCharacterInfo info{};
+    info.struct_size = sizeof(DdCharacterInfo);
+    REQUIRE(dragdoll_character_get_info(scene.human, &info) == DD_OK);
+    CHECK(info.asleep == 0); // Moving
+    float asleepAt = -1.0f;
+    for (int f = 0; f < 10 * 120 && asleepAt < 0.0f; ++f)
+    {
+        REQUIRE(dragdoll_world_step(scene.world, 1.0f / 120.0f, nullptr) == DD_OK);
+        REQUIRE(dragdoll_character_get_info(scene.human, &info) == DD_OK);
+        if (info.asleep != 0) asleepAt = f / 120.0f;
+    }
+    MESSAGE("the body fell asleep after " << asleepAt << " s");
+    REQUIRE(asleepAt > 0.0f);
+    REQUIRE(dragdoll_character_set_kinematic(scene.human, 1) == DD_OK); // Frozen in its last pose
+    REQUIRE(dragdoll_character_get_info(scene.human, &info) == DD_OK);
+    CHECK(info.asleep == 0); // Kinematic: not reported asleep
+    DdTransform before{};
+    REQUIRE(dragdoll_character_get_pose(scene.human, 0, nullptr, 0, &before) == DD_OK);
+    for (int f = 0; f < 6 * 120; ++f) // A car drives through at 8 m/s
+    {
+        scene.x += 8.0f / 120.0f;
+        const DdTransform target{{scene.x, 0, 0}, {0, 0, 0, 1}};
+        REQUIRE(dragdoll_world_set_kinematic_targets(scene.world, &scene.car, &target, 1) == DD_OK);
+        REQUIRE(dragdoll_world_step(scene.world, 1.0f / 120.0f, nullptr) == DD_OK);
+    }
+    DdTransform after{};
+    REQUIRE(dragdoll_character_get_pose(scene.human, 0, nullptr, 0, &after) == DD_OK);
+    const float moved = std::sqrt((after.position.x - before.position.x) * (after.position.x - before.position.x) +
+                                  (after.position.y - before.position.y) * (after.position.y - before.position.y) +
+                                  (after.position.z - before.position.z) * (after.position.z - before.position.z));
+    MESSAGE("frozen body moved " << moved << " m while the car drove through");
+    CHECK(scene.x > 20.0f); // The car went past it
+    CHECK(moved < 0.001f);
+}
+
+TEST_CASE("vehicle pass-through: also after a host-side handover with no vehicle contact (ADR-0026)")
+{
+    // The host's own hit hands the body over (San Andreas: the game's larger ped collision registers the hit first);
+    // DragDoll's vehicle never touches it, so no impact report starts. The trunk / head reaching the ground since the
+    // handover must switch pass-through on by itself.
+    const float facing = yawFacing(DdVec3{-1, 0, 0}); // Before Library: it initialises the library itself
+    Library lib;
+    float fastest[2] = {0.0f, 0.0f};
+    for (int pass = 0; pass < 2; ++pass)
+    {
+        CAPTURE(pass);
+        Scene scene(facing + 90.0f);
+        REQUIRE(dragdoll_character_set_vehicle_pass_through(scene.human, pass) == DD_OK);
+        REQUIRE(dragdoll_character_set_tension(scene.human, DD_TENSION_LIMP, 0.0f) == DD_OK);
+        REQUIRE(dragdoll_character_set_kinematic(scene.human, 0) == DD_OK); // Handed over (the host's own hit)...
+        const uint32_t top = dragdoll_character_get_body_count(scene.human) - 1u;
+        REQUIRE(dragdoll_character_apply_impulse(scene.human, top, DdVec3{0, 40, 0}, nullptr) == DD_OK); // ...and knocked over sideways
+        DdVec3 last{};
+        bool haveLast = false;
+        for (int f = 0; f < 10 * 120; ++f)
+        {
+            const float t = f / 120.0f;
+            if (t > 3.0f) scene.x += 8.0f / 120.0f; // From 3 s on, a car drives over the lying body at 8 m/s
+            const DdTransform target{{scene.x, 0, 0}, {0, 0, 0, 1}};
+            REQUIRE(dragdoll_world_set_kinematic_targets(scene.world, &scene.car, &target, 1) == DD_OK);
+            REQUIRE(dragdoll_world_step(scene.world, 1.0f / 120.0f, nullptr) == DD_OK);
+            if (t < 3.0f)
+            {
+                DdImpactReport r{};
+                r.struct_size = sizeof(DdImpactReport);
+                REQUIRE(dragdoll_character_get_impact_report(scene.human, &r) == DD_OK);
+                CHECK(r.valid == 0); // No vehicle contact before the car comes
+                if (f == 359)
+                {
+                    DdTransform lying{};
+                    REQUIRE(dragdoll_character_get_pose(scene.human, 0, nullptr, 0, &lying) == DD_OK);
+                    CHECK(lying.position.z < 0.4f); // It lies on the road before the car comes
+                }
+            }
+            DdTransform root{};
+            REQUIRE(dragdoll_character_get_pose(scene.human, 0, nullptr, 0, &root) == DD_OK);
+            if (t > 3.0f && haveLast && std::fabs(scene.x - root.position.x) < 4.0f) // While the car is over the body
+            {
+                const float dx = root.position.x - last.x, dy = root.position.y - last.y, dz = root.position.z - last.z;
+                fastest[pass] = std::fmax(fastest[pass], std::sqrt(dx * dx + dy * dy + dz * dz) * 120.0f);
+            }
+            last = root.position;
+            haveLast = true;
+        }
+    }
+    MESSAGE("fastest pelvis while the car is over the body: " << fastest[0] << " m/s colliding, " << fastest[1] << " m/s passing through");
+    CHECK(fastest[0] > 3.0f); // Colliding, the car shoves it
+    CHECK(fastest[1] < 0.5f); // Passing through since its trunk / head touched the ground after the handover
+}

@@ -102,13 +102,19 @@ public:
         else if (idle && !s.kinematic && s.senses.object_bodies == 0 &&
                  (s.senses.airborne != 0 || (s.senses.upright < mFallUpright && mHeadDrop > mFallSpeed)))
         {
-            // A fall without a vehicle: the fall itself is the stimulus.
+            // A fall without a vehicle: the fall itself is the stimulus. As on leaving a vehicle, the startle's whole-body
+            // co-contraction lets go (a host-side hit can hand the body over before DragDoll's vehicle touches it: the
+            // body otherwise fell and lay fully tense - founder, 2026-11-18).
             mImpactClock.clear();
             mImpactClock.stimulus();
             mPrimed = mStartled;
             mBraced = true;
             mGuarding = false;
             mReaching = false;
+            for (const DdRegion r : {DD_REGION_HEAD_NECK, DD_REGION_TRUNK, DD_REGION_LEG_LEFT, DD_REGION_LEG_RIGHT})
+            {
+                out.setTension(r, mAfterTension, mAfterBlend);
+            }
             mStage = Stage::Airborne;
         }
         switch (mStage)
@@ -230,13 +236,12 @@ public:
             mImpactClock.tick(s.dt);
             if (groundedAboveLegs(s))
             {
-                if (mReaching)
-                {
-                    // Soft landing: the arms meet the ground and give instead of locking.
-                    out.setTension(DD_REGION_ARM_LEFT, DD_TENSION_RELAXED, mLandingYield);
-                    out.setTension(DD_REGION_ARM_RIGHT, DD_TENSION_RELAXED, mLandingYield);
-                    mReaching = false;
-                }
+                // Soft landing: the arms meet the ground and give instead of locking - reaching or guarding alike (a
+                // guard's tense arms stayed locked on the ground otherwise).
+                out.setTension(DD_REGION_ARM_LEFT, DD_TENSION_RELAXED, mLandingYield);
+                out.setTension(DD_REGION_ARM_RIGHT, DD_TENSION_RELAXED, mLandingYield);
+                mReaching = false;
+                mGuarding = false;
                 mStage = Stage::Tumble;
             }
             else if (mReaching)

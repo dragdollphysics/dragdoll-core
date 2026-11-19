@@ -50,6 +50,16 @@ ped back to the game's own get-up after it lies still.
    game's dive-and-get-up task waiting under the fall-and-get-up; after the fall's get-up it resumes and plays a second
    get-up (the plain game does it too). At the release DragDoll ends that waiting task through the game's own
    mechanism (made abortable, slot cleared by the task manager).
+9. **Corpses stay DragDoll's, and cars pass through lying bodies (founder, 2026-11-18).** Dead bodies were carried /
+   pushed 30-74 m by cars after death (the game's corpses never move; its blood pool follows the ped). Tried first:
+   easing the corpse into the game's own dead pose and handing it back - 7 of 10 lay face up / down the other way round
+   from that pose (chosen at the hit, mid-air), so the hand-over flipped them; switched off. Now: vehicle pass-through
+   (ADR-0026) for every DragDoll pedestrian, from the moment its trunk or head touches the road after the hit - as in the
+   game, where cars do not react to a lying ped. Then, when the physics engine puts the dead body to sleep (Jolt's own
+   at-rest event, reported as `DdCharacterInfo.asleep`), it is **frozen**: switched kinematic in that exact pose and
+   drawn as is - cars and the player pass through (kinematic bodies never collide with each other), new ragdolls land on
+   it, nothing moves it; released as before on a revive, a despawn or distance. Open for later: letting the game pick
+   its floor-death pose (face up / down) after the body has landed, which would make a hand-back possible.
 5. **When something breaks, first ask which game decision DragDoll took over** - and give it back, rather than adding
    a patch.
 

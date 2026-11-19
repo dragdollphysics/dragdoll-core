@@ -20,6 +20,17 @@ body (a bump), pushing it a little at most.
   first. Legs do not count (the pedestrian stands on its feet when the car arrives), nor arms (a hand reaching down
   while the body still lies on the bonnet would drop it through the car). The static
   level still collides. Off by default; recorded (format 6).
+  *Amended 2026-11-18 (San Andreas, game-first start - ADR-0027):* a second event switches pass-through on, needing no
+  DragDoll impact: since the character became physics-driven, the first moment it touches **no moving object** and has
+  its trunk or head on the ground - or arms and legs both on it (lying on its side, propped up). The host's own hit can
+  hand the body over without DragDoll's vehicle ever touching it, so no impact report starts; and a body propped on
+  arms and legs never had its trunk on the road - in game, cars carried such corpses tens of metres. Both events are
+  contact states, no timers. Tests: a body handed over and knocked onto its side, then driven over at 8 m/s: 9.2 m/s
+  shove colliding, 0 passing through.
+  *Amended 2026-11-18 (founder: walking over a dead ragdoll moved it):* once down, a pass-through body ignores every
+  **host-driven (kinematic) body** - vehicle proxies and animated characters alike (the player on foot is a kinematic
+  puppet; in the game a corpse's collision is off and it is walked over). The level and other ragdolls still collide.
+  Test: a kinematic walker through a body lying on its side at 1.5 m/s: 1.9 m/s shove colliding, 0 passing through.
 * **The bump belongs to the host:** DragDoll does not move host vehicles. In San Andreas the game ped's own collision is
   switched back on once its body lies on the ground (dragdoll-sa), so the game's car-over-ped handling gives the bump.
 * **Not decided yet:** a slight, capped push of the body by a car passing over it. Added only if the founder finds the

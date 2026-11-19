@@ -464,6 +464,8 @@ typedef struct DdCharacterInfo
     DdVec3 head_direction;  /* Recovery hint: horizontal unit vector from the pelvis towards the head (0 if upright). */
     DdFailure failure;      /* Why the state is FAILED (NONE otherwise). */
     float balance_error;    /* Balance on: horizontal distance (m) from the capture point to the support centre. */
+    int32_t asleep;         /* 1 once the physics engine has put the body to sleep (at rest: Jolt's own deactivation);
+                             * 0 while it moves, and for kinematic characters. */
 } DdCharacterInfo;
 
 DD_API DdResult DD_CALL dragdoll_character_get_info(const DdCharacter* character, DdCharacterInfo* out);

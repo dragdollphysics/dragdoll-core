@@ -124,6 +124,7 @@ void World::updateSenses()
         // it keeps the contacts it fell asleep with (otherwise a body lying on the ground would feel airborne).
         const bool asleep = count > 0 && c.inPhysics && !c.kinematic && c.contacts.size() == count &&
                             !bodies.IsActive(c.ragdoll->GetBodyID(0));
+        c.asleep = asleep;
         if (asleep)
         {
             for (DdBodyContact& contact : c.contacts) contact.delta_v = 0.0f;

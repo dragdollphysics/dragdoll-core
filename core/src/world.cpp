@@ -283,7 +283,33 @@ void World::simulate(uint32_t steps)
             std::vector<uint32_t> passThrough; // Landed bodies that vehicles pass through (ADR-0026)
             for (auto& [characterId, character] : mCharacters)
             {
-                if (character->vehiclePassThrough && character->impactTracking.lyingDown) passThrough.push_back(character->id);
+                // Two events switch pass-through on (ADR-0026): the trunk or head touching the ground during a vehicle
+                // impact report (DragDoll saw the hit), or - since the character became physics-driven - the trunk or
+                // head touching the ground at all (the host's own hit handed it over; DragDoll's vehicle may never
+                // have touched it, as in San Andreas when the game's larger ped collision registers the hit first).
+                DdCharacter& c = *character;
+                if (c.kinematic || !c.inPhysics)
+                {
+                    c.downSinceHandover = false;
+                }
+                else if (!c.downSinceHandover)
+                {
+                    // Down on the road: touching no moving object (not lying on a bonnet with a hand reaching down), and
+                    // the trunk or head on the ground - or arms and legs both on it (lying on the side, propped up).
+                    bool trunkHead = false, arm = false, leg = false, onObject = false;
+                    for (size_t b = 0; b < c.contacts.size() && b < c.region.size(); ++b)
+                    {
+                        const uint32_t flags = c.contacts[b].flags;
+                        onObject = onObject || (flags & DD_CONTACT_OBJECT) != 0;
+                        if ((flags & DD_CONTACT_GROUND) == 0) continue;
+                        const uint8_t r = c.region[b];
+                        trunkHead = trunkHead || r == DD_REGION_TRUNK || r == DD_REGION_HEAD_NECK;
+                        arm = arm || r == DD_REGION_ARM_LEFT || r == DD_REGION_ARM_RIGHT;
+                        leg = leg || r == DD_REGION_LEG_LEFT || r == DD_REGION_LEG_RIGHT;
+                    }
+                    c.downSinceHandover = !onObject && (trunkHead || (arm && leg));
+                }
+                if (c.vehiclePassThrough && (c.impactTracking.lyingDown || c.downSinceHandover)) passThrough.push_back(c.id);
             }
             mContactLog->setPassThrough(std::move(passThrough));
         }
@@ -972,6 +998,7 @@ void World::setCharacterKinematic(DdCharacter& c, bool kinematic)
         bodies.SetLinearAndAngularVelocity(id, linear, angular); // Keep the motion across the switch
     }
     c.kinematic = kinematic;
+    if (kinematic) c.asleep = false; // Kinematic: never reported asleep (the next senses update would say the same)
     c.airborneSteps = 0;
     if (!kinematic)
     {

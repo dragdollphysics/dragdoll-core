@@ -63,12 +63,14 @@ private:
     void record(const JPH::Body& a, const JPH::Body& b, const JPH::ContactManifold& manifold);
     void side(const JPH::Body& self, const JPH::Body& other, const JPH::ContactManifold& manifold, bool selfIsSecond);
 
-    // `self` is a body of a pass-through character and `other` a moving collider (not the level, not a ragdoll).
-    // Ragdoll bodies are known by their collision group (character id); proxy colliders have no group filter.
+    // `self` is a body of a pass-through character and `other` a host-driven (kinematic) body: a vehicle proxy or an
+    // animated character (a host puppet such as the player on foot) - both push without being pushed, unlike real cars
+    // over a body or feet stepping on one (ADR-0026, amended 2026-11-18). The level and other ragdolls still collide.
+    // Ragdoll bodies are known by their collision group (character id).
     bool passesThrough(const JPH::Body& self, const JPH::Body& other) const
     {
         const JPH::CollisionGroup& group = self.GetCollisionGroup();
-        if (group.GetGroupFilter() == nullptr || other.IsStatic() || other.GetCollisionGroup().GetGroupFilter() != nullptr) return false;
+        if (group.GetGroupFilter() == nullptr || !other.IsKinematic()) return false;
         return std::binary_search(mPassThrough.begin(), mPassThrough.end(), static_cast<uint32_t>(group.GetGroupID()));
     }
 
